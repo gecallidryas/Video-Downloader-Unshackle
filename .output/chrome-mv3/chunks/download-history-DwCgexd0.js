@@ -1,0 +1,1 @@
+import{a as e,r as t,t as n}from"./tokens-BVPAACfV.js";import{t as r}from"./HistoryApp-Ddl2Alkr.js";var i=e(t(),1),a=n();i.createRoot(document.getElementById(`root`)).render((0,a.jsx)(r,{}));

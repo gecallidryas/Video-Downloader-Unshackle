@@ -1,0 +1,146 @@
+/* Design tokens from Stitch Precision Panel export */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+
+:root {
+  /* ── Surface palette ── */
+  --surface: #f8f9ff;
+  --surface-dim: #cbdbf5;
+  --surface-bright: #f8f9ff;
+  --surface-container-lowest: #ffffff;
+  --surface-container-low: #eff4ff;
+  --surface-container: #e5eeff;
+  --surface-container-high: #dce9ff;
+  --surface-container-highest: #d3e4fe;
+  --surface-variant: #d3e4fe;
+  --surface-tint: #0054d6;
+
+  /* ── On-surface text ── */
+  --on-surface: #0b1c30;
+  --on-surface-variant: #424656;
+
+  /* ── Inverse ── */
+  --inverse-surface: #213145;
+  --inverse-on-surface: #eaf1ff;
+
+  /* ── Outline ── */
+  --outline: #727687;
+  --outline-variant: #c2c6d8;
+
+  /* ── Primary ── */
+  --primary: #0050cb;
+  --on-primary: #ffffff;
+  --primary-container: #0066ff;
+  --on-primary-container: #f8f7ff;
+  --primary-fixed-dim: #b3c5ff;
+
+  /* ── Secondary ── */
+  --secondary: #006c49;
+  --on-secondary: #ffffff;
+  --secondary-container: #6cf8bb;
+
+  /* ── Tertiary ── */
+  --tertiary: #a33200;
+  --on-tertiary: #ffffff;
+
+  /* ── Error ── */
+  --error: #ba1a1a;
+  --on-error: #ffffff;
+  --error-container: #ffdad6;
+  --on-error-container: #93000a;
+
+  /* ── Background ── */
+  --background: #f8f9ff;
+  --on-background: #0b1c30;
+
+  /* ── Typography ── */
+  --font-base: 'Inter', system-ui, -apple-system, sans-serif;
+  --font-mono: ui-monospace, 'Cascadia Code', 'Fira Code', monospace;
+
+  /* heading-caps: 11px/16px, weight 600, letter-spacing 0.05em */
+  --text-heading-caps-size: 11px;
+  --text-heading-caps-lh: 16px;
+  --text-heading-caps-weight: 600;
+  --text-heading-caps-ls: 0.05em;
+
+  /* body-compact: 13px/18px, weight 400 */
+  --text-body-size: 13px;
+  --text-body-lh: 18px;
+  --text-body-weight: 400;
+
+  /* label-xs: 10px/12px, weight 500 */
+  --text-label-size: 10px;
+  --text-label-lh: 12px;
+  --text-label-weight: 500;
+
+  /* data-mono: 12px/16px, weight 400 */
+  --text-mono-size: 12px;
+  --text-mono-lh: 16px;
+
+  /* ── Spacing ── */
+  --panel-padding: 12px;
+  --stack-gap: 8px;
+  --item-gap: 4px;
+  --inline-gap: 6px;
+  --touch-target: 28px;
+
+  /* ── Radii ── */
+  --radius-sm: 0.125rem;
+  --radius: 0.25rem;
+  --radius-md: 0.375rem;
+  --radius-lg: 0.5rem;
+  --radius-xl: 0.75rem;
+}
+
+/* ── Reset & base ── */
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html, body, #root {
+  height: 100%;
+  width: 100%;
+}
+
+body {
+  font-family: var(--font-base);
+  font-size: var(--text-body-size);
+  line-height: var(--text-body-lh);
+  font-weight: var(--text-body-weight);
+  color: var(--on-surface);
+  background: var(--surface);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* ── Utility classes ── */
+.heading-caps {
+  font-family: var(--font-base);
+  font-size: var(--text-heading-caps-size);
+  line-height: var(--text-heading-caps-lh);
+  font-weight: var(--text-heading-caps-weight);
+  letter-spacing: var(--text-heading-caps-ls);
+  text-transform: uppercase;
+  color: var(--on-surface-variant);
+}
+
+.label-xs {
+  font-family: var(--font-base);
+  font-size: var(--text-label-size);
+  line-height: var(--text-label-lh);
+  font-weight: var(--text-label-weight);
+}
+
+.data-mono {
+  font-family: var(--font-mono);
+  font-size: var(--text-mono-size);
+  line-height: var(--text-mono-lh);
+  font-weight: 400;
+}
+
+.truncate {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

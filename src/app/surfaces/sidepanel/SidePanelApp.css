@@ -1,0 +1,45 @@
+/* SidePanelApp — full-height panel layout matching Stitch Precision Panel */
+
+.side-panel {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  width: 100%;
+  background: var(--surface);
+  color: var(--on-surface);
+  font-family: var(--font-base);
+  font-size: var(--text-body-size);
+  line-height: var(--text-body-lh);
+  position: relative;
+}
+
+.side-panel__body {
+  flex: 1;
+  overflow-y: auto;
+  padding: var(--panel-padding);
+  padding-bottom: 60px;
+  display: flex;
+  flex-direction: column;
+  gap: var(--stack-gap);
+}
+
+.side-panel__section-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0 4px;
+  margin-bottom: 4px;
+}
+
+.side-panel__badge {
+  background: var(--surface-container-high);
+  color: var(--on-surface-variant);
+  padding: 2px 6px;
+  border-radius: var(--radius);
+}
+
+.side-panel__list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--stack-gap);
+}
