@@ -13,6 +13,21 @@ This extension should support:
 
 The architecture is designed specifically for **Chrome extensions using Manifest V3**.
 
+## Current Implementation Status
+
+The repository now follows the protocol-first architecture described in
+`docs/plans/2026-04-24-protocol-first-downloader-implementation-plan.md`.
+The active implementation uses the shared contracts in
+`video_downloader_types_skeleton.ts`, runtime candidate snapshots, passive
+network and DOM evidence, direct/HLS/DASH clear-flow modules, protected-media
+classification, explicit provider policy evaluation, offscreen preview routing,
+thumbnail job metadata, OPFS-style storage helpers, and segmented resume
+snapshots.
+
+The old mock-backed product shell is no longer the production source of truth.
+Release verification is tracked in `docs/testing-matrix.md`, and protected
+provider workflows are documented in `docs/provider-policy.md`.
+
 ---
 
 ## Product Vision
@@ -57,6 +72,11 @@ The user should be able to:
 ### Important policy boundary
 
 If a stream is DRM-protected or uses protected playback, the extension should detect that and clearly tell the user it cannot be downloaded by the extension pipeline.
+
+The implemented boundary is stricter: protected candidates are blocked from the
+generic downloader by default. Provider-authorized workflows must be explicitly
+registered and are exposed only after user acknowledgement; they do not enable
+generic downloading for DRM or protected candidates.
 
 ---
 

@@ -33,6 +33,27 @@ This is the technical follow-up to the earlier product plan. It converts the con
 
 This plan assumes a legal, user-facing downloader extension that **does not attempt to bypass DRM or protected playback**. For HLS, content protection is surfaced through `EXT-X-KEY`; the extension should detect and classify protected media, not try to break it.
 
+### Current implementation note
+
+The active codebase now implements the protocol-first architecture through the
+Task 11 infrastructure described in
+`docs/plans/2026-04-24-protocol-first-downloader-implementation-plan.md`.
+Runtime contracts are shared from `video_downloader_types_skeleton.ts`; the
+background service worker coordinates candidate snapshots, jobs, history,
+provider policy, and preview routing; and the side panel renders candidates from
+runtime state rather than production mock data.
+
+The final verification and release gates are documented in:
+
+- `README.md`
+- `docs/testing-matrix.md`
+- `docs/provider-policy.md`
+
+The dependency recommendations below remain useful for future hardening, but
+the current repository intentionally uses the dependencies listed in
+`package.json` and does not require Tailwind, Radix, TanStack, ffmpeg, HLS, DASH,
+or MP4 libraries for the implemented test-backed shell.
+
 ---
 
 ## 2. Core product constraints
@@ -55,6 +76,10 @@ This plan assumes a legal, user-facing downloader extension that **does not atte
 - protected playback circumvention
 - remote-code loading
 - default transcode-everything workflows
+
+The current implementation enforces this scope by rejecting protected candidates
+from `START_DOWNLOAD` and routing any authorized provider path through the
+explicit provider policy registry and acknowledgement gate.
 
 ### 2.3 Extension-platform constraints that shape the architecture
 

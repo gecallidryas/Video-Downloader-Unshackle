@@ -1,0 +1,1 @@
+import{a as e,r as t,t as n}from"./tokens-CTuEvtQT.js";import"./_virtual_wxt-html-plugins-B97jNJbb.js";import{t as r}from"./PopupApp-a_F9g5TW.js";var i=e(t(),1),a=n();i.createRoot(document.getElementById(`root`)).render((0,a.jsx)(r,{}));

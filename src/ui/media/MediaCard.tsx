@@ -1,4 +1,6 @@
 import type { DetectedMedia } from '@/src/types/media';
+import type { ProviderPolicyResult } from '@/src/core/policy/evaluate-provider-policy';
+import { ProtectedActionGate } from '@/src/ui/protected/ProtectedActionGate';
 import './MediaCard.css';
 
 interface MediaCardProps {
@@ -7,6 +9,10 @@ interface MediaCardProps {
   onRemove: () => void;
   onDownload: () => void;
   onQualityChange: (quality: string) => void;
+  providerPolicy?: ProviderPolicyResult;
+  onProtectedProceed?: (
+    policy: Extract<ProviderPolicyResult, { kind: 'authorized-workflow' }>,
+  ) => void;
 }
 
 export function MediaCard({
@@ -15,9 +21,16 @@ export function MediaCard({
   onRemove,
   onDownload,
   onQualityChange,
+  providerPolicy,
+  onProtectedProceed,
 }: MediaCardProps) {
   const isAudio = media.mediaType === 'audio';
   const singleQuality = media.qualities.length <= 1;
+  const primaryAction = media.primaryAction ?? {
+    kind: 'download' as const,
+    label: 'Download',
+  };
+  const isBlocked = primaryAction.kind === 'blocked';
 
   return (
     <div className="media-card">
@@ -83,14 +96,24 @@ export function MediaCard({
             </svg>
           </button>
           <button
-            className="media-card__download-btn"
-            onClick={onDownload}
-            aria-label="Download"
+            className={`media-card__download-btn ${
+              isBlocked ? 'media-card__download-btn--blocked' : ''
+            }`}
+            onClick={isBlocked ? undefined : onDownload}
+            aria-label={primaryAction.label}
+            disabled={isBlocked}
+            title={primaryAction.reason}
           >
-            Download
+            {primaryAction.label}
           </button>
         </div>
       </div>
+      {isBlocked && providerPolicy ? (
+        <ProtectedActionGate
+          policy={providerPolicy}
+          onProceed={onProtectedProceed ?? (() => {})}
+        />
+      ) : null}
     </div>
   );
 }

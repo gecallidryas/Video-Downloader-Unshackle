@@ -182,3 +182,14 @@
 .media-card__download-btn:hover {
   background: rgba(0, 80, 203, 0.9);
 }
+
+.media-card__download-btn:disabled,
+.media-card__download-btn--blocked {
+  background: var(--surface-container-high);
+  color: var(--on-surface-variant);
+  cursor: not-allowed;
+}
+
+.media-card__download-btn--blocked:hover {
+  background: var(--surface-container-high);
+}

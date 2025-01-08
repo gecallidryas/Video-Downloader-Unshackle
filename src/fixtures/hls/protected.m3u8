@@ -1,0 +1,7 @@
+#EXTM3U
+#EXT-X-VERSION:6
+#EXT-X-TARGETDURATION:6
+#EXT-X-KEY:METHOD=SAMPLE-AES,URI="skd://protected-key",KEYFORMAT="com.apple.streamingkeydelivery"
+#EXTINF:6.000,
+protected-0001.ts
+#EXT-X-ENDLIST
