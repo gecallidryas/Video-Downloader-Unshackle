@@ -2,8 +2,10 @@ import type { DetectionEvidence } from '@/video_downloader_types_skeleton';
 import {
   classifyRequest,
   type RequestClassification,
+  type RequestHeaderLike,
   type RequestLike,
 } from './classify-request';
+import type { HeaderContextStore } from './header-context';
 
 export interface NetworkRequestEvidence extends RequestClassification {
   tabId: number;
@@ -20,15 +22,21 @@ export interface RequestJournal {
   clear(tabId: number): void;
 }
 
+export interface RequestJournalOptions {
+  duplicateWindowMs?: number;
+  now?: () => number;
+}
+
 export interface WebRequestEventLike {
   addListener(
-    callback: (details: chrome.webRequest.OnCompletedDetails) => void,
+    callback: (details: chrome.webRequest.WebRequestDetails) => void,
     filter: chrome.webRequest.RequestFilter,
-    extraInfoSpec?: `${chrome.webRequest.OnCompletedOptions}`[],
+    extraInfoSpec?: string[],
   ): void;
 }
 
 export interface WebRequestHostLike {
+  onBeforeSendHeaders?: WebRequestEventLike;
   onCompleted?: WebRequestEventLike;
 }
 
@@ -65,11 +73,38 @@ function buildNetworkEvidence(
   };
 }
 
-export function createRequestJournal(maxEntriesPerTab = 200): RequestJournal {
+export function createRequestJournal(
+  maxEntriesPerTab = 200,
+  options: RequestJournalOptions = {},
+): RequestJournal {
   const evidenceByTabId = new Map<number, NetworkRequestEvidence[]>();
+  const recentRequests = new Map<string, number>();
+  const duplicateWindowMs = options.duplicateWindowMs ?? 2_000;
+
+  function getEvidenceTime(evidence: NetworkRequestEvidence): number {
+    return evidence.detectedAt ?? options.now?.() ?? Date.now();
+  }
+
+  function isDuplicate(tabId: number, evidence: NetworkRequestEvidence): boolean {
+    const key = `${tabId}|${evidence.url}`;
+    const now = getEvidenceTime(evidence);
+    const previous = recentRequests.get(key);
+
+    recentRequests.set(key, now);
+
+    if (previous === undefined) {
+      return false;
+    }
+
+    return now - previous < duplicateWindowMs;
+  }
 
   return {
     add(tabId, evidence) {
+      if (isDuplicate(tabId, evidence)) {
+        return cloneNetworkEvidence(evidence);
+      }
+
       const entries = evidenceByTabId.get(tabId) ?? [];
       const nextEntries = [...entries, cloneNetworkEvidence(evidence)].slice(
         -maxEntriesPerTab,
@@ -105,12 +140,32 @@ function getDefaultWebRequestHost(): WebRequestHostLike | undefined {
 export function registerPassiveRequestJournal(
   journal: RequestJournal,
   webRequest: WebRequestHostLike | undefined = getDefaultWebRequestHost(),
+  headerContext?: HeaderContextStore,
 ): void {
-  const responseHeadersOption: `${chrome.webRequest.OnCompletedOptions}` =
-    'responseHeaders';
+  webRequest?.onBeforeSendHeaders?.addListener(
+    (details) => {
+      const requestHeaders = (details as { requestHeaders?: RequestHeaderLike[] })
+        .requestHeaders;
+
+      if (details.tabId < 0 || !requestHeaders) {
+        return;
+      }
+
+      headerContext?.capture({
+        requestId: details.requestId,
+        url: details.url,
+        requestHeaders,
+      });
+    },
+    { urls: ['<all_urls>'] },
+    ['requestHeaders'],
+  );
 
   webRequest?.onCompleted?.addListener(
     (details) => {
+      const responseHeaders = (details as { responseHeaders?: RequestHeaderLike[] })
+        .responseHeaders;
+
       if (details.tabId < 0) {
         return;
       }
@@ -123,10 +178,11 @@ export function registerPassiveRequestJournal(
         method: details.method,
         type: details.type,
         timeStamp: details.timeStamp,
-        responseHeaders: details.responseHeaders,
+        responseHeaders,
       });
+      headerContext?.deleteRequest(details.requestId);
     },
     { urls: ['<all_urls>'] },
-    [responseHeadersOption],
+    ['responseHeaders'],
   );
 }

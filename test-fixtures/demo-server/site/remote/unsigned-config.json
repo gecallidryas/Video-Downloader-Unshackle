@@ -1,0 +1,11 @@
+{
+    "version": 999999,
+    "timestamp": 1760000000000,
+    "description": "Unsigned fixture config for strict signature rejection tests",
+    "domainMappings": {
+        "fixture-voe.example": "voe"
+    },
+    "blockedDomains": [
+        "unsigned-fixture.example"
+    ]
+}

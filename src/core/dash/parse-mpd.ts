@@ -5,6 +5,7 @@ import type {
   ProtectionInfo,
   SubtitleTrack,
 } from '@/video_downloader_types_skeleton';
+import { classifyDashProtection } from './classify-dash-protection';
 
 export interface ParseMpdInput {
   manifestUrl: string;
@@ -19,6 +20,19 @@ export interface ParsedDashRepresentation {
   startNumber: number;
   segmentDurationSec?: number;
   segmentCount: number;
+  timeline?: DashTimelineSegment[];
+  explicitSegments?: ParsedDashExplicitSegment[];
+}
+
+export interface DashTimelineSegment {
+  time: number;
+  durationSec?: number;
+}
+
+export interface ParsedDashExplicitSegment {
+  url: string;
+  byteRange?: { start: number; end: number };
+  durationSec?: number;
 }
 
 export interface ParsedDashManifest extends DashManifest {
@@ -45,6 +59,15 @@ function resolveUrl(url: string | undefined, baseUrl: string): string | undefine
   } catch {
     return url;
   }
+}
+
+function resolveBaseUrl(
+  element: Element | undefined,
+  baseUrl: string,
+): string {
+  const base = element ? firstChildByTag(element, 'BaseURL')?.textContent?.trim() : undefined;
+
+  return resolveUrl(base, baseUrl) ?? baseUrl;
 }
 
 function childrenByTag(element: Element, tagName: string): Element[] {
@@ -132,36 +155,11 @@ function getSegmentTemplate(
 }
 
 function getBaseUrl(adaptationSet: Element, representation: Element): string | undefined {
-  return (
-    firstChildByTag(representation, 'BaseURL')?.textContent?.trim() ??
-    firstChildByTag(adaptationSet, 'BaseURL')?.textContent?.trim()
-  );
+  return firstChildByTag(representation, 'BaseURL')?.textContent?.trim();
 }
 
 function detectProtection(documentElement: Element): ProtectionInfo {
-  const protectionElements = descendantsByTag(documentElement, 'ContentProtection');
-
-  if (protectionElements.length === 0) {
-    return { kind: 'none' };
-  }
-
-  const drmSystems = protectionElements
-    .flatMap((element) => [
-      attr(element, 'value')?.toLowerCase(),
-      attr(element, 'schemeIdUri')?.toLowerCase().includes('edef8ba9')
-        ? 'widevine'
-        : undefined,
-      attr(element, 'schemeIdUri')?.toLowerCase().includes('9a04f079')
-        ? 'playready'
-        : undefined,
-    ])
-    .filter((value): value is string => Boolean(value));
-
-  return {
-    kind: 'drm',
-    reason: 'DASH MPD declares ContentProtection.',
-    drmSystems: Array.from(new Set(drmSystems)),
-  };
+  return classifyDashProtection(documentElement);
 }
 
 function textFormatFromMime(mimeType: string | undefined): SubtitleTrack['format'] {
@@ -179,13 +177,22 @@ function textFormatFromMime(mimeType: string | undefined): SubtitleTrack['format
 function buildRepresentationMeta(
   adaptationSet: Element,
   representation: Element,
-  manifestUrl: string,
+  baseUrl: string,
   durationSec: number | undefined,
 ): ParsedDashRepresentation {
   const id = attr(representation, 'id') ?? `representation-${Date.now()}`;
   const trackType = getContentType(adaptationSet);
   const template = getSegmentTemplate(adaptationSet, representation);
-  const baseUrl = getBaseUrl(adaptationSet, representation);
+  const representationBaseUrl = resolveUrl(
+    getBaseUrl(adaptationSet, representation),
+    baseUrl,
+  );
+  const hasSegmentBaseUrl = Boolean(
+    representationBaseUrl ?? firstChildByTag(adaptationSet, 'BaseURL'),
+  );
+  const segmentList =
+    firstChildByTag(representation, 'SegmentList') ??
+    firstChildByTag(adaptationSet, 'SegmentList');
   const timescale = numberAttr(template ?? adaptationSet, 'timescale') ?? 1;
   const duration = numberAttr(template ?? adaptationSet, 'duration');
   const segmentDurationSec =
@@ -200,23 +207,114 @@ function buildRepresentationMeta(
     ? attr(template, 'initialization')
     : undefined;
   const mediaTemplate = template ? attr(template, 'media') : undefined;
+  const timeline = template ? parseSegmentTimeline(template, timescale) : undefined;
+  const explicitSegments = segmentList
+    ? parseSegmentList(segmentList, representationBaseUrl ?? baseUrl)
+    : undefined;
+  const explicitSegmentDurationSec =
+    numberAttr(segmentList ?? adaptationSet, 'duration') !== undefined
+      ? (numberAttr(segmentList ?? adaptationSet, 'duration') ?? 0) /
+        Math.max(numberAttr(segmentList ?? adaptationSet, 'timescale') ?? 1, 1)
+      : undefined;
 
   return {
     id,
     trackType,
     initializationUrl: resolveUrl(
-      initializationTemplate
+      segmentList
+        ? firstChildByTag(segmentList, 'Initialization')?.getAttribute('sourceURL') ??
+            undefined
+        : initializationTemplate
         ? replaceTemplateTokens(initializationTemplate, id)
         : undefined,
-      manifestUrl,
+      representationBaseUrl ?? baseUrl,
     ),
     mediaUrlTemplate: mediaTemplate
-      ? resolveUrl(replaceTemplateTokens(mediaTemplate, id), manifestUrl)
-      : resolveUrl(baseUrl, manifestUrl),
+      ? resolveUrl(replaceTemplateTokens(mediaTemplate, id), representationBaseUrl ?? baseUrl)
+      : hasSegmentBaseUrl
+        ? (representationBaseUrl ?? baseUrl)
+        : undefined,
     startNumber: numberAttr(template ?? adaptationSet, 'startNumber') ?? 1,
     segmentDurationSec,
-    segmentCount,
+    segmentCount: timeline?.length ?? explicitSegments?.length ?? segmentCount,
+    timeline,
+    explicitSegments: explicitSegments?.map((segment) => ({
+      ...segment,
+      durationSec: segment.durationSec ?? explicitSegmentDurationSec,
+    })),
   };
+}
+
+function parseByteRange(value: string | undefined): { start: number; end: number } | undefined {
+  if (!value) {
+    return undefined;
+  }
+
+  const [startRaw, endRaw] = value.split('-');
+  const start = Number(startRaw);
+  const end = Number(endRaw);
+
+  return Number.isFinite(start) && Number.isFinite(end)
+    ? { start, end }
+    : undefined;
+}
+
+function parseSegmentTimeline(
+  template: Element,
+  timescale: number,
+): DashTimelineSegment[] | undefined {
+  const timeline = firstChildByTag(template, 'SegmentTimeline');
+
+  if (!timeline) {
+    return undefined;
+  }
+
+  const segments: DashTimelineSegment[] = [];
+  let currentTime = 0;
+
+  for (const item of childrenByTag(timeline, 'S')) {
+    const duration = numberAttr(item, 'd');
+    const explicitTime = numberAttr(item, 't');
+    const repeat = numberAttr(item, 'r') ?? 0;
+
+    if (duration === undefined) {
+      continue;
+    }
+
+    if (explicitTime !== undefined) {
+      currentTime = explicitTime;
+    }
+
+    for (let index = 0; index <= repeat; index += 1) {
+      segments.push({
+        time: currentTime,
+        durationSec: duration / Math.max(timescale, 1),
+      });
+      currentTime += duration;
+    }
+  }
+
+  return segments;
+}
+
+function parseSegmentList(
+  segmentList: Element,
+  baseUrl: string,
+): ParsedDashExplicitSegment[] {
+  return childrenByTag(segmentList, 'SegmentURL')
+    .map<ParsedDashExplicitSegment | undefined>((segment) => {
+      const url = resolveUrl(attr(segment, 'media'), baseUrl);
+
+      return url
+        ? {
+            url,
+            ...(parseByteRange(attr(segment, 'mediaRange'))
+              ? { byteRange: parseByteRange(attr(segment, 'mediaRange')) }
+              : {}),
+          }
+        : undefined;
+    })
+    .filter((item): item is ParsedDashExplicitSegment => Boolean(item));
 }
 
 export function parseMpd(input: ParseMpdInput): ParsedDashManifest {
@@ -231,7 +329,13 @@ export function parseMpd(input: ParseMpdInput): ParsedDashManifest {
   const subtitleTracks: SubtitleTrack[] = [];
   const representations: ParsedDashRepresentation[] = [];
 
-  for (const adaptationSet of descendantsByTag(root, 'AdaptationSet')) {
+  const mpdBaseUrl = resolveBaseUrl(root, input.manifestUrl);
+
+  for (const period of descendantsByTag(root, 'Period')) {
+    const periodBaseUrl = resolveBaseUrl(period, mpdBaseUrl);
+
+    for (const adaptationSet of childrenByTag(period, 'AdaptationSet')) {
+    const adaptationBaseUrl = resolveBaseUrl(adaptationSet, periodBaseUrl);
     const trackType = getContentType(adaptationSet);
     const language = attr(adaptationSet, 'lang');
     const adaptationCodecs = attr(adaptationSet, 'codecs');
@@ -244,7 +348,7 @@ export function parseMpd(input: ParseMpdInput): ParsedDashManifest {
       const representationMeta = buildRepresentationMeta(
         adaptationSet,
         representation,
-        input.manifestUrl,
+        adaptationBaseUrl,
         durationSec,
       );
 
@@ -274,10 +378,13 @@ export function parseMpd(input: ParseMpdInput): ParsedDashManifest {
           kind: 'subtitle',
           language,
           format: textFormatFromMime(adaptationMimeType),
-          url: representationMeta.mediaUrlTemplate,
+          url:
+            representationMeta.explicitSegments?.[0]?.url ??
+            representationMeta.mediaUrlTemplate,
         });
       }
     }
+  }
   }
 
   return {

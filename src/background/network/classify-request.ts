@@ -8,8 +8,10 @@ export type RequestCategory =
   | 'direct_media'
   | 'hls_manifest'
   | 'dash_manifest'
+  | 'license'
   | 'subtitle'
   | 'segment'
+  | 'ignored'
   | 'unknown';
 
 export interface RequestHeaderLike {
@@ -42,11 +44,15 @@ export interface RequestClassification {
 const hlsMimeTypes = new Set([
   'application/vnd.apple.mpegurl',
   'application/x-mpegurl',
+  'application/mpegurl',
   'audio/mpegurl',
   'audio/x-mpegurl',
 ]);
 
-const dashMimeTypes = new Set(['application/dash+xml']);
+const dashMimeTypes = new Set([
+  'application/dash+xml',
+  'video/vnd.mpeg.dash.mpd',
+]);
 const videoMimePrefix = 'video/';
 const audioMimePrefix = 'audio/';
 const subtitleMimeTypes = new Set([
@@ -60,6 +66,15 @@ const videoExtensions = new Set(['mp4', 'm4v', 'webm', 'mkv', 'mov']);
 const audioExtensions = new Set(['mp3', 'm4a', 'aac', 'flac', 'ogg', 'opus', 'wav']);
 const subtitleExtensions = new Set(['vtt', 'srt', 'ttml', 'dfxp']);
 const segmentExtensions = new Set(['m4s', 'cmfv', 'cmfa', 'm2ts', 'ts']);
+const segmentMimeTypes = new Set(['video/mp2t']);
+const licenseUrlPatterns = [
+  /widevine/i,
+  /playready/i,
+  /fairplay/i,
+  /licens/i,
+  /drm/i,
+  /certificate/i,
+];
 
 function getHeaderValue(
   headers: RequestHeaderLike[] | undefined,
@@ -107,16 +122,70 @@ function isSegmentPath(url: string, extension: string | undefined): boolean {
   );
 }
 
+function isAdaptiveComponentUrl(url: string): boolean {
+  try {
+    const parsed = new URL(url);
+    const host = parsed.hostname.toLowerCase();
+    const path = parsed.pathname.toLowerCase();
+    const isTwitterCdn =
+      host === 'video.twimg.com' || host.endsWith('.twimg.com');
+
+    return (
+      isTwitterCdn &&
+      (path.includes('/pu/aud/') ||
+        path.includes('/pu/vid/') ||
+        path.includes('/aud/mp4a/') ||
+        path.includes('/vid/avc1/') ||
+        path.includes('/vid/hevc/'))
+    );
+  } catch {
+    return false;
+  }
+}
+
+function isLicenseRequest(url: string): boolean {
+  return licenseUrlPatterns.some((pattern) => pattern.test(url));
+}
+
+function getDrmSystemsFromUrl(url: string): string[] {
+  const lower = url.toLowerCase();
+  const systems = new Set<string>();
+
+  if (
+    lower.includes('widevine') ||
+    lower.includes('edef8ba9-79d6-4ace-a3c8-27dcd51d21ed')
+  ) {
+    systems.add('widevine');
+  }
+  if (
+    lower.includes('playready') ||
+    lower.includes('9a04f079-9840-4286-ab92-e65be0885f95')
+  ) {
+    systems.add('playready');
+  }
+  if (
+    lower.includes('fairplay') ||
+    lower.includes('com.apple.fps') ||
+    lower.startsWith('skd://') ||
+    lower.includes('94ce86fb-07ff-4f43-adb8-93d2fa968ca2')
+  ) {
+    systems.add('fairplay');
+  }
+
+  return systems.size > 0 ? Array.from(systems) : ['drm'];
+}
+
 function buildEvidence(
   request: RequestLike,
   category: RequestCategory,
+  extraNotes: string[] = [],
 ): DetectionEvidence {
   return {
     source: 'network',
     confidence: category === 'unknown' ? 0.1 : 0.75,
     url: request.url,
     initiatorUrl: request.initiator,
-    notes: [`category:${category}`],
+    notes: [`category:${category}`, ...extraNotes],
     createdAt: request.timeStamp ?? Date.now(),
   };
 }
@@ -130,8 +199,15 @@ export function classifyRequest(request: RequestLike): RequestClassification {
   let category: RequestCategory = 'unknown';
   let protocol: StreamProtocol = 'unknown';
   let mediaKind: MediaKind | undefined;
+  let extraNotes: string[] = [];
 
-  if (extension === 'm3u8' || (mimeType && hlsMimeTypes.has(mimeType))) {
+  if (isAdaptiveComponentUrl(request.url)) {
+    category = 'ignored';
+  } else if (
+    extension === 'm3u8' ||
+    extension === 'm3u' ||
+    (mimeType && hlsMimeTypes.has(mimeType))
+  ) {
     category = 'hls_manifest';
     protocol = 'hls';
     mediaKind = 'video';
@@ -139,6 +215,15 @@ export function classifyRequest(request: RequestLike): RequestClassification {
     category = 'dash_manifest';
     protocol = 'dash';
     mediaKind = 'video';
+    if (isLicenseRequest(request.url)) {
+      extraNotes = getDrmSystemsFromUrl(request.url).map((system) => `drm:${system}`);
+    }
+  } else if (isLicenseRequest(request.url)) {
+    category = 'license';
+    extraNotes = [
+      'license-request:true',
+      ...getDrmSystemsFromUrl(request.url).map((system) => `drm:${system}`),
+    ];
   } else if (
     (extension && subtitleExtensions.has(extension)) ||
     (mimeType && subtitleMimeTypes.has(mimeType))
@@ -146,7 +231,10 @@ export function classifyRequest(request: RequestLike): RequestClassification {
     category = 'subtitle';
     protocol = 'direct';
     mediaKind = 'subtitle';
-  } else if (isSegmentPath(request.url, extension)) {
+  } else if (
+    isSegmentPath(request.url, extension) ||
+    (mimeType && segmentMimeTypes.has(mimeType))
+  ) {
     category = 'segment';
     protocol = 'unknown';
   } else if (
@@ -173,6 +261,6 @@ export function classifyRequest(request: RequestLike): RequestClassification {
     initiatorUrl: request.initiator,
     mimeType,
     fileExtensionHint: extension,
-    evidence: buildEvidence(request, category),
+    evidence: buildEvidence(request, category, extraNotes),
   };
 }

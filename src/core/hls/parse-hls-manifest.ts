@@ -6,6 +6,7 @@ import type {
   SegmentDescriptor,
   SubtitleTrack,
 } from '@/video_downloader_types_skeleton';
+import { classifyHlsProtection } from './classify-hls-protection';
 
 export interface ParseHlsManifestInput {
   manifestUrl: string;
@@ -14,8 +15,13 @@ export interface ParseHlsManifestInput {
 
 export interface ParsedHlsManifest extends HlsManifest {
   playlistKind: 'master' | 'media';
-  segments: SegmentDescriptor[];
+  segments: ParsedHlsSegment[];
   initSegmentUrl?: string;
+  initSegmentByteRange?: { start: number; end: number };
+}
+
+export interface ParsedHlsSegment extends SegmentDescriptor {
+  discontinuity?: boolean;
 }
 
 type HlsAttributeMap = Record<string, string>;
@@ -140,41 +146,38 @@ function parseMediaTag(
 }
 
 function protectionFromKeyTag(attributes: HlsAttributeMap): ProtectionInfo {
-  const method = attributes.METHOD;
+  return classifyHlsProtection([
+    `#EXT-X-KEY:${Object.entries(attributes)
+      .map(([key, value]) => `${key}="${value}"`)
+      .join(',')}`,
+  ]);
+}
 
-  if (!method || method.toUpperCase() === 'NONE') {
-    return { kind: 'none' };
+function parseByteRange(
+  value: string | undefined,
+  previousEnd?: number,
+): { start: number; end: number } | undefined {
+  if (!value) {
+    return undefined;
   }
 
-  if (method.toUpperCase() === 'AES-128') {
-    return {
-      kind: 'aes-128',
-      method,
-      keyUri: attributes.URI,
-      iv: attributes.IV,
-      reason: 'HLS manifest declares encrypted media segments.',
-    };
+  const [lengthRaw, offsetRaw] = value.split('@');
+  const length = Number(lengthRaw);
+
+  if (!Number.isFinite(length) || length <= 0) {
+    return undefined;
   }
 
-  if (method.toUpperCase() === 'SAMPLE-AES') {
-    return {
-      kind: 'sample-aes',
-      method,
-      keyFormat: attributes.KEYFORMAT,
-      keyUri: attributes.URI,
-      iv: attributes.IV,
-      reason: 'HLS manifest declares encrypted media segments.',
-    };
+  const start =
+    offsetRaw !== undefined && offsetRaw !== ''
+      ? Number(offsetRaw)
+      : (previousEnd ?? -1) + 1;
+
+  if (!Number.isFinite(start) || start < 0) {
+    return undefined;
   }
 
-  return {
-    kind: 'unknown',
-    method,
-    keyFormat: attributes.KEYFORMAT,
-    keyUri: attributes.URI,
-    iv: attributes.IV,
-    reason: 'HLS manifest declares an unknown encryption method.',
-  };
+  return { start, end: start + length - 1 };
 }
 
 function parseMasterPlaylist(
@@ -234,12 +237,26 @@ function parseMasterPlaylist(
 function parseMediaPlaylist(
   lines: string[],
   manifestUrl: string,
-): Pick<ParsedHlsManifest, 'segments' | 'initSegmentUrl' | 'protection' | 'targetDurationSec'> {
-  const segments: SegmentDescriptor[] = [];
+): Pick<
+  ParsedHlsManifest,
+  | 'segments'
+  | 'initSegmentUrl'
+  | 'initSegmentByteRange'
+  | 'protection'
+  | 'targetDurationSec'
+  | 'durationSec'
+> {
+  const segments: ParsedHlsSegment[] = [];
   let initSegmentUrl: string | undefined;
+  let initSegmentByteRange: { start: number; end: number } | undefined;
   let pendingDuration: number | undefined;
+  let pendingByteRange: { start: number; end: number } | undefined;
+  let previousByteRangeEnd: number | undefined;
+  let pendingDiscontinuity = false;
   let protection: ProtectionInfo = { kind: 'none' };
+  let currentEncryption: ParsedHlsSegment['encryption'];
   let targetDurationSec: number | undefined;
+  let durationSec = 0;
 
   for (const line of lines) {
     if (line.startsWith('#EXT-X-TARGETDURATION:')) {
@@ -247,34 +264,70 @@ function parseMediaPlaylist(
     } else if (line.startsWith('#EXT-X-MAP:')) {
       const attributes = parseAttributes(line.slice('#EXT-X-MAP:'.length));
       initSegmentUrl = resolveUrl(attributes.URI, manifestUrl);
+      initSegmentByteRange = parseByteRange(attributes.BYTERANGE);
     } else if (line.startsWith('#EXT-X-KEY:')) {
-      protection = protectionFromKeyTag(
-        parseAttributes(line.slice('#EXT-X-KEY:'.length)),
-      );
+      const attributes = parseAttributes(line.slice('#EXT-X-KEY:'.length));
+      protection = protectionFromKeyTag(attributes);
+      if (protection.kind === 'aes-128') {
+        currentEncryption = {
+          method: 'AES-128',
+          keyUri: resolveUrl(attributes.URI, manifestUrl),
+          iv: attributes.IV,
+        };
+      } else if (protection.kind === 'none') {
+        currentEncryption = undefined;
+      }
     } else if (line.startsWith('#EXTINF:')) {
       pendingDuration = parseNumber(
         line.slice('#EXTINF:'.length).split(',', 1)[0],
       );
+    } else if (line.startsWith('#EXT-X-BYTERANGE:')) {
+      pendingByteRange = parseByteRange(
+        line.slice('#EXT-X-BYTERANGE:'.length),
+        previousByteRangeEnd,
+      );
+    } else if (line.startsWith('#EXT-X-DISCONTINUITY')) {
+      pendingDiscontinuity = true;
     } else if (!line.startsWith('#')) {
       const index = segments.length + 1;
-
-      segments.push({
+      const segment: ParsedHlsSegment = {
         id: `hls-segment-${index}`,
         index,
         url: resolveUrl(line, manifestUrl) ?? line,
         durationSec: pendingDuration,
-      });
+        byteRange: pendingByteRange,
+        discontinuity: pendingDiscontinuity || undefined,
+        encryption: currentEncryption,
+      };
+
+      segments.push(segment);
+      previousByteRangeEnd = pendingByteRange?.end ?? previousByteRangeEnd;
+      durationSec += pendingDuration ?? 0;
       pendingDuration = undefined;
+      pendingByteRange = undefined;
+      pendingDiscontinuity = false;
     }
   }
 
-  return { segments, initSegmentUrl, protection, targetDurationSec };
+  return {
+    segments,
+    initSegmentUrl,
+    initSegmentByteRange,
+    protection,
+    targetDurationSec,
+    durationSec: durationSec || undefined,
+  };
 }
 
 export function parseHlsManifest(input: ParseHlsManifestInput): ParsedHlsManifest {
   const lines = normalizeLines(input.content);
   const isMaster = lines.some((line) => line.startsWith('#EXT-X-STREAM-INF:'));
   const isLive = !isMaster && !lines.includes('#EXT-X-ENDLIST');
+  const playlistType = lines
+    .find((line) => line.startsWith('#EXT-X-PLAYLIST-TYPE:'))
+    ?.slice('#EXT-X-PLAYLIST-TYPE:'.length)
+    .trim()
+    .toUpperCase();
   const master = isMaster
     ? parseMasterPlaylist(lines, input.manifestUrl)
     : {
@@ -290,6 +343,8 @@ export function parseHlsManifest(input: ParseHlsManifestInput): ParsedHlsManifes
         initSegmentUrl: undefined,
         protection: { kind: 'none' } as ProtectionInfo,
         targetDurationSec: undefined,
+        durationSec: undefined,
+        initSegmentByteRange: undefined,
       };
 
   return {
@@ -298,6 +353,8 @@ export function parseHlsManifest(input: ParseHlsManifestInput): ParsedHlsManifes
     sourceUrl: input.manifestUrl,
     playlistKind: isMaster ? 'master' : 'media',
     isLive,
+    isEvent: playlistType === 'EVENT',
+    durationSec: media.durationSec,
     targetDurationSec: media.targetDurationSec,
     protection: isMaster ? master.protection : media.protection,
     variants: isMaster
@@ -313,5 +370,6 @@ export function parseHlsManifest(input: ParseHlsManifestInput): ParsedHlsManifes
     subtitleTracks: master.subtitleTracks,
     segments: media.segments,
     initSegmentUrl: media.initSegmentUrl,
+    initSegmentByteRange: media.initSegmentByteRange,
   };
 }

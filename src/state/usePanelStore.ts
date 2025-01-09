@@ -1,5 +1,9 @@
 import { create } from 'zustand';
-import type { MediaCandidate } from '@/video_downloader_types_skeleton';
+import type {
+  DownloadJob,
+  DownloadSelection,
+  MediaCandidate,
+} from '@/video_downloader_types_skeleton';
 import type { RuntimeClient } from '@/src/lib/runtime/client';
 import { toDetectedMedia } from '@/src/shared/adapters/media-card';
 import type { DetectedMedia } from '@/src/types/media';
@@ -9,21 +13,28 @@ export interface PanelStoreState {
   surfaceState: PanelSurfaceState;
   candidates: MediaCandidate[];
   mediaItems: DetectedMedia[];
+  queueJobs: DownloadJob[];
   downloadingIds: Set<string>;
   errorMessage: string | null;
   loadCandidates: (runtimeClient: RuntimeClient, tabId: number) => Promise<void>;
   setCandidates: (candidates: MediaCandidate[]) => void;
   removeItem: (id: string) => void;
   setQuality: (id: string, quality: string) => void;
+  setAudioTracks: (id: string, trackIds: string[]) => void;
+  setSubtitleTracks: (id: string, trackIds: string[]) => void;
+  setTrim: (id: string, trim: DetectedMedia['trim']) => void;
+  getDownloadSelection: (id: string) => DownloadSelection | undefined;
+  upsertQueueJob: (job: DownloadJob) => void;
   downloadItem: (id: string) => void;
   setSurfaceState: (surfaceState: PanelSurfaceState) => void;
   setErrorMessage: (errorMessage: string | null) => void;
 }
 
-export const usePanelStore = create<PanelStoreState>((set) => ({
+export const usePanelStore = create<PanelStoreState>((set, get) => ({
   surfaceState: 'detecting',
   candidates: [],
   mediaItems: [],
+  queueJobs: [],
   downloadingIds: new Set<string>(),
   errorMessage: null,
   loadCandidates: async (runtimeClient, tabId) => {
@@ -59,10 +70,12 @@ export const usePanelStore = create<PanelStoreState>((set) => ({
     set((state) => {
       const mediaItems = state.mediaItems.filter((item) => item.id !== id);
       const candidates = state.candidates.filter((candidate) => candidate.id !== id);
+      const queueJobs = state.queueJobs.filter((job) => job.candidateId !== id);
 
       return {
         candidates,
         mediaItems,
+        queueJobs,
         surfaceState: mediaItems.length === 0 ? 'empty' : 'results',
       };
     }),
@@ -72,6 +85,55 @@ export const usePanelStore = create<PanelStoreState>((set) => ({
         item.id === id ? { ...item, selectedQuality: quality } : item,
       ),
     })),
+  setAudioTracks: (id, trackIds) =>
+    set((state) => ({
+      mediaItems: state.mediaItems.map((item) =>
+        item.id === id ? { ...item, selectedAudioTrackIds: trackIds } : item,
+      ),
+    })),
+  setSubtitleTracks: (id, trackIds) =>
+    set((state) => ({
+      mediaItems: state.mediaItems.map((item) =>
+        item.id === id ? { ...item, selectedSubtitleTrackIds: trackIds } : item,
+      ),
+    })),
+  setTrim: (id, trim) =>
+    set((state) => ({
+      mediaItems: state.mediaItems.map((item) =>
+        item.id === id ? { ...item, trim } : item,
+      ),
+  })),
+  getDownloadSelection: (id) => {
+    const item = get().mediaItems.find((media) => media.id === id);
+
+    if (!item) {
+      return undefined;
+    }
+
+    return {
+      mode: 'custom',
+      ...(item.selectedQuality ? { variantId: item.selectedQuality } : {}),
+      ...(item.selectedAudioTrackIds?.length
+        ? { audioTrackIds: item.selectedAudioTrackIds }
+        : {}),
+      ...(item.selectedSubtitleTrackIds?.length
+        ? { subtitleTrackIds: item.selectedSubtitleTrackIds }
+        : {}),
+      ...(item.trim ? { trim: item.trim } : {}),
+    };
+  },
+  upsertQueueJob: (job) =>
+    set((state) => {
+      const existing = state.queueJobs.some((queuedJob) => queuedJob.id === job.id);
+
+      return {
+        queueJobs: existing
+          ? state.queueJobs.map((queuedJob) =>
+              queuedJob.id === job.id ? job : queuedJob,
+            )
+          : [...state.queueJobs, job],
+      };
+    }),
   downloadItem: (id) =>
     set((state) => ({
       downloadingIds: new Set([...state.downloadingIds, id]),

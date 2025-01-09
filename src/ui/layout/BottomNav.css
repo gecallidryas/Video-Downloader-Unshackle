@@ -10,7 +10,8 @@
   align-items: center;
   height: 48px;
   background: var(--surface-container-lowest);
-  border-top: 1px solid var(--outline-variant);
+  border-top: 1px solid var(--outline);
+  box-shadow: var(--control-shadow);
 }
 
 .bottom-nav__btn {

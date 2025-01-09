@@ -1,9 +1,14 @@
-import type { MediaCandidate } from '@/video_downloader_types_skeleton';
+import type {
+  DownloadSelection,
+  MediaCandidate,
+} from '@/video_downloader_types_skeleton';
+import { isOffscreenCommand, type OffscreenCommand } from '@/src/shared/contracts/offscreen';
 
 export type PreviewHostMessage =
   | {
       type: 'OPEN_PREVIEW';
       candidate: MediaCandidate;
+      selection?: DownloadSelection;
     }
   | {
       type: 'CLOSE_PREVIEW';
@@ -12,10 +17,11 @@ export type PreviewHostMessage =
 
 export interface PreviewHostResponse {
   ok: boolean;
+  command?: OffscreenCommand['type'];
 }
 
 export interface PreviewHost {
-  handleMessage(message: PreviewHostMessage): PreviewHostResponse;
+  handleMessage(message: PreviewHostMessage | OffscreenCommand): PreviewHostResponse;
   getCurrentCandidate(): MediaCandidate | undefined;
 }
 
@@ -36,6 +42,10 @@ export function createPreviewHost(): PreviewHost {
 
   return {
     handleMessage(message) {
+      if (isOffscreenCommand(message)) {
+        return { ok: true, command: message.type };
+      }
+
       if (message.type === 'OPEN_PREVIEW') {
         currentCandidate = message.candidate;
 
@@ -64,12 +74,14 @@ export function registerPreviewHost(
       typeof message !== 'object' ||
       message === null ||
       !('type' in message) ||
-      (message.type !== 'OPEN_PREVIEW' && message.type !== 'CLOSE_PREVIEW')
+      (message.type !== 'OPEN_PREVIEW' &&
+        message.type !== 'CLOSE_PREVIEW' &&
+        !isOffscreenCommand(message))
     ) {
       return undefined;
     }
 
-    sendResponse(previewHost.handleMessage(message as PreviewHostMessage));
+    sendResponse(previewHost.handleMessage(message as PreviewHostMessage | OffscreenCommand));
 
     return false;
   });

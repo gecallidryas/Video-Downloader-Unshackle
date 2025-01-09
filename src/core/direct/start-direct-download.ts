@@ -51,6 +51,22 @@ async function defaultDownloadFile(
   candidate: MediaCandidate,
 ): Promise<JobOutput> {
   const probe = probeDirectMedia(candidate);
+  const downloads = globalThis.chrome?.downloads;
+
+  if (downloads?.download) {
+    const downloadId = await downloads.download({
+      url: probe.url,
+      filename: probe.fileName,
+      saveAs: false,
+    });
+
+    return {
+      fileName: probe.fileName,
+      mimeType: probe.mimeType,
+      outputUrl: probe.url,
+      downloadId,
+    };
+  }
 
   return {
     fileName: probe.fileName,

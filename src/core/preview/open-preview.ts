@@ -1,4 +1,7 @@
-import type { MediaCandidate } from '@/video_downloader_types_skeleton';
+import type {
+  DownloadSelection,
+  MediaCandidate,
+} from '@/video_downloader_types_skeleton';
 import type { PreviewHostMessage } from '@/src/offscreen/preview-host';
 
 export interface OpenPreviewResult {
@@ -16,6 +19,10 @@ export interface OpenPreviewDependencies {
     request: OffscreenPreviewDocumentRequest,
   ) => Promise<void>;
   sendPreviewMessage: (message: PreviewHostMessage) => Promise<OpenPreviewResult>;
+}
+
+export interface OpenPreviewOptions {
+  selection?: DownloadSelection;
 }
 
 export const offscreenPreviewDocumentRequest: OffscreenPreviewDocumentRequest = {
@@ -74,11 +81,13 @@ export async function openPreview(
     ensureOffscreenDocument: ensureChromeOffscreenDocument,
     sendPreviewMessage: sendChromePreviewMessage,
   },
+  options: OpenPreviewOptions = {},
 ): Promise<OpenPreviewResult> {
   await dependencies.ensureOffscreenDocument(offscreenPreviewDocumentRequest);
 
   return dependencies.sendPreviewMessage({
     type: 'OPEN_PREVIEW',
     candidate,
+    ...(options.selection ? { selection: options.selection } : {}),
   });
 }

@@ -1,4 +1,5 @@
 import { render, screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { vi } from 'vitest';
 import { SidePanelApp } from '../SidePanelApp';
 import { usePanelStore } from '@/src/state/usePanelStore';
@@ -57,6 +58,22 @@ function buildRuntimeClient(candidates: MediaCandidate[]): RuntimeClient {
       failed: 0,
       completed: 0,
     }),
+    requestHostAccess: vi.fn().mockResolvedValue({
+      granted: true,
+      origin: 'https://example.com',
+    }),
+    getDebugEvidence: vi.fn().mockResolvedValue([]),
+    startDownload: vi.fn().mockResolvedValue({
+      id: 'job-1',
+      candidateId: candidates[0]?.id ?? 'candidate-1',
+      tabId: 7,
+      phase: 'queued',
+      createdAt: 1,
+      updatedAt: 1,
+      selection: { mode: 'custom' },
+      progressPct: 0,
+      bytesDownloaded: 0,
+    }),
   };
 }
 
@@ -65,6 +82,7 @@ beforeEach(() => {
     surfaceState: 'detecting',
     candidates: [],
     mediaItems: [],
+    queueJobs: [],
     errorMessage: null,
     downloadingIds: new Set<string>(),
   });
@@ -133,4 +151,52 @@ test('renders protected candidates with warning copy and blocks generic download
   ).toBeInTheDocument();
   expect(screen.getByRole('button', { name: /protected media/i })).toBeDisabled();
   expect(screen.queryByRole('button', { name: /^download$/i })).not.toBeInTheDocument();
+});
+
+test('starts download with current quality, track, and trim selections', async () => {
+  const user = userEvent.setup();
+  const runtimeClient = buildRuntimeClient([
+    buildCandidate({
+      id: 'hls-1',
+      displayName: 'Selectable HLS stream',
+      protocol: 'hls',
+      manifestUrl: 'https://cdn.example.com/master.m3u8',
+      fileExtensionHint: undefined,
+      variants: [
+        { id: 'variant-1080', height: 1080, isDefault: true },
+        { id: 'variant-720', height: 720 },
+      ],
+      audioTracks: [
+        { id: 'audio-en', kind: 'audio', label: 'English', language: 'en' },
+        { id: 'audio-es', kind: 'audio', label: 'Spanish', language: 'es' },
+      ],
+      subtitleTracks: [
+        { id: 'subs-en', kind: 'subtitle', label: 'English captions', language: 'en' },
+      ],
+    }),
+  ]);
+
+  render(<SidePanelApp activeTabId={7} runtimeClient={runtimeClient} />);
+
+  expect(await screen.findByText('Selectable HLS stream')).toBeInTheDocument();
+  await user.selectOptions(screen.getByRole('combobox', { name: /quality/i }), 'variant-720');
+  await user.selectOptions(screen.getByRole('combobox', { name: /audio/i }), 'audio-es');
+  await user.selectOptions(screen.getByRole('combobox', { name: /subtitles/i }), 'subs-en');
+  await user.type(screen.getByLabelText(/trim start/i), '0:10');
+  await user.type(screen.getByLabelText(/trim end/i), '0:20');
+  await user.click(screen.getByRole('button', { name: /^download$/i }));
+
+  expect(runtimeClient.startDownload).toHaveBeenCalledWith('hls-1', {
+    mode: 'custom',
+    variantId: 'variant-720',
+    audioTrackIds: ['audio-es'],
+    subtitleTrackIds: ['subs-en'],
+    trim: { startSec: 10, endSec: 20 },
+  });
+
+  await user.click(screen.getByRole('button', { name: /queue/i }));
+  expect(screen.getByRole('tab', { name: /pending 1/i })).toBeInTheDocument();
+
+  await user.click(screen.getByRole('tab', { name: /pending 1/i }));
+  expect(screen.getByText('Selectable HLS stream')).toBeInTheDocument();
 });

@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'vitest';
 import masterPlaylist from '@/src/fixtures/hls/master.m3u8?raw';
 import protectedPlaylist from '@/src/fixtures/hls/protected.m3u8?raw';
+import { classifyHlsProtection } from '../classify-hls-protection';
 import { parseHlsManifest } from '../parse-hls-manifest';
 
 describe('parseHlsManifest', () => {
@@ -68,6 +69,95 @@ describe('parseHlsManifest', () => {
       keyFormat: 'com.apple.streamingkeydelivery',
       keyUri: 'skd://protected-key',
       reason: 'HLS manifest declares encrypted media segments.',
+    });
+  });
+
+  test('parses media playlist maps, byte ranges, discontinuities, and VOD duration', () => {
+    const manifest = parseHlsManifest({
+      manifestUrl: 'https://cdn.example.com/hls/vod/prog.m3u8',
+      content: [
+        '#EXTM3U',
+        '#EXT-X-TARGETDURATION:6',
+        '#EXT-X-MAP:URI="init.mp4",BYTERANGE="720@0"',
+        '#EXTINF:5.5,',
+        '#EXT-X-BYTERANGE:1000@720',
+        'seg-1.m4s',
+        '#EXT-X-DISCONTINUITY',
+        '#EXTINF:4.5,',
+        '#EXT-X-BYTERANGE:900',
+        'seg-2.m4s',
+        '#EXT-X-ENDLIST',
+      ].join('\n'),
+    });
+
+    expect(manifest).toMatchObject({
+      playlistKind: 'media',
+      isLive: false,
+      isEvent: false,
+      durationSec: 10,
+      initSegmentUrl: 'https://cdn.example.com/hls/vod/init.mp4',
+      initSegmentByteRange: { start: 0, end: 719 },
+    });
+    expect(manifest.segments).toEqual([
+      expect.objectContaining({
+        id: 'hls-segment-1',
+        index: 1,
+        durationSec: 5.5,
+        byteRange: { start: 720, end: 1719 },
+      }),
+      expect.objectContaining({
+        id: 'hls-segment-2',
+        index: 2,
+        durationSec: 4.5,
+        discontinuity: true,
+        byteRange: { start: 1720, end: 2619 },
+      }),
+    ]);
+  });
+
+  test('detects event and live playlist types', () => {
+    const eventManifest = parseHlsManifest({
+      manifestUrl: 'https://cdn.example.com/hls/event.m3u8',
+      content: [
+        '#EXTM3U',
+        '#EXT-X-PLAYLIST-TYPE:EVENT',
+        '#EXT-X-TARGETDURATION:4',
+        '#EXTINF:4,',
+        'event-1.ts',
+      ].join('\n'),
+    });
+    const liveManifest = parseHlsManifest({
+      manifestUrl: 'https://cdn.example.com/hls/live.m3u8',
+      content: ['#EXTM3U', '#EXT-X-TARGETDURATION:4', '#EXTINF:4,', 'live-1.ts'].join(
+        '\n',
+      ),
+    });
+
+    expect(eventManifest).toMatchObject({ isLive: true, isEvent: true });
+    expect(liveManifest).toMatchObject({ isLive: true, isEvent: false });
+  });
+
+  test('classifies AES-128 clear-key and DRM-style HLS protection separately', () => {
+    expect(
+      classifyHlsProtection([
+        '#EXT-X-KEY:METHOD=AES-128,URI="https://keys.example.com/key",IV=0x01',
+      ]),
+    ).toEqual({
+      kind: 'aes-128',
+      method: 'AES-128',
+      keyUri: 'https://keys.example.com/key',
+      iv: '0x01',
+      reason: 'HLS manifest declares AES-128 clear-key encrypted segments.',
+    });
+
+    expect(
+      classifyHlsProtection([
+        '#EXT-X-KEY:METHOD=SAMPLE-AES,KEYFORMAT="com.apple.streamingkeydelivery",URI="skd://asset"',
+      ]),
+    ).toMatchObject({
+      kind: 'sample-aes',
+      method: 'SAMPLE-AES',
+      keyFormat: 'com.apple.streamingkeydelivery',
     });
   });
 });

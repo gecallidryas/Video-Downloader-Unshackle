@@ -18,6 +18,11 @@ async function toBlob(data: ArrayBuffer | Uint8Array | Blob): Promise<Blob> {
 
 export function createMemoryBinaryStore(): BinaryStore {
   const files = new Map<string, Blob>();
+  const store = {
+    async list(prefix = '') {
+      return Array.from(files.keys()).filter((path) => path.startsWith(prefix));
+    },
+  };
 
   return {
     async put(path, data) {
@@ -41,7 +46,12 @@ export function createMemoryBinaryStore(): BinaryStore {
     async exists(path) {
       return files.has(path);
     },
+    ...store,
   };
+}
+
+export interface BinaryStoreWithListing extends BinaryStore {
+  list?(prefix?: string): Promise<string[]>;
 }
 
 interface FileHandleLike {
@@ -122,4 +132,119 @@ export async function createOpfsBinaryStore(): Promise<BinaryStore> {
   };
 
   return store;
+}
+
+export interface OpfsJobStore {
+  writeStream(
+    jobId: string,
+    filename: string,
+    chunks: Iterable<Uint8Array> | AsyncIterable<Uint8Array>,
+  ): Promise<string>;
+  readFile(jobId: string, filename: string): Promise<Uint8Array>;
+  listFiles(jobId: string): Promise<string[]>;
+  deleteJobDirectory(jobId: string): Promise<void>;
+}
+
+function jobPath(jobId: string, filename: string): string {
+  return `jobs/${jobId}/${filename}`;
+}
+
+async function blobToBytes(blob: Blob): Promise<Uint8Array> {
+  const blobWithArrayBuffer = blob as Blob & {
+    arrayBuffer?: () => Promise<ArrayBuffer>;
+  };
+
+  if (typeof blobWithArrayBuffer.arrayBuffer === 'function') {
+    return new Uint8Array(await blobWithArrayBuffer.arrayBuffer());
+  }
+
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+
+    reader.addEventListener('load', () => {
+      const result = reader.result;
+
+      if (result instanceof ArrayBuffer) {
+        resolve(new Uint8Array(result));
+        return;
+      }
+
+      resolve(new TextEncoder().encode(String(result ?? '')));
+    });
+    reader.addEventListener('error', () => reject(reader.error));
+    reader.readAsArrayBuffer(blob);
+  });
+}
+
+export function createOpfsJobStore(binaryStore: BinaryStoreWithListing): OpfsJobStore {
+  const filesByJob = new Map<string, Set<string>>();
+
+  return {
+    async writeStream(jobId, filename, chunks) {
+      const parts: Uint8Array[] = [];
+
+      for await (const chunk of chunks) {
+        parts.push(chunk);
+      }
+
+      const byteLength = parts.reduce((total, part) => total + part.byteLength, 0);
+      const bytes = new Uint8Array(byteLength);
+      let offset = 0;
+
+      for (const part of parts) {
+        bytes.set(part, offset);
+        offset += part.byteLength;
+      }
+
+      await binaryStore.put(jobPath(jobId, filename), bytes);
+
+      if (!filesByJob.has(jobId)) {
+        filesByJob.set(jobId, new Set());
+      }
+
+      filesByJob.get(jobId)?.add(filename);
+
+      return filename;
+    },
+
+    async readFile(jobId, filename) {
+      return blobToBytes(await binaryStore.get(jobPath(jobId, filename)));
+    },
+
+    async listFiles(jobId) {
+      const tracked = filesByJob.get(jobId);
+
+      if (tracked) {
+        return Array.from(tracked).sort();
+      }
+
+      const paths = await binaryStore.list?.(`jobs/${jobId}/`);
+
+      return paths?.map((path) => path.split('/').pop()).filter((name): name is string => Boolean(name)) ?? [];
+    },
+
+    async deleteJobDirectory(jobId) {
+      const tracked = await this.listFiles(jobId);
+
+      for (const filename of tracked) {
+        await binaryStore.delete(jobPath(jobId, filename));
+      }
+
+      filesByJob.delete(jobId);
+    },
+  };
+}
+
+export interface StorageManagerLike {
+  getDirectory?: () => Promise<unknown>;
+}
+
+export async function createBestAvailableBinaryStore(
+  navigatorLike: { storage?: StorageManagerLike } = navigator,
+): Promise<BinaryStore> {
+  if (typeof navigatorLike.storage?.getDirectory === 'function') {
+    return createOpfsBinaryStore();
+  }
+
+  return createMemoryBinaryStore();
 }
