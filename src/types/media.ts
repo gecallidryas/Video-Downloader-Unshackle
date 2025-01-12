@@ -16,6 +16,18 @@ export interface QualityOption {
   value: string;
 }
 
+export interface TrackOption {
+  id: string;
+  label: string;
+  language?: string;
+  default?: boolean;
+}
+
+export interface MediaTrimSelection {
+  startSec?: number;
+  endSec?: number;
+}
+
 export interface MediaPrimaryAction {
   kind: 'download' | 'blocked';
   label: string;
@@ -32,6 +44,11 @@ export interface DetectedMedia {
   mediaType: 'video' | 'audio';
   qualities: QualityOption[];
   selectedQuality: string;
+  audioTracks?: TrackOption[];
+  selectedAudioTrackIds?: string[];
+  subtitleTracks?: TrackOption[];
+  selectedSubtitleTrackIds?: string[];
+  trim?: MediaTrimSelection | null;
   protocol?: StreamProtocol;
   status?: CandidateStatus;
   protection?: ProtectionInfo;

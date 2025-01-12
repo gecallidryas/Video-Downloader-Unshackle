@@ -16,6 +16,8 @@
 .side-panel__body {
   flex: 1;
   overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--scrollbar-thumb) transparent;
   padding: var(--panel-padding);
   padding-bottom: 60px;
   display: flex;
@@ -32,10 +34,12 @@
 }
 
 .side-panel__badge {
-  background: var(--surface-container-high);
-  color: var(--on-surface-variant);
+  background: var(--primary);
+  color: var(--primary-action-text);
   padding: 2px 6px;
   border-radius: var(--radius);
+  border: 1px solid var(--primary);
+  box-shadow: var(--control-shadow);
 }
 
 .side-panel__list {

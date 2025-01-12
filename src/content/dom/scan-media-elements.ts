@@ -2,6 +2,7 @@ import type {
   DetectionEvidence,
   MediaKind,
 } from '@/video_downloader_types_skeleton';
+import type { CollectedPageContext } from './collect-page-context';
 
 export interface MediaSourceEvidence {
   url: string;
@@ -27,11 +28,13 @@ export interface DomMediaElementEvidence extends DetectionEvidence {
   durationSec?: number;
   sources: MediaSourceEvidence[];
   tracks: MediaTrackEvidence[];
+  pageContext?: CollectedPageContext;
 }
 
 export interface ScanMediaElementsOptions {
   now?: () => number;
   pageUrl?: string;
+  pageContext?: CollectedPageContext;
 }
 
 function resolveUrl(url: string, baseUrl: string): string {
@@ -151,6 +154,7 @@ function toMediaEvidence(
     durationSec: getElementDuration(element),
     sources,
     tracks: collectTracks(element, pageUrl),
+    pageContext: options.pageContext,
   };
 }
 

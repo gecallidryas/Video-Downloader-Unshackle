@@ -1,6 +1,9 @@
 import type { DetectedMedia } from '@/src/types/media';
 import type { ProviderPolicyResult } from '@/src/core/policy/evaluate-provider-policy';
 import { ProtectedActionGate } from '@/src/ui/protected/ProtectedActionGate';
+import { TrackPicker } from './TrackPicker';
+import { TrimControls } from './TrimControls';
+import { VariantPicker } from './VariantPicker';
 import './MediaCard.css';
 
 interface MediaCardProps {
@@ -9,10 +12,32 @@ interface MediaCardProps {
   onRemove: () => void;
   onDownload: () => void;
   onQualityChange: (quality: string) => void;
+  onAudioTrackChange?: (trackIds: string[]) => void;
+  onSubtitleTrackChange?: (trackIds: string[]) => void;
+  onTrimChange?: (trim: DetectedMedia['trim']) => void;
   providerPolicy?: ProviderPolicyResult;
   onProtectedProceed?: (
     policy: Extract<ProviderPolicyResult, { kind: 'authorized-workflow' }>,
   ) => void;
+}
+
+function selectedQualityLabel(media: DetectedMedia): string {
+  return (
+    media.qualities.find((quality) => quality.value === media.selectedQuality)?.label ??
+    media.selectedQuality
+  );
+}
+
+function protectionBadge(media: DetectedMedia): string | null {
+  if (media.status === 'protected' || media.protection?.kind === 'drm') {
+    return 'Protected';
+  }
+
+  if (media.protection?.kind === 'aes-128') {
+    return 'AES-128';
+  }
+
+  return null;
 }
 
 export function MediaCard({
@@ -21,28 +46,38 @@ export function MediaCard({
   onRemove,
   onDownload,
   onQualityChange,
+  onAudioTrackChange = () => {},
+  onSubtitleTrackChange = () => {},
+  onTrimChange = () => {},
   providerPolicy,
   onProtectedProceed,
 }: MediaCardProps) {
   const isAudio = media.mediaType === 'audio';
-  const singleQuality = media.qualities.length <= 1;
   const primaryAction = media.primaryAction ?? {
     kind: 'download' as const,
     label: 'Download',
   };
   const isBlocked = primaryAction.kind === 'blocked';
+  const protectedLabel = protectionBadge(media);
+  const trimEnabled = media.protocol === 'hls' || media.protocol === 'dash';
 
   return (
     <div className="media-card">
-      {/* ── Top row: thumbnail + info ── */}
       <div className="media-card__row">
         <div className="media-card__thumb">
-          {isAudio ? (
+          {media.thumbnailUrl ? (
+            <img
+              className="media-card__thumb-img"
+              src={media.thumbnailUrl}
+              alt={`${media.title} thumbnail`}
+              referrerPolicy="no-referrer"
+            />
+          ) : isAudio ? (
             <span className="media-card__audio-icon" data-testid="audio-icon">
-              ♫
+              Audio
             </span>
           ) : (
-            <span className="media-card__video-icon">▶</span>
+            <span className="media-card__video-icon">Play</span>
           )}
           <span className="media-card__duration">{media.duration}</span>
         </div>
@@ -53,26 +88,47 @@ export function MediaCard({
           </span>
           <div className="media-card__meta">
             <span className="media-card__chip">{media.format}</span>
+            {media.selectedQuality ? (
+              <span className="media-card__chip media-card__chip--quality">
+                {selectedQualityLabel(media)}
+              </span>
+            ) : null}
+            {protectedLabel ? (
+              <span className="media-card__chip media-card__chip--protected">
+                {protectedLabel}
+              </span>
+            ) : null}
             <span className="media-card__size label-xs">{media.size}</span>
           </div>
         </div>
       </div>
 
-      {/* ── Bottom row: quality selector + actions ── */}
+      <div className="media-card__controls">
+        <TrackPicker
+          kind="audio"
+          tracks={media.audioTracks ?? []}
+          selectedIds={media.selectedAudioTrackIds ?? []}
+          onChange={onAudioTrackChange}
+        />
+        <TrackPicker
+          kind="subtitle"
+          tracks={media.subtitleTracks ?? []}
+          selectedIds={media.selectedSubtitleTrackIds ?? []}
+          onChange={onSubtitleTrackChange}
+        />
+        <TrimControls
+          enabled={trimEnabled}
+          value={media.trim ?? null}
+          onChange={onTrimChange}
+        />
+      </div>
+
       <div className="media-card__actions">
-        <select
-          className="media-card__quality"
-          value={media.selectedQuality}
-          disabled={singleQuality}
-          onChange={(e) => onQualityChange(e.target.value)}
-          aria-label="Quality"
-        >
-          {media.qualities.map((q) => (
-            <option key={q.value} value={q.value}>
-              {q.label}
-            </option>
-          ))}
-        </select>
+        <VariantPicker
+          options={media.qualities}
+          selectedValue={media.selectedQuality}
+          onChange={onQualityChange}
+        />
 
         <div className="media-card__buttons">
           <button

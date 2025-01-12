@@ -106,6 +106,62 @@ describe('classifyCandidate', () => {
     expect(candidate.evidence).toHaveLength(2);
   });
 
+  test('prefers detector-provided titles over URL filenames', () => {
+    const candidate = classifyCandidate({
+      tabId: 7,
+      pageUrl: 'https://example.com/watch',
+      evidence: [
+        networkEvidence({
+          url: 'https://cdn.example.com/video.mp4',
+          evidence: baseDetectionEvidence({
+            url: 'https://cdn.example.com/video.mp4',
+            notes: ['category:direct_media', 'title:Episode 4'],
+          }),
+        }),
+      ],
+      now: () => 250,
+    });
+
+    expect(candidate.displayName).toBe('Episode 4');
+  });
+
+  test('uses player-config metadata for manifest candidates', () => {
+    const candidate = classifyCandidate({
+      tabId: 7,
+      pageUrl: 'https://example.com/watch',
+      evidence: [
+        baseDetectionEvidence({
+          source: 'player-config',
+          url: 'https://cdn.example.com/master.m3u8',
+          notes: [
+            'protocol:hls',
+            'title:Launch Event',
+            'thumbnail-url:https://cdn.example.com/thumb.jpg',
+            'resolution:720p',
+            'bitrate:2400000',
+          ],
+        }),
+      ],
+      now: () => 275,
+    });
+
+    expect(candidate).toMatchObject({
+      protocol: 'hls',
+      manifestUrl: 'https://cdn.example.com/master.m3u8',
+      displayName: 'Launch Event',
+      thumbnails: {
+        heroUrl: 'https://cdn.example.com/thumb.jpg',
+      },
+      variants: [
+        expect.objectContaining({
+          height: 720,
+          bitrate: 2400000,
+          isDefault: true,
+        }),
+      ],
+    });
+  });
+
   test('normalizes HLS and DASH manifest evidence into partial candidates', () => {
     const hlsCandidate = classifyCandidate({
       tabId: 7,

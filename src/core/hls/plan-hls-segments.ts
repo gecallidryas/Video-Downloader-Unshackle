@@ -11,7 +11,10 @@ export function planHlsSegments(
   manifest: ParsedHlsManifest,
   options: PlanHlsSegmentsOptions,
 ): SegmentPlan {
-  if (manifest.protection.kind !== 'none') {
+  if (
+    manifest.protection.kind !== 'none' &&
+    manifest.protection.kind !== 'aes-128'
+  ) {
     throw new Error('Protected HLS manifests cannot be planned by the generic HLS planner.');
   }
 
@@ -28,6 +31,7 @@ export function planHlsSegments(
           index: 0,
           url: manifest.initSegmentUrl,
           initSegment: true,
+          byteRange: manifest.initSegmentByteRange,
           trackType: 'video' as const,
         },
       ]

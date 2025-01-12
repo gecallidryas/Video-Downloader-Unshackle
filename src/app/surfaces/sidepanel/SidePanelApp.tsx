@@ -7,14 +7,17 @@ import { ProtectedWarning } from '@/src/ui/feedback/ProtectedWarning';
 import { RuntimeStatus } from '@/src/ui/feedback/RuntimeStatus';
 import { HistoryApp } from '@/src/app/surfaces/history/HistoryApp';
 import { PopupApp } from '@/src/app/surfaces/popup/PopupApp';
+import { QueueView, type QueueViewItem } from '@/src/ui/queue/QueueView';
 import {
   createRuntimeClient,
   type RuntimeClient,
 } from '@/src/lib/runtime/client';
+import { resolveActiveTabIdFromChrome } from './resolve-active-tab-id';
 import { evaluateProviderPolicy } from '@/src/core/policy/evaluate-provider-policy';
+import type { DownloadJob, DownloadPhase } from '@/video_downloader_types_skeleton';
 import './SidePanelApp.css';
 
-type PanelTab = 'history' | 'current' | 'settings';
+type PanelTab = 'history' | 'current' | 'queue' | 'settings';
 
 interface DetectionViewProps {
   activeTabId?: number;
@@ -29,7 +32,13 @@ function DetectionView({ activeTabId, runtimeClient }: DetectionViewProps) {
   const loadCandidates = usePanelStore((s) => s.loadCandidates);
   const removeItem = usePanelStore((s) => s.removeItem);
   const setQuality = usePanelStore((s) => s.setQuality);
+  const setAudioTracks = usePanelStore((s) => s.setAudioTracks);
+  const setSubtitleTracks = usePanelStore((s) => s.setSubtitleTracks);
+  const setTrim = usePanelStore((s) => s.setTrim);
+  const getDownloadSelection = usePanelStore((s) => s.getDownloadSelection);
+  const upsertQueueJob = usePanelStore((s) => s.upsertQueueJob);
   const downloadItem = usePanelStore((s) => s.downloadItem);
+  const setErrorMessage = usePanelStore((s) => s.setErrorMessage);
   const fileCount = mediaItems.length;
   const fileLabel = `${fileCount} ${fileCount === 1 ? 'File' : 'Files'}`;
   const showResults = surfaceState === 'results';
@@ -47,6 +56,25 @@ function DetectionView({ activeTabId, runtimeClient }: DetectionViewProps) {
     void loadCandidates(runtimeClient, activeTabId);
   }, [activeTabId, loadCandidates, runtimeClient]);
 
+  async function startDownload(id: string) {
+    const selection = getDownloadSelection(id);
+
+    if (!runtimeClient || !selection) {
+      downloadItem(id);
+      return;
+    }
+
+    try {
+      const job = await runtimeClient.startDownload(id, selection);
+      upsertQueueJob(job);
+      downloadItem(id);
+    } catch (error) {
+      setErrorMessage(
+        error instanceof Error ? error.message : 'Unable to start download',
+      );
+    }
+  }
+
   return (
     <>
       <div className="side-panel__section-header">
@@ -62,8 +90,13 @@ function DetectionView({ activeTabId, runtimeClient }: DetectionViewProps) {
               media={item}
               onPreview={() => {}}
               onRemove={() => removeItem(item.id)}
-              onDownload={() => downloadItem(item.id)}
+              onDownload={() => void startDownload(item.id)}
               onQualityChange={(q) => setQuality(item.id, q)}
+              onAudioTrackChange={(trackIds) => setAudioTracks(item.id, trackIds)}
+              onSubtitleTrackChange={(trackIds) =>
+                setSubtitleTracks(item.id, trackIds)
+              }
+              onTrimChange={(trim) => setTrim(item.id, trim)}
               providerPolicy={
                 candidateById.has(item.id)
                   ? evaluateProviderPolicy(candidateById.get(item.id)!)
@@ -87,6 +120,77 @@ function DetectionView({ activeTabId, runtimeClient }: DetectionViewProps) {
   );
 }
 
+function queueStatusFromPhase(phase: DownloadPhase): QueueViewItem['status'] {
+  if (phase === 'queued') {
+    return 'pending';
+  }
+
+  if (phase === 'paused') {
+    return 'paused';
+  }
+
+  if (phase === 'completed') {
+    return 'completed';
+  }
+
+  if (phase === 'failed' || phase === 'cancelled') {
+    return 'failed';
+  }
+
+  return 'running';
+}
+
+function queueStatusText(job: DownloadJob): string {
+  if (job.failure?.message) {
+    return job.failure.message;
+  }
+
+  if (job.phase === 'cancelled') {
+    return 'Cancelled';
+  }
+
+  return job.phase;
+}
+
+function QueuePanel() {
+  const mediaItems = usePanelStore((s) => s.mediaItems);
+  const queueJobs = usePanelStore((s) => s.queueJobs);
+  const downloadingIds = usePanelStore((s) => s.downloadingIds);
+  const queueItems = useMemo<QueueViewItem[]>(
+    () => {
+      const mediaById = new Map(mediaItems.map((item) => [item.id, item]));
+      const startedJobIds = new Set(queueJobs.map((job) => job.candidateId));
+      const runtimeQueueItems: QueueViewItem[] = queueJobs.map((job) => {
+        const item = mediaById.get(job.candidateId);
+
+        return {
+          id: job.id,
+          title: item?.title ?? job.candidateId,
+          status: queueStatusFromPhase(job.phase),
+          progressPct: job.progressPct,
+          statusText: queueStatusText(job),
+          outputLabel: item?.format ?? job.output?.fileName,
+        };
+      });
+      const localQueueItems: QueueViewItem[] = mediaItems
+        .filter((item) => downloadingIds.has(item.id) && !startedJobIds.has(item.id))
+        .map((item) => ({
+          id: item.id,
+          title: item.title,
+          status: 'running' as const,
+          progressPct: 1,
+          statusText: 'Queued',
+          outputLabel: item.format,
+        }));
+
+      return [...runtimeQueueItems, ...localQueueItems];
+    },
+    [downloadingIds, mediaItems, queueJobs],
+  );
+
+  return <QueueView items={queueItems} onAction={() => {}} />;
+}
+
 interface SidePanelAppProps {
   activeTabId?: number;
   runtimeClient?: RuntimeClient;
@@ -97,10 +201,30 @@ export function SidePanelApp({
   runtimeClient,
 }: SidePanelAppProps = {}) {
   const [activeTab, setActiveTab] = useState<PanelTab>('current');
+  const [resolvedActiveTabId, setResolvedActiveTabId] = useState(activeTabId);
   const resolvedRuntimeClient = useMemo(
     () => runtimeClient ?? createRuntimeClient(),
     [runtimeClient],
   );
+
+  useEffect(() => {
+    if (activeTabId !== undefined) {
+      setResolvedActiveTabId(activeTabId);
+      return;
+    }
+
+    let cancelled = false;
+
+    void resolveActiveTabIdFromChrome().then((tabId) => {
+      if (!cancelled) {
+        setResolvedActiveTabId(tabId);
+      }
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeTabId]);
 
   return (
     <div className="side-panel">
@@ -109,10 +233,11 @@ export function SidePanelApp({
       <main className="side-panel__body">
         {activeTab === 'current' && (
           <DetectionView
-            activeTabId={activeTabId}
+            activeTabId={resolvedActiveTabId}
             runtimeClient={resolvedRuntimeClient}
           />
         )}
+        {activeTab === 'queue' && <QueuePanel />}
         {activeTab === 'history' && <HistoryApp embedded />}
         {activeTab === 'settings' && <PopupApp embedded />}
       </main>
@@ -121,6 +246,7 @@ export function SidePanelApp({
         activeTab={activeTab}
         onHistoryClick={() => setActiveTab('history')}
         onCurrentClick={() => setActiveTab('current')}
+        onQueueClick={() => setActiveTab('queue')}
         onSettingsClick={() => setActiveTab('settings')}
       />
     </div>

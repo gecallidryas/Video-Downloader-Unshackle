@@ -2,15 +2,56 @@ import { useSettingsStore } from '@/src/state/useSettingsStore';
 import './PopupApp.css';
 
 function SettingsContent() {
+  const theme = useSettingsStore((s) => s.theme);
+  const setTheme = useSettingsStore((s) => s.setTheme);
   const autoDetect = useSettingsStore((s) => s.autoDetectEnabled);
   const toggleAutoDetect = useSettingsStore((s) => s.toggleAutoDetect);
+  const autoScanEnabled = useSettingsStore((s) => s.autoScanEnabled);
+  const setAutoScanEnabled = useSettingsStore((s) => s.setAutoScanEnabled);
+  const networkCaptureEnabled = useSettingsStore((s) => s.networkCaptureEnabled);
+  const setNetworkCaptureEnabled = useSettingsStore((s) => s.setNetworkCaptureEnabled);
   const notifications = useSettingsStore((s) => s.notificationsEnabled);
   const toggleNotifications = useSettingsStore((s) => s.toggleNotifications);
   const preferredQuality = useSettingsStore((s) => s.preferredQuality);
   const setPreferredQuality = useSettingsStore((s) => s.setPreferredQuality);
+  const maxConcurrentDownloads = useSettingsStore((s) => s.maxConcurrentDownloads);
+  const setMaxConcurrentDownloads = useSettingsStore((s) => s.setMaxConcurrentDownloads);
+  const maxConcurrentSegments = useSettingsStore((s) => s.maxConcurrentSegments);
+  const setMaxConcurrentSegments = useSettingsStore((s) => s.setMaxConcurrentSegments);
+  const defaultOutputFormat = useSettingsStore((s) => s.defaultOutputFormat);
+  const setDefaultOutputFormat = useSettingsStore((s) => s.setDefaultOutputFormat);
+  const preferredAudioLanguage = useSettingsStore((s) => s.preferredAudioLanguage);
+  const setPreferredAudioLanguage = useSettingsStore((s) => s.setPreferredAudioLanguage);
+  const namingTemplate = useSettingsStore((s) => s.namingTemplate);
+  const setNamingTemplate = useSettingsStore((s) => s.setNamingTemplate);
+  const previewMode = useSettingsStore((s) => s.previewMode);
+  const setPreviewMode = useSettingsStore((s) => s.setPreviewMode);
+  const enableContextMenu = useSettingsStore((s) => s.enableContextMenu);
+  const toggleContextMenu = useSettingsStore((s) => s.toggleContextMenu);
 
   return (
     <>
+      <label className="popup__row">
+        <span className="popup__label">Theme</span>
+        <select
+          aria-label="Theme"
+          value={theme}
+          onChange={(e) => setTheme(e.target.value as Parameters<typeof setTheme>[0])}
+          className="popup__select"
+        >
+          <option value="contrast">High Contrast</option>
+          <option value="blueberry">Blueberry</option>
+          <option value="lightdark">Light in the Dark</option>
+          <option value="noirgold">Noir Gold</option>
+          <option value="purplefanatic">Purple Fanatic</option>
+          <option value="sakura">Sakura</option>
+          <option value="ocean">Ocean</option>
+          <option value="forest">Forest</option>
+          <option value="slate">Slate</option>
+          <option value="ember">Ember</option>
+        </select>
+      </label>
+
       <label className="popup__row">
         <span className="popup__label">Auto-detect media</span>
         <input
@@ -19,6 +60,30 @@ function SettingsContent() {
           aria-label="Auto-detect"
           checked={autoDetect}
           onChange={toggleAutoDetect}
+          className="popup__toggle"
+        />
+      </label>
+
+      <label className="popup__row">
+        <span className="popup__label">Enable Auto-Scan</span>
+        <input
+          type="checkbox"
+          role="checkbox"
+          aria-label="Enable Auto-Scan"
+          checked={autoScanEnabled}
+          onChange={(e) => setAutoScanEnabled(e.target.checked)}
+          className="popup__toggle"
+        />
+      </label>
+
+      <label className="popup__row">
+        <span className="popup__label">Network capture</span>
+        <input
+          type="checkbox"
+          role="checkbox"
+          aria-label="Network capture"
+          checked={networkCaptureEnabled}
+          onChange={(e) => setNetworkCaptureEnabled(e.target.checked)}
           className="popup__toggle"
         />
       </label>
@@ -40,13 +105,117 @@ function SettingsContent() {
         <select
           aria-label="Preferred quality"
           value={preferredQuality}
-          onChange={(e) => setPreferredQuality(e.target.value as 'best' | 'smallest' | 'ask')}
+          onChange={(e) => setPreferredQuality(e.target.value as Parameters<typeof setPreferredQuality>[0])}
           className="popup__select"
         >
+          <option value="highest">Highest quality</option>
+          <option value="1080p">1080p</option>
+          <option value="720p">720p</option>
+          <option value="480p">480p</option>
+          <option value="360p">360p</option>
           <option value="best">Best available</option>
           <option value="smallest">Smallest size</option>
           <option value="ask">Always ask</option>
         </select>
+      </label>
+
+      <label className="popup__row">
+        <span className="popup__label">Max concurrent downloads</span>
+        <select
+          aria-label="Max concurrent downloads"
+          value={String(maxConcurrentDownloads)}
+          onChange={(e) => setMaxConcurrentDownloads(Number(e.target.value))}
+          className="popup__select"
+        >
+          {[1, 2, 3, 5, 10].map((value) => (
+            <option key={value} value={value}>
+              {value}
+            </option>
+          ))}
+        </select>
+      </label>
+
+      <label className="popup__row">
+        <span className="popup__label">Segments per download</span>
+        <select
+          aria-label="Segments per download"
+          value={String(maxConcurrentSegments)}
+          onChange={(e) => setMaxConcurrentSegments(Number(e.target.value))}
+          className="popup__select"
+        >
+          {[3, 5, 10, 15].map((value) => (
+            <option key={value} value={value}>
+              {value}
+            </option>
+          ))}
+        </select>
+      </label>
+
+      <label className="popup__row">
+        <span className="popup__label">Output format</span>
+        <select
+          aria-label="Output format"
+          value={defaultOutputFormat}
+          onChange={(e) => setDefaultOutputFormat(e.target.value as Parameters<typeof setDefaultOutputFormat>[0])}
+          className="popup__select"
+        >
+          <option value="auto">Auto</option>
+          <option value="mp4">MP4</option>
+          <option value="mkv">MKV</option>
+          <option value="mp3">MP3</option>
+        </select>
+      </label>
+
+      <label className="popup__row">
+        <span className="popup__label">Preferred audio language</span>
+        <select
+          aria-label="Preferred audio language"
+          value={preferredAudioLanguage}
+          onChange={(e) => setPreferredAudioLanguage(e.target.value)}
+          className="popup__select"
+        >
+          <option value="en">English</option>
+          <option value="es">Spanish</option>
+          <option value="fr">French</option>
+          <option value="de">German</option>
+          <option value="ja">Japanese</option>
+        </select>
+      </label>
+
+      <label className="popup__row popup__row--stack">
+        <span className="popup__label">Filename template</span>
+        <input
+          aria-label="Filename template"
+          value={namingTemplate}
+          onChange={(e) => setNamingTemplate(e.target.value)}
+          className="popup__input"
+        />
+      </label>
+
+      <label className="popup__row">
+        <span className="popup__label">Preview mode</span>
+        <select
+          aria-label="Preview mode"
+          value={previewMode}
+          onChange={(e) => setPreviewMode(e.target.value as Parameters<typeof setPreviewMode>[0])}
+          className="popup__select"
+        >
+          <option value="none">None</option>
+          <option value="image">Image</option>
+          <option value="video">Video</option>
+        </select>
+      </label>
+
+      <label className="popup__row">
+        <span className="popup__label">Context menu</span>
+        <input
+          type="checkbox"
+          role="checkbox"
+          aria-label="Context menu"
+          checked={enableContextMenu}
+          onChange={toggleContextMenu}
+          className="popup__toggle"
+        />
       </label>
     </>
   );

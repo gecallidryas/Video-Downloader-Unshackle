@@ -11,6 +11,7 @@ Run these commands from the repository root:
 npm run typecheck
 npm test
 npm run build
+npm run test:e2e
 ```
 
 ## Required Release Checklist
@@ -30,6 +31,10 @@ npm run build
 - [ ] Resume store coverage proves segmented job snapshots can be stored and
   loaded.
 - [ ] Build output includes the offscreen document entrypoint.
+- [ ] `docs/unified-copy-ledger.md` marks all 81 source features as
+  `implemented`, `already-present`, `policy-only`, or
+  `intentionally-deferred`.
+- [ ] `npm run test:e2e` passes against the deterministic fixture server.
 
 ## Targeted Regression Commands
 
@@ -71,6 +76,24 @@ Preview, thumbnails, and resume infrastructure:
 npm test -- src/core/preview/__tests__/open-preview.test.ts src/background/jobs/__tests__/resume-store.test.ts
 ```
 
+Unified parity and E2E harness:
+
+```bash
+npm test -- src/parity/__tests__/unified-fixture-parity.test.ts src/background/messaging/__tests__/runtime-router.test.ts
+npm run test:e2e
+```
+
+## Phase 12 Verification Snapshot
+
+Last Phase 12 run in this workspace:
+
+| Command | Result |
+| --- | --- |
+| `npm test -- src/background/messaging/__tests__/runtime-router.test.ts src/background/network/__tests__/classify-request.test.ts` | Passed |
+| `npm test -- src/parity/__tests__/unified-fixture-parity.test.ts src/app/surfaces/sidepanel/__tests__/resolve-active-tab-id.test.ts` | Passed |
+| `npm run build` | Passed |
+| `npm run test:e2e` | Passed, 5/5 smoke tests |
+
 ## Manual Smoke Checks
 
 - Load `.output/chrome-mv3` as an unpacked extension after `npm run build`.
@@ -81,4 +104,6 @@ npm test -- src/core/preview/__tests__/open-preview.test.ts src/background/jobs/
 - Confirm provider-authorized protected actions do not appear unless a registry
   entry matches the candidate origin and the acknowledgement checkbox is checked.
 - Confirm `offscreen.html` is present in the build output.
-
+- Open `http://127.0.0.1:4173/index.html` from
+  `test-fixtures/demo-server/server.mjs` and confirm the side panel detects the
+  direct, HLS, DASH, and protected-marker fixtures.

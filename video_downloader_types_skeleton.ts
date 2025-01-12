@@ -12,6 +12,7 @@ export type CandidateStatus = 'ready' | 'partial' | 'protected' | 'unsupported' 
 export type DetectionSource = 'dom' | 'network' | 'player-config' | 'blob-correlation' | 'user';
 export type DownloadPhase =
   | 'queued'
+  | 'paused'
   | 'preparing'
   | 'fetching'
   | 'decrypting'
@@ -187,6 +188,7 @@ export interface JobOutput {
   opfsPath?: string;
   downloadId?: number;
   sizeBytes?: number;
+  notes?: string[];
 }
 
 export interface JobFailure {
@@ -211,6 +213,13 @@ export interface DownloadSelection {
   audioTrackIds?: string[];
   subtitleTrackIds?: string[];
   outputKind?: 'original' | 'audio-only' | 'mp4' | 'webm' | 'subtitle-only';
+  action?: 'download' | 'download_as' | 'download_audio' | 'copy' | 'record_live';
+  saveAs?: boolean;
+  liveRecording?: boolean;
+  trim?: {
+    startSec?: number;
+    endSec?: number;
+  };
 }
 
 export interface DownloadJob {
@@ -329,6 +338,7 @@ export interface MessageEnvelope<TType extends string, TPayload> {
 
 export type RuntimeRequest =
   | MessageEnvelope<'SCAN_ACTIVE_TAB', { tabId: number }>
+  | MessageEnvelope<'INGEST_CONTENT_EVIDENCE', { pageUrl: string; pageTitle?: string; evidence: DetectionEvidence[]; pageContext?: unknown }>
   | MessageEnvelope<'GET_CANDIDATES', { tabId: number }>
   | MessageEnvelope<'REQUEST_HOST_ACCESS', { origin: string }>
   | MessageEnvelope<'START_PREVIEW', { candidateId: string }>
@@ -343,6 +353,7 @@ export type RuntimeRequest =
 
 export type RuntimeResponse =
   | MessageEnvelope<'SCAN_ACTIVE_TAB_RESULT', { candidates: MediaCandidate[] }>
+  | MessageEnvelope<'INGEST_CONTENT_EVIDENCE_RESULT', { candidates: MediaCandidate[] }>
   | MessageEnvelope<'GET_CANDIDATES_RESULT', { candidates: MediaCandidate[] }>
   | MessageEnvelope<'REQUEST_HOST_ACCESS_RESULT', { granted: boolean; origin: string }>
   | MessageEnvelope<'START_PREVIEW_RESULT', { ok: boolean }>

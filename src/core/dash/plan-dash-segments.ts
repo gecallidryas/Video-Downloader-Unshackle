@@ -17,6 +17,10 @@ function replaceNumberToken(template: string, number: number): string {
   });
 }
 
+function replaceTimeToken(template: string, time: number): string {
+  return template.replace(/\$Time\$/g, String(time));
+}
+
 export function planDashSegments(
   manifest: ParsedDashManifest,
   options: PlanDashSegmentsOptions,
@@ -38,7 +42,39 @@ export function planDashSegments(
     });
   }
 
-  if (!representation.mediaUrlTemplate) {
+  if (!representation.mediaUrlTemplate && !representation.explicitSegments) {
+    throw new Error(`DASH representation has no media URL template: ${representation.id}`);
+  }
+
+  const mediaUrlTemplate = representation.mediaUrlTemplate;
+
+  if (representation.explicitSegments) {
+    for (const explicitSegment of representation.explicitSegments) {
+      const index = segments.length;
+
+      segments.push({
+        id: `dash-segment-${representation.id}-${index}`,
+        index,
+        url: explicitSegment.url,
+        trackType: 'video',
+        byteRange: explicitSegment.byteRange,
+        durationSec: explicitSegment.durationSec,
+      });
+    }
+  } else if (representation.timeline && mediaUrlTemplate) {
+    for (const timelineSegment of representation.timeline) {
+      const index = segments.length;
+
+      segments.push({
+        id: `dash-segment-${representation.id}-${timelineSegment.time}`,
+        index,
+        url: replaceTimeToken(mediaUrlTemplate, timelineSegment.time),
+        trackType: 'video',
+        durationSec: timelineSegment.durationSec,
+      });
+    }
+  } else {
+  if (!mediaUrlTemplate) {
     throw new Error(`DASH representation has no media URL template: ${representation.id}`);
   }
 
@@ -49,10 +85,11 @@ export function planDashSegments(
     segments.push({
       id: `dash-segment-${representation.id}-${number}`,
       index,
-      url: replaceNumberToken(representation.mediaUrlTemplate, number),
+      url: replaceNumberToken(mediaUrlTemplate, number),
       trackType: 'video',
       durationSec: representation.segmentDurationSec,
     });
+  }
   }
 
   return {

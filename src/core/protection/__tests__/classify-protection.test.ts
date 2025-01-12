@@ -67,4 +67,42 @@ describe('classifyProtection', () => {
       reason: 'Detected protection marker that could not be classified.',
     });
   });
+
+  test('recognizes FairPlay, PlayReady, SAMPLE-AES, and encrypted markers', () => {
+    expect(
+      classifyProtection([
+        evidence({
+          url: 'skd://license.example.com/fairplay',
+          notes: ['license-request:true'],
+        }),
+      ]),
+    ).toMatchObject({
+      kind: 'drm',
+      drmSystems: ['fairplay'],
+    });
+
+    expect(
+      classifyProtection([
+        evidence({
+          url: 'https://license.example.com/9a04f079-9840-4286-ab92-e65be0885f95',
+          notes: ['license-request:true'],
+        }),
+      ]),
+    ).toMatchObject({
+      kind: 'drm',
+      drmSystems: ['playready'],
+    });
+
+    expect(
+      classifyProtection([
+        evidence({
+          url: 'https://cdn.example.com/master.m3u8',
+          notes: ['hls-key-method:SAMPLE-AES'],
+        }),
+      ]),
+    ).toMatchObject({
+      kind: 'sample-aes',
+      reason: 'Detected HLS DRM-style SAMPLE-AES encryption marker.',
+    });
+  });
 });

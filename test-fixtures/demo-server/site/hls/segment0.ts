@@ -1,0 +1,1 @@
+fixture-hls-segment

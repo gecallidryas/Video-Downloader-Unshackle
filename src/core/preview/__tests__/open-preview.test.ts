@@ -52,6 +52,40 @@ describe('openPreview', () => {
     });
     expect(result).toEqual({ ok: true });
   });
+
+  test('includes selected tracks and trim when opening streamed previews', async () => {
+    const candidate = buildCandidate({
+      protocol: 'hls',
+      manifestUrl: 'https://cdn.example.com/master.m3u8',
+    });
+    const ensureOffscreenDocument = vi.fn().mockResolvedValue(undefined);
+    const sendPreviewMessage = vi.fn().mockResolvedValue({ ok: true });
+
+    await openPreview(candidate, {
+      ensureOffscreenDocument,
+      sendPreviewMessage,
+    }, {
+      selection: {
+        mode: 'custom',
+        variantId: 'v-720',
+        audioTrackIds: ['audio-en'],
+        subtitleTrackIds: ['subs-en'],
+        trim: { startSec: 10, endSec: 20 },
+      },
+    });
+
+    expect(sendPreviewMessage).toHaveBeenCalledWith({
+      type: 'OPEN_PREVIEW',
+      candidate,
+      selection: {
+        mode: 'custom',
+        variantId: 'v-720',
+        audioTrackIds: ['audio-en'],
+        subtitleTrackIds: ['subs-en'],
+        trim: { startSec: 10, endSec: 20 },
+      },
+    });
+  });
 });
 
 describe('createHeroThumbnailJob', () => {

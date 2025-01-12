@@ -4,6 +4,7 @@ import type {
   SegmentDescriptor,
   SegmentPlan,
 } from '@/video_downloader_types_skeleton';
+import { scheduleSegments } from '@/src/core/download/segment-scheduler';
 import { planDashSegments } from './plan-dash-segments';
 import type { ParsedDashManifest } from './parse-mpd';
 
@@ -22,6 +23,7 @@ export interface RunDashJobInput {
   manifest: ParsedDashManifest;
   fetchSegment: FetchDashSegment;
   writeOutput: WriteDashOutput;
+  signal?: AbortSignal;
 }
 
 export async function runDashJob(input: RunDashJobInput): Promise<JobOutput> {
@@ -33,11 +35,13 @@ export async function runDashJob(input: RunDashJobInput): Promise<JobOutput> {
     jobId: input.job.id,
     selection: input.job.selection,
   });
-  const parts: Uint8Array[] = [];
-
-  for (const segment of plan.segments) {
-    parts.push(await input.fetchSegment(segment, plan));
-  }
+  const parts = await scheduleSegments({
+    jobId: input.job.id,
+    segments: plan.segments,
+    concurrency: 1,
+    signal: input.signal,
+    fetchSegment: (segment) => input.fetchSegment(segment, plan),
+  });
 
   return input.writeOutput(plan, parts);
 }

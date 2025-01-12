@@ -1,4 +1,7 @@
 import type {
+  DetectionEvidence,
+  DownloadJob,
+  DownloadSelection,
   MediaCandidate,
   QueueStats,
   RuntimeRequest,
@@ -23,6 +26,9 @@ export class RuntimeClientError extends Error {
 export interface RuntimeClient {
   getCandidates(tabId: number): Promise<MediaCandidate[]>;
   getQueueStats(): Promise<QueueStats>;
+  requestHostAccess(origin: string): Promise<{ granted: boolean; origin: string }>;
+  getDebugEvidence(candidateId: string): Promise<DetectionEvidence[]>;
+  startDownload(candidateId: string, selection: DownloadSelection): Promise<DownloadJob>;
 }
 
 async function defaultTransport(
@@ -77,6 +83,75 @@ export function createRuntimeClient(
       }
 
       return response.payload.stats;
+    },
+
+    async requestHostAccess(origin) {
+      const response = await transport(
+        createRuntimeRequest('REQUEST_HOST_ACCESS', { origin }),
+      );
+
+      if (isRuntimeErrorResponse(response)) {
+        throw new RuntimeClientError(
+          response.payload.message,
+          response.payload.code,
+          response.payload.detail,
+        );
+      }
+
+      if (response.type !== 'REQUEST_HOST_ACCESS_RESULT') {
+        throw new RuntimeClientError(
+          `Unexpected runtime response: ${response.type}`,
+          'UNEXPECTED_RESPONSE',
+        );
+      }
+
+      return response.payload;
+    },
+
+    async getDebugEvidence(candidateId) {
+      const response = await transport(
+        createRuntimeRequest('DEBUG_GET_EVIDENCE', { candidateId }),
+      );
+
+      if (isRuntimeErrorResponse(response)) {
+        throw new RuntimeClientError(
+          response.payload.message,
+          response.payload.code,
+          response.payload.detail,
+        );
+      }
+
+      if (response.type !== 'DEBUG_GET_EVIDENCE_RESULT') {
+        throw new RuntimeClientError(
+          `Unexpected runtime response: ${response.type}`,
+          'UNEXPECTED_RESPONSE',
+        );
+      }
+
+      return response.payload.evidence;
+    },
+
+    async startDownload(candidateId, selection) {
+      const response = await transport(
+        createRuntimeRequest('START_DOWNLOAD', { candidateId, selection }),
+      );
+
+      if (isRuntimeErrorResponse(response)) {
+        throw new RuntimeClientError(
+          response.payload.message,
+          response.payload.code,
+          response.payload.detail,
+        );
+      }
+
+      if (response.type !== 'START_DOWNLOAD_RESULT') {
+        throw new RuntimeClientError(
+          `Unexpected runtime response: ${response.type}`,
+          'UNEXPECTED_RESPONSE',
+        );
+      }
+
+      return response.payload.job;
     },
   };
 }

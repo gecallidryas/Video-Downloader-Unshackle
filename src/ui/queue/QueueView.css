@@ -1,0 +1,107 @@
+.queue-view {
+  display: flex;
+  flex-direction: column;
+  gap: var(--stack-gap);
+}
+
+.queue-view__tabs {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 4px;
+}
+
+.queue-view__tab {
+  min-height: var(--touch-target);
+  border: 1px solid var(--outline-variant);
+  border-radius: var(--radius);
+  background: var(--surface-container-lowest);
+  color: var(--on-surface-variant);
+  font-family: var(--font-base);
+  font-size: var(--text-label-size);
+  font-weight: var(--text-label-weight);
+  cursor: pointer;
+}
+
+.queue-view__tab--active {
+  color: var(--on-primary);
+  background: var(--primary);
+  border-color: var(--primary);
+}
+
+.queue-view__list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--stack-gap);
+}
+
+.queue-view__empty,
+.queue-item {
+  background: var(--surface-container-lowest);
+  border: 1px solid var(--outline-variant);
+  border-radius: var(--radius);
+  padding: 8px;
+}
+
+.queue-view__empty {
+  color: var(--on-surface-variant);
+}
+
+.queue-item {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--inline-gap);
+}
+
+.queue-item__main {
+  flex: 1;
+  min-width: 0;
+}
+
+.queue-item__title {
+  color: var(--on-surface);
+  font-weight: 500;
+}
+
+.queue-item__status,
+.queue-item__output {
+  color: var(--on-surface-variant);
+  font-size: var(--text-label-size);
+  line-height: var(--text-label-lh);
+  margin-top: 2px;
+}
+
+.queue-item__status--failed {
+  color: var(--error);
+}
+
+.queue-item__progress {
+  height: 6px;
+  margin-top: 6px;
+  background: var(--surface-container-high);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+.queue-item__progress-fill {
+  display: block;
+  height: 100%;
+  background: var(--primary);
+}
+
+.queue-item__actions {
+  display: flex;
+  align-items: flex-start;
+  gap: 4px;
+}
+
+.queue-item__button {
+  min-height: var(--touch-target);
+  border: 1px solid var(--outline-variant);
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--primary);
+  font-family: var(--font-base);
+  font-size: var(--text-label-size);
+  padding: 0 8px;
+  cursor: pointer;
+}

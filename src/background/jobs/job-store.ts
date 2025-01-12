@@ -9,6 +9,7 @@ export interface JobStore {
   get(jobId: string): DownloadJob | undefined;
   list(tabId?: number): DownloadJob[];
   update(jobId: string, patch: Partial<DownloadJob>): DownloadJob;
+  delete(jobId: string): boolean;
   clear(): void;
 }
 
@@ -75,6 +76,10 @@ export function createJobStore(now: () => number = Date.now): JobStore {
       jobs.set(jobId, nextJob);
 
       return cloneJob(nextJob);
+    },
+
+    delete(jobId) {
+      return jobs.delete(jobId);
     },
 
     clear() {

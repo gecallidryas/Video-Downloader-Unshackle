@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'vitest';
 import clearMpd from '@/src/fixtures/dash/clear.mpd?raw';
 import protectedMpd from '@/src/fixtures/dash/protected.mpd?raw';
+import { classifyDashProtection } from '../classify-dash-protection';
 import { parseMpd } from '../parse-mpd';
 
 describe('parseMpd', () => {
@@ -56,6 +57,126 @@ describe('parseMpd', () => {
       kind: 'drm',
       reason: 'DASH MPD declares ContentProtection.',
       drmSystems: ['widevine'],
+    });
+  });
+
+  test('parses BaseURL, SegmentTimeline $Time$ templates, audio tracks, and subtitles', () => {
+    const manifest = parseMpd({
+      manifestUrl: 'https://cdn.example.com/dash/timeline/manifest.mpd',
+      content: `
+        <MPD type="static" mediaPresentationDuration="PT16S">
+          <Period>
+            <BaseURL>media/</BaseURL>
+            <AdaptationSet contentType="video" mimeType="video/mp4" codecs="avc1.4d401f">
+              <SegmentTemplate timescale="1" initialization="$RepresentationID$/init.mp4" media="$RepresentationID$/$Time$.m4s">
+                <SegmentTimeline>
+                  <S t="10" d="4" r="1" />
+                  <S d="8" />
+                </SegmentTimeline>
+              </SegmentTemplate>
+              <Representation id="v1" bandwidth="1000" width="640" height="360" />
+            </AdaptationSet>
+            <AdaptationSet contentType="audio" lang="en" mimeType="audio/mp4">
+              <SegmentTemplate timescale="1" initialization="audio/init.mp4" media="audio/$Number$.m4s" duration="4" />
+              <Representation id="a1" bandwidth="128000" codecs="mp4a.40.2" />
+            </AdaptationSet>
+            <AdaptationSet contentType="text" lang="en" mimeType="text/vtt">
+              <Representation id="s1">
+                <BaseURL>subs/en.vtt</BaseURL>
+              </Representation>
+            </AdaptationSet>
+          </Period>
+        </MPD>
+      `,
+    });
+
+    expect(manifest.variants).toEqual([
+      expect.objectContaining({
+        id: 'v1',
+        width: 640,
+        height: 360,
+      }),
+    ]);
+    expect(manifest.audioTracks).toEqual([
+      expect.objectContaining({ id: 'a1', kind: 'audio', language: 'en' }),
+    ]);
+    expect(manifest.subtitleTracks).toEqual([
+      expect.objectContaining({
+        id: 's1',
+        kind: 'subtitle',
+        url: 'https://cdn.example.com/dash/timeline/media/subs/en.vtt',
+      }),
+    ]);
+    expect(manifest.representations.find((item) => item.id === 'v1')).toMatchObject({
+      initializationUrl: 'https://cdn.example.com/dash/timeline/media/v1/init.mp4',
+      mediaUrlTemplate: 'https://cdn.example.com/dash/timeline/media/v1/$Time$.m4s',
+      timeline: [
+        { time: 10, durationSec: 4 },
+        { time: 14, durationSec: 4 },
+        { time: 18, durationSec: 8 },
+      ],
+    });
+  });
+
+  test('parses SegmentList entries into explicit segment URLs', () => {
+    const manifest = parseMpd({
+      manifestUrl: 'https://cdn.example.com/dash/list/manifest.mpd',
+      content: `
+        <MPD mediaPresentationDuration="PT8S">
+          <Period>
+            <AdaptationSet contentType="video" mimeType="video/mp4">
+              <Representation id="v-list" bandwidth="2000" width="1280" height="720">
+                <SegmentList timescale="1" duration="4">
+                  <Initialization sourceURL="init.mp4" />
+                  <SegmentURL media="seg-1.m4s" mediaRange="0-999" />
+                  <SegmentURL media="seg-2.m4s" />
+                </SegmentList>
+              </Representation>
+            </AdaptationSet>
+          </Period>
+        </MPD>
+      `,
+    });
+
+    expect(manifest.representations[0]).toMatchObject({
+      id: 'v-list',
+      initializationUrl: 'https://cdn.example.com/dash/list/init.mp4',
+      explicitSegments: [
+        {
+          url: 'https://cdn.example.com/dash/list/seg-1.m4s',
+          byteRange: { start: 0, end: 999 },
+          durationSec: 4,
+        },
+        {
+          url: 'https://cdn.example.com/dash/list/seg-2.m4s',
+          durationSec: 4,
+        },
+      ],
+    });
+  });
+
+  test('classifies Widevine, PlayReady, and unknown ContentProtection', () => {
+    expect(
+      classifyDashProtection(`
+        <MPD>
+          <Period><AdaptationSet>
+            <ContentProtection schemeIdUri="urn:uuid:edef8ba9-79d6-4ace-a3c8-27dcd51d21ed" />
+            <ContentProtection schemeIdUri="urn:uuid:9a04f079-9840-4286-ab92-e65be0885f95" />
+          </AdaptationSet></Period>
+        </MPD>
+      `),
+    ).toEqual({
+      kind: 'drm',
+      reason: 'DASH MPD declares ContentProtection.',
+      drmSystems: ['widevine', 'playready'],
+    });
+
+    expect(
+      classifyDashProtection('<MPD><ContentProtection schemeIdUri="urn:mpeg:dash:mp4protection:2011" /></MPD>'),
+    ).toEqual({
+      kind: 'unknown',
+      reason: 'DASH MPD declares unknown ContentProtection.',
+      drmSystems: [],
     });
   });
 });

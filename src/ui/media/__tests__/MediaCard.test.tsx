@@ -72,7 +72,7 @@ test('renders quality selector with options', () => {
   );
   const select = screen.getByRole('combobox');
   expect(select).toBeInTheDocument();
-  expect(screen.getByText('1080p')).toBeInTheDocument();
+  expect(screen.getAllByText('1080p')).toHaveLength(2);
   expect(screen.getByText('720p')).toBeInTheDocument();
 });
 
@@ -103,4 +103,35 @@ test('renders preview, remove, and download action buttons', () => {
   expect(screen.getByRole('button', { name: /preview/i })).toBeInTheDocument();
   expect(screen.getByRole('button', { name: /remove/i })).toBeInTheDocument();
   expect(screen.getByRole('button', { name: /download/i })).toBeInTheDocument();
+});
+
+test('renders thumbnail, protocol, quality, and protection badges without changing the flat card role', () => {
+  render(
+    <MediaCard
+      media={{
+        ...mockVideo,
+        thumbnailUrl: 'https://cdn.example.com/poster.jpg',
+        format: 'HLS',
+        protocol: 'hls',
+        status: 'protected',
+        protection: {
+          kind: 'drm',
+          reason: 'Widevine protected stream',
+          drmSystems: ['widevine'],
+        },
+      }}
+      onPreview={noop}
+      onRemove={noop}
+      onDownload={noop}
+      onQualityChange={noop}
+    />,
+  );
+
+  expect(screen.getByRole('img', { name: /ocean sunset/i })).toHaveAttribute(
+    'src',
+    'https://cdn.example.com/poster.jpg',
+  );
+  expect(screen.getByText('HLS')).toBeInTheDocument();
+  expect(screen.getAllByText('1080p')).toHaveLength(2);
+  expect(screen.getByText('Protected')).toBeInTheDocument();
 });

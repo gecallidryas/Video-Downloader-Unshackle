@@ -1,10 +1,17 @@
 import type {
   CandidateStatus,
+  AudioTrack,
   MediaCandidate,
   MediaVariant,
   ProtectionInfo,
+  SubtitleTrack,
 } from '@/video_downloader_types_skeleton';
-import type { DetectedMedia, MediaPrimaryAction, QualityOption } from '@/src/types/media';
+import type {
+  DetectedMedia,
+  MediaPrimaryAction,
+  QualityOption,
+  TrackOption,
+} from '@/src/types/media';
 
 function formatDuration(durationSec?: number): string {
   if (durationSec == null || Number.isNaN(durationSec)) {
@@ -103,6 +110,32 @@ function toQualityOptions(variants: MediaCandidate['variants']): QualityOption[]
   });
 }
 
+function audioTrackLabel(track: AudioTrack): string {
+  return track.label ?? track.language ?? track.id;
+}
+
+function subtitleTrackLabel(track: SubtitleTrack): string {
+  return track.label ?? track.language ?? track.format ?? track.id;
+}
+
+function toAudioTrackOptions(tracks: MediaCandidate['audioTracks']): TrackOption[] {
+  return tracks.map((track) => ({
+    id: track.id,
+    label: audioTrackLabel(track),
+    language: track.language,
+    default: track.default,
+  }));
+}
+
+function toSubtitleTrackOptions(tracks: MediaCandidate['subtitleTracks']): TrackOption[] {
+  return tracks.map((track) => ({
+    id: track.id,
+    label: subtitleTrackLabel(track),
+    language: track.language,
+    default: track.default,
+  }));
+}
+
 function getSelectedQuality(
   variants: MediaCandidate['variants'],
 ): string {
@@ -160,6 +193,12 @@ function getPrimaryAction(
 export function toDetectedMedia(candidate: MediaCandidate): DetectedMedia {
   const qualities = toQualityOptions(candidate.variants);
   const mediaType = candidate.mediaKind === 'audio' ? 'audio' : 'video';
+  const selectedAudioTrackIds = candidate.audioTracks
+    .filter((track) => track.default)
+    .map((track) => track.id);
+  const selectedSubtitleTrackIds = candidate.subtitleTracks
+    .filter((track) => track.default)
+    .map((track) => track.id);
 
   return {
     id: candidate.id,
@@ -171,6 +210,10 @@ export function toDetectedMedia(candidate: MediaCandidate): DetectedMedia {
     mediaType,
     qualities,
     selectedQuality: getSelectedQuality(candidate.variants),
+    audioTracks: toAudioTrackOptions(candidate.audioTracks),
+    selectedAudioTrackIds,
+    subtitleTracks: toSubtitleTrackOptions(candidate.subtitleTracks),
+    selectedSubtitleTrackIds,
     protocol: candidate.protocol,
     status: candidate.status,
     protection: candidate.protection,

@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Fixture Page Title</title>
+    <meta property="og:title" content="Fixture OG Title">
+    <meta property="og:image" content="/media/cover.png">
+    <meta name="twitter:title" content="Fixture Twitter Title">
+    <meta name="twitter:image" content="/media/cover.png">
+    <style>
+        body { font-family: sans-serif; margin: 20px; }
+        button { margin-right: 8px; margin-bottom: 8px; }
+        code { background: #f3f3f3; padding: 2px 4px; border-radius: 4px; }
+    </style>
+</head>
+<body>
+    <h1>Unshackle E2E Fixture</h1>
+    <p>Triggers deterministic media requests for direct, HLS, and DASH detection.</p>
+
+    <button id="runAll">Run All Requests</button>
+    <button id="runDirect">Direct MP4</button>
+    <button id="runGif">GIF + Preview MP4</button>
+    <button id="runHls">HLS</button>
+    <button id="runDash">DASH</button>
+    <button id="runProtected">Protected marker</button>
+
+    <div>
+        <video id="fixtureVideo" controls preload="none" width="320" poster="/media/cover.png" src="/media/sample.mp4"></video>
+    </div>
+
+    <p>Endpoints:</p>
+    <ul>
+        <li><code>/media/sample.mp4</code></li>
+        <li><code>/media/animated.gif</code></li>
+        <li><code>/thumb-cdn/preview.mp4</code></li>
+        <li><code>/hls/master.m3u8</code></li>
+        <li><code>/dash/manifest.mpd</code></li>
+        <li><code>/protected/drm.mpd</code></li>
+        <li><code>/remote/unsigned-config.json</code></li>
+    </ul>
+
+    <script>
+        async function ping(url) {
+            try {
+                await fetch(url, { cache: 'no-store' });
+            } catch (e) {
+                // The extension only needs requests to be issued for detection.
+            }
+        }
+
+        async function runDirect() {
+            await ping('/media/sample.mp4');
+            const video = document.getElementById('fixtureVideo');
+            video.load();
+        }
+
+        async function runHls() {
+            await ping('/hls/master.m3u8');
+            await ping('/hls/video_720p.m3u8');
+        }
+
+        async function runGif() {
+            await ping('/media/animated.gif');
+            await ping('/thumb-cdn/preview.mp4');
+        }
+
+        async function runDash() {
+            await ping('/dash/manifest.mpd');
+            await ping('/dash/manifest-with-tracks.mpd');
+            await ping('/dash/init.mp4');
+            await ping('/dash/seg-1.m4s');
+        }
+
+        async function runProtected() {
+            await ping('/protected/drm.mpd');
+        }
+
+        async function runAll() {
+            await runDirect();
+            await runGif();
+            await runHls();
+            await runDash();
+            await runProtected();
+        }
+
+        document.getElementById('runAll').addEventListener('click', runAll);
+        document.getElementById('runDirect').addEventListener('click', runDirect);
+        document.getElementById('runGif').addEventListener('click', runGif);
+        document.getElementById('runHls').addEventListener('click', runHls);
+        document.getElementById('runDash').addEventListener('click', runDash);
+        document.getElementById('runProtected').addEventListener('click', runProtected);
+
+        window.runFixtureRequests = runAll;
+        window.addEventListener('load', () => { runAll(); });
+    </script>
+</body>
+</html>

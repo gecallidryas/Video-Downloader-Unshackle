@@ -8,6 +8,7 @@ beforeEach(() => {
   usePanelStore.setState({
     surfaceState: 'detecting',
     mediaItems: [],
+    queueJobs: [],
     errorMessage: null,
     downloadingIds: new Set<string>(),
   });
@@ -89,4 +90,16 @@ test('renders bottom nav with history, current, and settings icons', () => {
   expect(screen.getByRole('button', { name: /history/i })).toBeInTheDocument();
   expect(screen.getByRole('button', { name: /current/i })).toBeInTheDocument();
   expect(screen.getByRole('button', { name: /settings/i })).toBeInTheDocument();
+});
+
+test('opens the queue tab from the flat bottom nav', async () => {
+  const user = userEvent.setup();
+
+  render(<SidePanelApp />);
+  await user.click(screen.getByRole('button', { name: /queue/i }));
+
+  expect(
+    screen.getByRole('tablist', { name: /queue status/i }),
+  ).toBeInTheDocument();
+  expect(screen.getByRole('tab', { name: /active 0/i })).toBeInTheDocument();
 });
