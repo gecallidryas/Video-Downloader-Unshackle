@@ -1,0 +1,299 @@
+import { afterEach, describe, expect, test, vi } from 'vitest';
+import type {
+  NativeFfmpegExportPayload,
+  NativeFfmpegPreviewClipPayload,
+  NativeFfmpegThumbnailPayload,
+} from '../native-ffmpeg-contract';
+import {
+  createNativeFfmpegClient,
+  DEFAULT_NATIVE_FFMPEG_HOST,
+  NativeFfmpegClientError,
+  type NativeSendNativeMessage,
+} from '../native-ffmpeg-client';
+
+type NativeRequest = Parameters<NativeSendNativeMessage>[1];
+type NativeCallback = Parameters<NativeSendNativeMessage>[2];
+
+describe('native ffmpeg client', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+    vi.doUnmock('../native-ffmpeg-contract');
+    vi.resetModules();
+  });
+
+  test('ping calls chrome.runtime.sendNativeMessage with the default host', async () => {
+    const sendNativeMessage = vi.fn((hostName: string, request: NativeRequest, callback: NativeCallback) => {
+      callback({
+        type: 'PONG',
+        requestId: request.requestId,
+        payload: { version: '1.0.0', ffmpegAvailable: true },
+      });
+    });
+    vi.stubGlobal('chrome', { runtime: { sendNativeMessage } });
+
+    const client = createNativeFfmpegClient();
+    await expect(client.ping()).resolves.toEqual({ version: '1.0.0', ffmpegAvailable: true });
+
+    expect(sendNativeMessage).toHaveBeenCalledTimes(1);
+    expect(sendNativeMessage).toHaveBeenCalledWith(
+      DEFAULT_NATIVE_FFMPEG_HOST,
+      expect.objectContaining({ type: 'PING', requestId: expect.any(String) }),
+      expect.any(Function),
+    );
+  });
+
+  test('missing native messaging API rejects with a typed NATIVE_UNAVAILABLE error', async () => {
+    vi.stubGlobal('chrome', { runtime: {} });
+
+    const client = createNativeFfmpegClient();
+
+    await expect(client.ping()).rejects.toMatchObject({
+      code: 'NATIVE_UNAVAILABLE',
+      message: 'Native messaging API is unavailable.',
+    });
+    await expect(client.ping()).rejects.toBeInstanceOf(NativeFfmpegClientError);
+  });
+
+  test('helper ERROR responses throw typed client errors', async () => {
+    const client = createNativeFfmpegClient({
+      sendNativeMessage: (_hostName, request, callback) => {
+        callback({
+          type: 'ERROR',
+          requestId: request.requestId,
+          payload: {
+            code: 'FFMPEG_NOT_FOUND',
+            message: 'Install ffmpeg and try again.',
+            detail: { binary: 'ffmpeg' },
+          },
+        });
+      },
+    });
+
+    await expect(client.exportMedia(exportPayload)).rejects.toMatchObject({
+      code: 'FFMPEG_NOT_FOUND',
+      message: 'Install ffmpeg and try again.',
+      detail: { binary: 'ffmpeg' },
+    });
+  });
+
+  test('helper ERROR responses must match the request id', async () => {
+    const client = createNativeFfmpegClient({
+      sendNativeMessage: (_hostName, _request, callback) => {
+        callback({
+          type: 'ERROR',
+          requestId: 'stale-request',
+          payload: {
+            code: 'FFMPEG_NOT_FOUND',
+            message: 'Install ffmpeg and try again.',
+          },
+        });
+      },
+    });
+
+    await expect(client.ping()).rejects.toMatchObject({
+      code: 'NATIVE_INVALID_RESPONSE',
+      message: 'Native helper returned an unexpected response.',
+    });
+  });
+
+  test('export, thumbnail, preview, cancel, and cleanup commands use contract request shapes', async () => {
+    const sentRequests: NativeRequest[] = [];
+    const client = createNativeFfmpegClient({
+      hostName: 'com.example.test',
+      sendNativeMessage: (_hostName, request, callback) => {
+        sentRequests.push(request);
+
+        if (request.type === 'EXPORT_MEDIA') {
+          callback({
+            type: 'COMPLETED',
+            requestId: request.requestId,
+            payload: {
+              jobId: request.payload.jobId,
+              outputPath: 'C:\\Temp\\clip.mp4',
+              sizeBytes: 1024,
+              mimeType: 'video/mp4',
+            },
+          });
+          return;
+        }
+
+        if (request.type === 'EXTRACT_THUMBNAIL') {
+          callback({
+            type: 'THUMBNAIL_RESULT',
+            requestId: request.requestId,
+            payload: {
+              candidateId: request.payload.candidateId,
+              outputPath: 'C:\\Temp\\thumb.jpg',
+              mimeType: 'image/jpeg',
+            },
+          });
+          return;
+        }
+
+        if (request.type === 'EXTRACT_PREVIEW_CLIP') {
+          callback({
+            type: 'PREVIEW_CLIP_RESULT',
+            requestId: request.requestId,
+            payload: {
+              candidateId: request.payload.candidateId,
+              outputPath: 'C:\\Temp\\preview.webm',
+              mimeType: 'video/webm',
+            },
+          });
+          return;
+        }
+
+        if (request.type === 'CANCEL_JOB') {
+          callback({
+            type: 'CANCELLED',
+            requestId: request.requestId,
+            payload: { jobId: request.payload.jobId },
+          });
+          return;
+        }
+
+        if (request.type === 'CLEANUP_JOB') {
+          callback({
+            type: 'CLEANED_UP',
+            requestId: request.requestId,
+            payload: { jobId: request.payload.jobId },
+          });
+        }
+      },
+    });
+
+    await expect(client.exportMedia(exportPayload)).resolves.toMatchObject({
+      jobId: 'job-1',
+      outputPath: 'C:\\Temp\\clip.mp4',
+    });
+    await expect(client.extractThumbnail(thumbnailPayload)).resolves.toMatchObject({
+      candidateId: 'candidate-1',
+      outputPath: 'C:\\Temp\\thumb.jpg',
+    });
+    await expect(client.extractPreviewClip(previewPayload)).resolves.toMatchObject({
+      candidateId: 'candidate-1',
+      outputPath: 'C:\\Temp\\preview.webm',
+    });
+    await expect(client.cancelJob('job-1')).resolves.toEqual({ jobId: 'job-1' });
+    await expect(client.cleanupJob('job-1')).resolves.toEqual({ jobId: 'job-1' });
+
+    expect(sentRequests).toEqual([
+      expect.objectContaining({ type: 'EXPORT_MEDIA', payload: exportPayload }),
+      expect.objectContaining({ type: 'EXTRACT_THUMBNAIL', payload: thumbnailPayload }),
+      expect.objectContaining({ type: 'EXTRACT_PREVIEW_CLIP', payload: previewPayload }),
+      expect.objectContaining({ type: 'CANCEL_JOB', payload: { jobId: 'job-1' } }),
+      expect.objectContaining({ type: 'CLEANUP_JOB', payload: { jobId: 'job-1' } }),
+    ]);
+  });
+
+  test('export, thumbnail, preview, cancel, and cleanup commands use createNativeRequest', async () => {
+    vi.resetModules();
+    vi.doMock('../native-ffmpeg-contract', async (importOriginal) => {
+      const actual = await importOriginal<typeof import('../native-ffmpeg-contract')>();
+
+      return {
+        ...actual,
+        createNativeRequest: vi.fn(actual.createNativeRequest),
+      };
+    });
+
+    const contract = await import('../native-ffmpeg-contract');
+    const { createNativeFfmpegClient } = await import('../native-ffmpeg-client');
+    const client = createNativeFfmpegClient({
+      sendNativeMessage: (_hostName, request, callback) => {
+        if (request.type === 'EXPORT_MEDIA') {
+          callback({
+            type: 'COMPLETED',
+            requestId: request.requestId,
+            payload: { jobId: request.payload.jobId, outputPath: 'C:\\Temp\\clip.mp4' },
+          });
+          return;
+        }
+
+        if (request.type === 'EXTRACT_THUMBNAIL') {
+          callback({
+            type: 'THUMBNAIL_RESULT',
+            requestId: request.requestId,
+            payload: {
+              candidateId: request.payload.candidateId,
+              outputPath: 'C:\\Temp\\thumb.jpg',
+              mimeType: 'image/jpeg',
+            },
+          });
+          return;
+        }
+
+        if (request.type === 'EXTRACT_PREVIEW_CLIP') {
+          callback({
+            type: 'PREVIEW_CLIP_RESULT',
+            requestId: request.requestId,
+            payload: {
+              candidateId: request.payload.candidateId,
+              outputPath: 'C:\\Temp\\preview.webm',
+              mimeType: 'video/webm',
+            },
+          });
+          return;
+        }
+
+        if (request.type === 'CANCEL_JOB') {
+          callback({
+            type: 'CANCELLED',
+            requestId: request.requestId,
+            payload: { jobId: request.payload.jobId },
+          });
+          return;
+        }
+
+        if (request.type === 'CLEANUP_JOB') {
+          callback({
+            type: 'CLEANED_UP',
+            requestId: request.requestId,
+            payload: { jobId: request.payload.jobId },
+          });
+        }
+      },
+    });
+
+    await client.exportMedia(exportPayload);
+    await client.extractThumbnail(thumbnailPayload);
+    await client.extractPreviewClip(previewPayload);
+    await client.cancelJob('job-1');
+    await client.cleanupJob('job-1');
+
+    expect(contract.createNativeRequest).toHaveBeenNthCalledWith(1, 'EXPORT_MEDIA', exportPayload);
+    expect(contract.createNativeRequest).toHaveBeenNthCalledWith(2, 'EXTRACT_THUMBNAIL', thumbnailPayload);
+    expect(contract.createNativeRequest).toHaveBeenNthCalledWith(
+      3,
+      'EXTRACT_PREVIEW_CLIP',
+      previewPayload,
+    );
+    expect(contract.createNativeRequest).toHaveBeenNthCalledWith(4, 'CANCEL_JOB', { jobId: 'job-1' });
+    expect(contract.createNativeRequest).toHaveBeenNthCalledWith(5, 'CLEANUP_JOB', { jobId: 'job-1' });
+  });
+});
+
+const exportPayload: NativeFfmpegExportPayload = {
+  jobId: 'job-1',
+  inputUrl: 'https://cdn.example.com/video.mp4',
+  protocol: 'direct',
+  outputName: 'clip.mp4',
+  outputKind: 'mp4',
+  trim: { startSec: 1, endSec: 5 },
+};
+
+const thumbnailPayload: NativeFfmpegThumbnailPayload = {
+  candidateId: 'candidate-1',
+  inputUrl: 'https://cdn.example.com/video.mp4',
+  atSec: 3,
+  format: 'jpg',
+};
+
+const previewPayload: NativeFfmpegPreviewClipPayload = {
+  candidateId: 'candidate-1',
+  inputUrl: 'https://cdn.example.com/video.mp4',
+  startSec: 4,
+  durationSec: 3,
+  format: 'webm',
+};

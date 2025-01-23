@@ -39,7 +39,7 @@ back as optional host permissions at the same time.
 
 | Permission | Status | Rationale |
 | --- | --- | --- |
-| `nativeMessaging` | Optional and unused by default | Kept only for a future explicitly designed native helper path. It is not required for detection, preview, or generic download flows. |
+| `nativeMessaging` | Optional user-enabled helper | Required only when the user installs/enables the native ffmpeg helper for native trim, export, thumbnail extraction, and preview clip generation. It is not required for detection or normal browser-managed direct downloads. |
 
 ## Content Security Policy
 
