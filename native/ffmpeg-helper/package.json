@@ -1,0 +1,16 @@
+{
+  "name": "@unshackle/ffmpeg-helper",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "unshackle-ffmpeg-helper": "./dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "vitest run --config vitest.config.ts"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

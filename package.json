@@ -8,6 +8,8 @@
     "build": "wxt build",
     "zip": "wxt zip",
     "test": "vitest run --config vitest.config.ts",
+    "native:build": "tsc -p native/ffmpeg-helper/tsconfig.json",
+    "native:test": "vitest run --config vitest.config.ts native/ffmpeg-helper/src",
     "test:e2e": "playwright test",
     "typecheck": "tsc --noEmit",
     "postinstall": "wxt prepare"
