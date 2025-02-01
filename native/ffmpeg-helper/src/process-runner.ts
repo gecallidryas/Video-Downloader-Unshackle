@@ -1,5 +1,6 @@
 import { spawn } from 'node:child_process';
-import type { ChildProcessWithoutNullStreams } from 'node:child_process';
+import type { ChildProcessByStdio } from 'node:child_process';
+import type { Readable } from 'node:stream';
 import type { FfmpegCommandPlan } from './ffmpeg-command.js';
 import { defaultJobRegistry, type JobRegistry } from './job-registry.js';
 
@@ -54,7 +55,7 @@ export function runProcessJob(options: RunProcessJobOptions): Promise<ProcessJob
     onProgress: options.onProgress,
   });
   let stderr = '';
-  let child: ChildProcessWithoutNullStreams;
+  let child: ChildProcessByStdio<null, null, Readable>;
 
   try {
     child = spawn(options.plan.file, options.plan.args, {
