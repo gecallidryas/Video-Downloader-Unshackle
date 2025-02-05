@@ -37,10 +37,16 @@ export type RunDashControllerJob = (input: {
   manifest: ParsedDashManifest;
 }) => Promise<JobOutput>;
 
+export type RunNativeExportControllerJob = (input: {
+  candidate: MediaCandidate;
+  job: DownloadJob;
+}) => Promise<JobOutput>;
+
 export interface DownloadControllerOptions {
   downloadFile: DirectDownloadFile;
   runHls: RunHlsControllerJob;
   runDash: RunDashControllerJob;
+  nativeExport?: RunNativeExportControllerJob;
   fetchText?: (url: string, init: RequestInit) => Promise<string>;
   cancelDownload?: (downloadId: number) => Promise<void>;
   now?: () => number;
@@ -93,6 +99,15 @@ function selectionForJob(
   };
 }
 
+function hasTrim(selection: DownloadSelection): boolean {
+  const trim = selection.trim;
+
+  return Boolean(
+    (trim?.startSec !== undefined && trim.startSec > 0) ||
+      (trim?.endSec !== undefined && trim.endSec > 0),
+  );
+}
+
 export function createDownloadController(options: DownloadControllerOptions) {
   const fetchText = options.fetchText ?? defaultFetchText;
   const now = options.now ?? Date.now;
@@ -118,16 +133,15 @@ export function createDownloadController(options: DownloadControllerOptions) {
     };
 
     if (candidate.protocol === 'direct') {
+      if (hasTrim(selection) && options.nativeExport) {
+        return options.nativeExport({ candidate, job: controllerJob });
+      }
+
       const output = await options.downloadFile(candidate, controllerJob);
-      const trim = selection.trim;
-      const hasTrim = Boolean(
-        (trim?.startSec && trim.startSec > 0) ||
-          (trim?.endSec && trim.endSec > 0),
-      );
 
       return {
         ...output,
-        ...(hasTrim
+        ...(hasTrim(selection)
           ? {
               notes: [
                 'Trim is not supported for direct downloads yet; downloaded the full file.',
@@ -141,6 +155,10 @@ export function createDownloadController(options: DownloadControllerOptions) {
 
     if (!manifestUrl) {
       throw new Error('Missing manifest URL.');
+    }
+
+    if (options.nativeExport) {
+      return options.nativeExport({ candidate, job: controllerJob });
     }
 
     const manifestText = await fetchText(manifestUrl, {

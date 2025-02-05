@@ -42,7 +42,7 @@ function job(candidateId = 'candidate-1'): DownloadJob {
 }
 
 describe('download controller decision flow', () => {
-  test('routes direct media through chrome downloads and notes ignored trim', async () => {
+  test('routes direct media without trim through chrome downloads', async () => {
     const downloadFile = vi.fn().mockResolvedValue({
       fileName: 'direct-video.mp4',
       mimeType: 'video/mp4',
@@ -57,7 +57,6 @@ describe('download controller decision flow', () => {
     const output = await controller.start(candidate(), job(), {
       selection: {
         mode: 'best',
-        trim: { startSec: 5, endSec: 10 },
       },
       settings: { defaultOutputFormat: 'mp4' },
     });
@@ -65,8 +64,59 @@ describe('download controller decision flow', () => {
     expect(downloadFile).toHaveBeenCalled();
     expect(output).toMatchObject({
       downloadId: 42,
-      notes: ['Trim is not supported for direct downloads yet; downloaded the full file.'],
     });
+  });
+
+  test('routes direct media with trim through the native runner when configured', async () => {
+    const nativeExport = vi.fn().mockResolvedValue({
+      fileName: 'trimmed.mp4',
+      mimeType: 'video/mp4',
+      outputUrl: 'C:\\Users\\tester\\AppData\\Local\\VideoDownloaderUnshackle\\outputs\\trimmed.mp4',
+    } satisfies JobOutput);
+    const downloadFile = vi.fn();
+    const controller = createDownloadController({
+      downloadFile,
+      runHls: vi.fn(),
+      runDash: vi.fn(),
+      nativeExport,
+    });
+
+    const output = await controller.start(candidate(), job(), {
+      selection: { mode: 'best', trim: { startSec: 5, endSec: 10 } },
+    });
+
+    expect(nativeExport).toHaveBeenCalledWith({
+      candidate: expect.objectContaining({ protocol: 'direct' }),
+      job: expect.objectContaining({ selection: expect.objectContaining({ trim: { startSec: 5, endSec: 10 } }) }),
+    });
+    expect(downloadFile).not.toHaveBeenCalled();
+    expect(output).toMatchObject({ fileName: 'trimmed.mp4' });
+  });
+
+  test('routes clear HLS and DASH through the native runner when configured', async () => {
+    const nativeExport = vi.fn().mockResolvedValue({ fileName: 'native.mp4', mimeType: 'video/mp4' });
+    const fetchText = vi.fn();
+    const controller = createDownloadController({
+      downloadFile: vi.fn(),
+      runHls: vi.fn(),
+      runDash: vi.fn(),
+      fetchText,
+      nativeExport,
+    });
+
+    await controller.start(
+      candidate({ protocol: 'hls', sourceUrl: undefined, manifestUrl: 'https://cdn.example.com/master.m3u8' }),
+      job(),
+      { selection: { mode: 'best' } },
+    );
+    await controller.start(
+      candidate({ protocol: 'dash', sourceUrl: undefined, manifestUrl: 'https://cdn.example.com/manifest.mpd' }),
+      job(),
+      { selection: { mode: 'best' } },
+    );
+
+    expect(nativeExport).toHaveBeenCalledTimes(2);
+    expect(fetchText).not.toHaveBeenCalled();
   });
 
   test('fetches and parses HLS and DASH manifests when only manifest URLs are available', async () => {

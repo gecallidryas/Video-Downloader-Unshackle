@@ -7,6 +7,7 @@ import { createHistoryStore } from '@/src/background/jobs/history-store';
 import { createJobStore } from '@/src/background/jobs/job-store';
 import { createNotificationManager } from '@/src/background/notifications/notification-manager';
 import { createSettingsStore } from '@/src/background/settings/settings-store';
+import { runNativeExportJob } from '@/src/background/jobs/native-export-runner';
 import {
   createRuntimeRouter,
   registerRuntimeRouter,
@@ -21,6 +22,7 @@ import { createTabSnapshotStore } from '@/src/background/state/tab-snapshots';
 import { createTabVideoStatusStore } from '@/src/background/state/tab-video-status';
 import { getSidePanelBehavior } from '@/src/lib/chrome/sidePanel';
 import { probeDirectMedia } from '@/src/core/direct/probe-direct-media';
+import { createNativeFfmpegClient } from '@/src/native/native-ffmpeg-client';
 
 export function initializeBackgroundShell() {
   const candidateRegistry = createCandidateRegistry();
@@ -31,6 +33,7 @@ export function initializeBackgroundShell() {
   const historyStore = createHistoryStore();
   const tabSnapshots = createTabSnapshotStore();
   const tabVideoStatus = createTabVideoStatusStore();
+  const nativeClient = createNativeFfmpegClient();
   const downloadController = createDownloadController({
     downloadFile: async (candidate, job) => {
       const probe = probeDirectMedia(candidate);
@@ -55,6 +58,13 @@ export function initializeBackgroundShell() {
       fileName: 'dash-output.mp4',
       mimeType: 'video/mp4',
     }),
+    nativeExport: ({ candidate, job }) =>
+      runNativeExportJob({
+        candidate,
+        job,
+        nativeClient,
+        jobStore,
+      }),
   });
   const downloadQueue = createDownloadQueue({
     jobStore,
