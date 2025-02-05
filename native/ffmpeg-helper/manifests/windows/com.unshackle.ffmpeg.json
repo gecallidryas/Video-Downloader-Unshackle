@@ -1,0 +1,9 @@
+{
+  "name": "com.unshackle.ffmpeg",
+  "description": "Video Downloader Unshackle native FFmpeg helper",
+  "path": "C:\\Users\\USERNAME\\AppData\\Local\\VideoDownloaderUnshackle\\native-host\\unshackle-ffmpeg-helper.cmd",
+  "type": "stdio",
+  "allowed_origins": [
+    "chrome-extension://REPLACE_WITH_EXTENSION_ID/"
+  ]
+}

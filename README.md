@@ -97,6 +97,25 @@ Run the deterministic fixture server manually:
 node test-fixtures/demo-server/server.mjs
 ```
 
+## Optional Native FFmpeg Helper
+
+Native trim/export and generated thumbnail or hover-preview assets use the
+optional Chrome native messaging host `com.unshackle.ffmpeg`. The helper requires
+Node.js 20+ plus `ffmpeg` and `ffprobe` on `PATH`.
+
+Build it with:
+
+```bash
+npm run native:build
+```
+
+Windows install and uninstall instructions are in `docs/native-helper.md`. The
+installer writes the per-user Chrome registry key under:
+
+```text
+HKCU\Software\Google\Chrome\NativeMessagingHosts\com.unshackle.ffmpeg
+```
+
 ## Release Gate
 
 Before shipping, run the full checklist in `docs/testing-matrix.md`. The release
