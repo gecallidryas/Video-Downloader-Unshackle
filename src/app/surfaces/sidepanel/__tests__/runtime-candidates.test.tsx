@@ -63,6 +63,16 @@ function buildRuntimeClient(candidates: MediaCandidate[]): RuntimeClient {
       origin: 'https://example.com',
     }),
     getDebugEvidence: vi.fn().mockResolvedValue([]),
+    getPreviewAsset: vi.fn().mockResolvedValue({
+      assetUrl: 'preview.webm',
+      mimeType: 'video/webm',
+      generated: true,
+    }),
+    getThumbnailAsset: vi.fn().mockResolvedValue({
+      assetUrl: 'thumb.jpg',
+      mimeType: 'image/jpeg',
+      generated: true,
+    }),
     startDownload: vi.fn().mockResolvedValue({
       id: 'job-1',
       candidateId: candidates[0]?.id ?? 'candidate-1',

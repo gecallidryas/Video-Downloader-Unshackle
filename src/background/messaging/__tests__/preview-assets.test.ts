@@ -1,0 +1,107 @@
+import { describe, expect, test, vi } from 'vitest';
+import { createCandidateRegistry } from '@/src/background/candidates/candidate-registry';
+import { createTabSnapshotStore } from '@/src/background/state/tab-snapshots';
+import { createRuntimeRequest } from '@/src/shared/contracts/messages';
+import type { MediaCandidate } from '@/video_downloader_types_skeleton';
+import { createRuntimeRouter } from '../runtime-router';
+
+function candidate(overrides: Partial<MediaCandidate> = {}): MediaCandidate {
+  return {
+    id: 'candidate-1',
+    tabId: 7,
+    mediaKind: 'video',
+    protocol: 'direct',
+    status: 'ready',
+    pageUrl: 'https://example.com/watch',
+    origin: 'https://example.com',
+    displayName: 'Preview asset video',
+    sourceUrl: 'https://cdn.example.com/video.mp4',
+    protection: { kind: 'none' },
+    variants: [],
+    audioTracks: [],
+    subtitleTracks: [],
+    evidence: [],
+    preview: { playable: true, adapter: 'native' },
+    createdAt: 1,
+    updatedAt: 1,
+    ...overrides,
+  };
+}
+
+function routerWithCandidate(candidateValue: MediaCandidate) {
+  const candidateRegistry = createCandidateRegistry();
+  candidateRegistry.set(candidateValue.tabId, [candidateValue]);
+
+  return createRuntimeRouter({
+    candidateRegistry,
+    tabSnapshots: createTabSnapshotStore(),
+    ensurePreviewClip: vi.fn().mockResolvedValue({
+      assetUrl: 'C:\\Users\\tester\\AppData\\Local\\VideoDownloaderUnshackle\\previews\\candidate-1.webm',
+      mimeType: 'video/webm',
+      generated: true,
+    }),
+    ensureThumbnail: vi.fn().mockResolvedValue({
+      assetUrl: 'C:\\Users\\tester\\AppData\\Local\\VideoDownloaderUnshackle\\thumbs\\candidate-1.jpg',
+      mimeType: 'image/jpeg',
+      generated: true,
+    }),
+  });
+}
+
+describe('preview asset runtime messages', () => {
+  test('GET_PREVIEW_ASSET calls the native preview service', async () => {
+    const router = routerWithCandidate(candidate());
+
+    const response = await router.handleMessage(
+      createRuntimeRequest('GET_PREVIEW_ASSET', { candidateId: 'candidate-1', format: 'webm' }, 'req-preview'),
+    );
+
+    expect(response).toEqual({
+      type: 'GET_PREVIEW_ASSET_RESULT',
+      requestId: 'req-preview',
+      payload: {
+        assetUrl: 'C:\\Users\\tester\\AppData\\Local\\VideoDownloaderUnshackle\\previews\\candidate-1.webm',
+        mimeType: 'video/webm',
+        generated: true,
+      },
+    });
+  });
+
+  test('GET_THUMBNAIL_ASSET calls the native thumbnail service', async () => {
+    const router = routerWithCandidate(candidate());
+
+    const response = await router.handleMessage(
+      createRuntimeRequest('GET_THUMBNAIL_ASSET', { candidateId: 'candidate-1' }, 'req-thumb'),
+    );
+
+    expect(response).toEqual({
+      type: 'GET_THUMBNAIL_ASSET_RESULT',
+      requestId: 'req-thumb',
+      payload: {
+        assetUrl: 'C:\\Users\\tester\\AppData\\Local\\VideoDownloaderUnshackle\\thumbs\\candidate-1.jpg',
+        mimeType: 'image/jpeg',
+        generated: true,
+      },
+    });
+  });
+
+  test('asset requests reject protected candidates before service invocation', async () => {
+    const router = routerWithCandidate(
+      candidate({ status: 'protected', protection: { kind: 'drm', drmSystems: ['widevine'] } }),
+    );
+
+    const response = await router.handleMessage(
+      createRuntimeRequest('GET_PREVIEW_ASSET', { candidateId: 'candidate-1', format: 'webm' }, 'req-protected'),
+    );
+
+    expect(response).toEqual({
+      type: 'ERROR',
+      requestId: 'req-protected',
+      payload: {
+        code: 'PROTECTED_MEDIA',
+        message: 'Protected media cannot generate preview assets.',
+        detail: undefined,
+      },
+    });
+  });
+});

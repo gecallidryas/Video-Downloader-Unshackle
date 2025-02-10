@@ -23,6 +23,8 @@ import { createTabVideoStatusStore } from '@/src/background/state/tab-video-stat
 import { getSidePanelBehavior } from '@/src/lib/chrome/sidePanel';
 import { probeDirectMedia } from '@/src/core/direct/probe-direct-media';
 import { createNativeFfmpegClient } from '@/src/native/native-ffmpeg-client';
+import { ensurePreviewClip } from '@/src/core/preview/native-preview-service';
+import { ensureNativeThumbnail } from '@/src/core/thumbs/native-thumbnail-service';
 
 export function initializeBackgroundShell() {
   const candidateRegistry = createCandidateRegistry();
@@ -105,6 +107,10 @@ export function initializeBackgroundShell() {
 
       return response.text();
     },
+    ensurePreviewClip: (candidate, options) =>
+      ensurePreviewClip(candidate, { nativeClient, ...options }),
+    ensureThumbnail: (candidate) =>
+      ensureNativeThumbnail(candidate, { nativeClient }),
   });
   const autoScan = createAutoScanController({
     statusStore: tabVideoStatus,

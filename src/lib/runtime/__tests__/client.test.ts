@@ -96,4 +96,40 @@ describe('RuntimeClient', () => {
       }),
     );
   });
+
+  test('requests generated preview and thumbnail assets', async () => {
+    const transport = vi
+      .fn()
+      .mockResolvedValueOnce({
+        type: 'GET_PREVIEW_ASSET_RESULT',
+        requestId: 'response-preview',
+        payload: { assetUrl: 'file-preview.webm', mimeType: 'video/webm', generated: true },
+      })
+      .mockResolvedValueOnce({
+        type: 'GET_THUMBNAIL_ASSET_RESULT',
+        requestId: 'response-thumb',
+        payload: { assetUrl: 'file-thumb.jpg', mimeType: 'image/jpeg', generated: true },
+      });
+    const client = createRuntimeClient(transport);
+
+    await expect(client.getPreviewAsset('candidate-1', { format: 'webm' })).resolves.toEqual({
+      assetUrl: 'file-preview.webm',
+      mimeType: 'video/webm',
+      generated: true,
+    });
+    await expect(client.getThumbnailAsset('candidate-1')).resolves.toEqual({
+      assetUrl: 'file-thumb.jpg',
+      mimeType: 'image/jpeg',
+      generated: true,
+    });
+
+    expect(transport).toHaveBeenNthCalledWith(1, expect.objectContaining({
+      type: 'GET_PREVIEW_ASSET',
+      payload: { candidateId: 'candidate-1', format: 'webm' },
+    }));
+    expect(transport).toHaveBeenNthCalledWith(2, expect.objectContaining({
+      type: 'GET_THUMBNAIL_ASSET',
+      payload: { candidateId: 'candidate-1' },
+    }));
+  });
 });

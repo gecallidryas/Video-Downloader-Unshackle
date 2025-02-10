@@ -5,6 +5,7 @@ import type {
   QueueStats,
   RuntimeRequest,
   RuntimeResponse,
+  GeneratedAssetResult,
 } from '@/video_downloader_types_skeleton';
 import {
   createRuntimeErrorResponse,
@@ -37,6 +38,11 @@ export interface RuntimeRouterDependencies {
   downloadFile?: DirectDownloadFile;
   requestJournal?: RequestJournal;
   fetchManifest?: (url: string) => Promise<string>;
+  ensurePreviewClip?: (
+    candidate: MediaCandidate,
+    options: { format?: 'webm' | 'mp4' | 'gif' },
+  ) => Promise<GeneratedAssetResult>;
+  ensureThumbnail?: (candidate: MediaCandidate) => Promise<GeneratedAssetResult>;
   getQueueStats?: () => QueueStats | Promise<QueueStats>;
   requestHostAccess?: (originPattern: string) => Promise<boolean>;
 }
@@ -69,6 +75,8 @@ type RoutedRuntimeRequest = Extract<
       | 'GET_CANDIDATES'
       | 'GET_QUEUE_STATS'
       | 'REQUEST_HOST_ACCESS'
+      | 'GET_PREVIEW_ASSET'
+      | 'GET_THUMBNAIL_ASSET'
       | 'DEBUG_GET_EVIDENCE'
       | 'START_DOWNLOAD';
   }
@@ -79,6 +87,8 @@ const handledRequestTypes = new Set<RoutedRuntimeRequest['type']>([
   'GET_CANDIDATES',
   'GET_QUEUE_STATS',
   'REQUEST_HOST_ACCESS',
+  'GET_PREVIEW_ASSET',
+  'GET_THUMBNAIL_ASSET',
   'DEBUG_GET_EVIDENCE',
   'START_DOWNLOAD',
 ]);
@@ -338,6 +348,15 @@ function isProtectedCandidateForDownload(
   );
 }
 
+function isProtectedCandidateForAsset(candidate: MediaCandidate): boolean {
+  return (
+    candidate.status === 'protected' ||
+    candidate.protection.kind === 'drm' ||
+    candidate.protection.kind === 'unknown' ||
+    candidate.protection.kind === 'sample-aes'
+  );
+}
+
 function toActiveTabSnapshot(
   sender?: chrome.runtime.MessageSender,
 ): ActiveTabSnapshot | undefined {
@@ -459,6 +478,82 @@ export function createRuntimeRouter(
           return createRuntimeResponse(
             'REQUEST_HOST_ACCESS_RESULT',
             { granted, origin: request.payload.origin },
+            request.requestId,
+          );
+        }
+
+        case 'GET_PREVIEW_ASSET': {
+          const candidate = dependencies.candidateRegistry.findById(
+            request.payload.candidateId,
+          );
+
+          if (!candidate) {
+            return createRuntimeErrorResponse(
+              'NOT_FOUND',
+              `Candidate not found: ${request.payload.candidateId}`,
+              request.requestId,
+            );
+          }
+
+          if (isProtectedCandidateForAsset(candidate)) {
+            return createRuntimeErrorResponse(
+              'PROTECTED_MEDIA',
+              'Protected media cannot generate preview assets.',
+              request.requestId,
+            );
+          }
+
+          if (!dependencies.ensurePreviewClip) {
+            return createRuntimeErrorResponse(
+              'NATIVE_UNAVAILABLE',
+              'Native preview service is not configured.',
+              request.requestId,
+            );
+          }
+
+          const asset = await dependencies.ensurePreviewClip(candidate, {
+            format: request.payload.format,
+          });
+
+          return createRuntimeResponse(
+            'GET_PREVIEW_ASSET_RESULT',
+            asset,
+            request.requestId,
+          );
+        }
+
+        case 'GET_THUMBNAIL_ASSET': {
+          const candidate = dependencies.candidateRegistry.findById(
+            request.payload.candidateId,
+          );
+
+          if (!candidate) {
+            return createRuntimeErrorResponse(
+              'NOT_FOUND',
+              `Candidate not found: ${request.payload.candidateId}`,
+              request.requestId,
+            );
+          }
+
+          if (isProtectedCandidateForAsset(candidate)) {
+            return createRuntimeErrorResponse(
+              'PROTECTED_MEDIA',
+              'Protected media cannot generate preview assets.',
+              request.requestId,
+            );
+          }
+
+          if (!dependencies.ensureThumbnail) {
+            return createRuntimeErrorResponse(
+              'NATIVE_UNAVAILABLE',
+              'Native thumbnail service is not configured.',
+              request.requestId,
+            );
+          }
+
+          return createRuntimeResponse(
+            'GET_THUMBNAIL_ASSET_RESULT',
+            await dependencies.ensureThumbnail(candidate),
             request.requestId,
           );
         }

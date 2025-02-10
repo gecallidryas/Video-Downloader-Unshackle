@@ -2,7 +2,9 @@ import type {
   DetectionEvidence,
   DownloadJob,
   DownloadSelection,
+  GeneratedAssetResult,
   MediaCandidate,
+  PreviewAssetFormat,
   QueueStats,
   RuntimeRequest,
   RuntimeResponse,
@@ -28,6 +30,8 @@ export interface RuntimeClient {
   getQueueStats(): Promise<QueueStats>;
   requestHostAccess(origin: string): Promise<{ granted: boolean; origin: string }>;
   getDebugEvidence(candidateId: string): Promise<DetectionEvidence[]>;
+  getPreviewAsset(candidateId: string, options?: { format?: PreviewAssetFormat }): Promise<GeneratedAssetResult>;
+  getThumbnailAsset(candidateId: string): Promise<GeneratedAssetResult>;
   startDownload(candidateId: string, selection: DownloadSelection): Promise<DownloadJob>;
 }
 
@@ -129,6 +133,55 @@ export function createRuntimeClient(
       }
 
       return response.payload.evidence;
+    },
+
+    async getPreviewAsset(candidateId, options = {}) {
+      const response = await transport(
+        createRuntimeRequest('GET_PREVIEW_ASSET', {
+          candidateId,
+          ...(options.format ? { format: options.format } : {}),
+        }),
+      );
+
+      if (isRuntimeErrorResponse(response)) {
+        throw new RuntimeClientError(
+          response.payload.message,
+          response.payload.code,
+          response.payload.detail,
+        );
+      }
+
+      if (response.type !== 'GET_PREVIEW_ASSET_RESULT') {
+        throw new RuntimeClientError(
+          `Unexpected runtime response: ${response.type}`,
+          'UNEXPECTED_RESPONSE',
+        );
+      }
+
+      return response.payload;
+    },
+
+    async getThumbnailAsset(candidateId) {
+      const response = await transport(
+        createRuntimeRequest('GET_THUMBNAIL_ASSET', { candidateId }),
+      );
+
+      if (isRuntimeErrorResponse(response)) {
+        throw new RuntimeClientError(
+          response.payload.message,
+          response.payload.code,
+          response.payload.detail,
+        );
+      }
+
+      if (response.type !== 'GET_THUMBNAIL_ASSET_RESULT') {
+        throw new RuntimeClientError(
+          `Unexpected runtime response: ${response.type}`,
+          'UNEXPECTED_RESPONSE',
+        );
+      }
+
+      return response.payload;
     },
 
     async startDownload(candidateId, selection) {

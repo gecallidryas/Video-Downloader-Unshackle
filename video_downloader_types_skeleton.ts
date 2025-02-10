@@ -222,6 +222,21 @@ export interface DownloadSelection {
   };
 }
 
+export type PreviewAssetFormat = 'webm' | 'mp4' | 'gif';
+export type GeneratedAssetMimeType =
+  | 'video/webm'
+  | 'video/mp4'
+  | 'image/gif'
+  | 'image/jpeg'
+  | 'image/png'
+  | 'image/webp';
+
+export interface GeneratedAssetResult {
+  assetUrl: string;
+  mimeType: GeneratedAssetMimeType;
+  generated: boolean;
+}
+
 export interface DownloadJob {
   id: string;
   candidateId: string;
@@ -343,6 +358,8 @@ export type RuntimeRequest =
   | MessageEnvelope<'REQUEST_HOST_ACCESS', { origin: string }>
   | MessageEnvelope<'START_PREVIEW', { candidateId: string }>
   | MessageEnvelope<'STOP_PREVIEW', { candidateId: string }>
+  | MessageEnvelope<'GET_PREVIEW_ASSET', { candidateId: string; format?: PreviewAssetFormat }>
+  | MessageEnvelope<'GET_THUMBNAIL_ASSET', { candidateId: string }>
   | MessageEnvelope<'START_DOWNLOAD', { candidateId: string; selection: DownloadSelection }>
   | MessageEnvelope<'PAUSE_DOWNLOAD', { jobId: string }>
   | MessageEnvelope<'RESUME_DOWNLOAD', { jobId: string }>
@@ -358,6 +375,8 @@ export type RuntimeResponse =
   | MessageEnvelope<'REQUEST_HOST_ACCESS_RESULT', { granted: boolean; origin: string }>
   | MessageEnvelope<'START_PREVIEW_RESULT', { ok: boolean }>
   | MessageEnvelope<'STOP_PREVIEW_RESULT', { ok: boolean }>
+  | MessageEnvelope<'GET_PREVIEW_ASSET_RESULT', GeneratedAssetResult>
+  | MessageEnvelope<'GET_THUMBNAIL_ASSET_RESULT', GeneratedAssetResult>
   | MessageEnvelope<'START_DOWNLOAD_RESULT', { job: DownloadJob }>
   | MessageEnvelope<'GET_JOB_RESULT', { job?: DownloadJob }>
   | MessageEnvelope<'GET_QUEUE_STATS_RESULT', { stats: QueueStats }>
