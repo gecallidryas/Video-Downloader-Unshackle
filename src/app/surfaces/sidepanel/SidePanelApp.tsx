@@ -7,6 +7,7 @@ import { ProtectedWarning } from '@/src/ui/feedback/ProtectedWarning';
 import { RuntimeStatus } from '@/src/ui/feedback/RuntimeStatus';
 import { HistoryApp } from '@/src/app/surfaces/history/HistoryApp';
 import { PopupApp } from '@/src/app/surfaces/popup/PopupApp';
+import { PreviewModal } from '@/src/ui/preview/PreviewModal';
 import { QueueView, type QueueViewItem } from '@/src/ui/queue/QueueView';
 import {
   createRuntimeClient,
@@ -14,7 +15,7 @@ import {
 } from '@/src/lib/runtime/client';
 import { resolveActiveTabIdFromChrome } from './resolve-active-tab-id';
 import { evaluateProviderPolicy } from '@/src/core/policy/evaluate-provider-policy';
-import type { DownloadJob, DownloadPhase } from '@/video_downloader_types_skeleton';
+import type { DownloadJob, DownloadPhase, GeneratedAssetResult } from '@/video_downloader_types_skeleton';
 import './SidePanelApp.css';
 
 type PanelTab = 'history' | 'current' | 'queue' | 'settings';
@@ -42,6 +43,9 @@ function DetectionView({ activeTabId, runtimeClient }: DetectionViewProps) {
   const fileCount = mediaItems.length;
   const fileLabel = `${fileCount} ${fileCount === 1 ? 'File' : 'Files'}`;
   const showResults = surfaceState === 'results';
+  const [previewCandidateId, setPreviewCandidateId] = useState<string | null>(null);
+  const [previewAssets, setPreviewAssets] = useState<Record<string, GeneratedAssetResult>>({});
+  const [previewLoadingIds, setPreviewLoadingIds] = useState<Set<string>>(new Set());
 
   const candidateById = useMemo(
     () => new Map(candidates.map((candidate) => [candidate.id, candidate])),
@@ -75,6 +79,91 @@ function DetectionView({ activeTabId, runtimeClient }: DetectionViewProps) {
     }
   }
 
+  async function loadPreviewAsset(id: string): Promise<GeneratedAssetResult | undefined> {
+    const candidate = candidateById.get(id);
+
+    if (!runtimeClient || !candidate || candidate.protocol === 'direct') {
+      return undefined;
+    }
+
+    const existing = previewAssets[id];
+    if (existing) {
+      return existing;
+    }
+
+    setPreviewLoadingIds((current) => new Set([...current, id]));
+
+    try {
+      const asset = await runtimeClient.getPreviewAsset(id, { format: 'webm' });
+      setPreviewAssets((current) => ({ ...current, [id]: asset }));
+      return asset;
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : 'Unable to load preview asset');
+      return undefined;
+    } finally {
+      setPreviewLoadingIds((current) => {
+        const next = new Set(current);
+        next.delete(id);
+        return next;
+      });
+    }
+  }
+
+  async function openPreviewFor(id: string) {
+    const candidate = candidateById.get(id);
+    if (!candidate) {
+      return;
+    }
+
+    if (candidate.protocol !== 'direct') {
+      await loadPreviewAsset(id);
+    }
+
+    setPreviewCandidateId(id);
+  }
+
+  async function downloadPreviewSelection(trim: { startSec?: number; endSec?: number } | null) {
+    if (!previewCandidateId) {
+      return;
+    }
+
+    const selection = getDownloadSelection(previewCandidateId) ?? { mode: 'custom' as const };
+    await startDownloadWithSelection(previewCandidateId, {
+      ...selection,
+      ...(trim ? { trim } : {}),
+    });
+    setPreviewCandidateId(null);
+  }
+
+  async function startDownloadWithSelection(id: string, selection: ReturnType<typeof getDownloadSelection>) {
+    if (!selection) {
+      downloadItem(id);
+      return;
+    }
+
+    if (!runtimeClient) {
+      downloadItem(id);
+      return;
+    }
+
+    try {
+      const job = await runtimeClient.startDownload(id, selection);
+      upsertQueueJob(job);
+      downloadItem(id);
+    } catch (error) {
+      setErrorMessage(
+        error instanceof Error ? error.message : 'Unable to start download',
+      );
+    }
+  }
+
+  const previewCandidate = previewCandidateId ? candidateById.get(previewCandidateId) : undefined;
+  const previewMedia = previewCandidateId ? mediaItems.find((item) => item.id === previewCandidateId) : undefined;
+  const previewSourceUrl =
+    previewCandidateId && previewAssets[previewCandidateId]
+      ? previewAssets[previewCandidateId].assetUrl
+      : previewCandidate?.sourceUrl ?? previewCandidate?.manifestUrl ?? '';
+
   return (
     <>
       <div className="side-panel__section-header">
@@ -87,8 +176,13 @@ function DetectionView({ activeTabId, runtimeClient }: DetectionViewProps) {
           {mediaItems.map((item) => (
             <MediaCard
               key={item.id}
-              media={item}
-              onPreview={() => {}}
+              media={{
+                ...item,
+                previewAssetUrl: previewAssets[item.id]?.assetUrl,
+                previewLoading: previewLoadingIds.has(item.id),
+              }}
+              onPreview={() => void openPreviewFor(item.id)}
+              onPreviewHover={() => void loadPreviewAsset(item.id)}
               onRemove={() => removeItem(item.id)}
               onDownload={() => void startDownload(item.id)}
               onQualityChange={(q) => setQuality(item.id, q)}
@@ -107,6 +201,17 @@ function DetectionView({ activeTabId, runtimeClient }: DetectionViewProps) {
               }}
             />
           ))}
+          {previewCandidate && previewMedia ? (
+            <PreviewModal
+              open
+              title={previewMedia.title}
+              sourceUrl={previewSourceUrl}
+              protocol={previewCandidate.protocol}
+              nativeHelperAvailable
+              onClose={() => setPreviewCandidateId(null)}
+              onDownload={(trim) => void downloadPreviewSelection(trim)}
+            />
+          ) : null}
         </div>
       ) : (
         <div className="side-panel__list">

@@ -3,6 +3,7 @@ import type {
   DefaultDownloadAction,
   OutputFormat,
   PreviewMode,
+  PreviewFormat,
   PreferredQuality,
   RemoteConfigSecurityMode,
   ThemeName,
@@ -39,6 +40,7 @@ export interface SettingsState {
   enableContextMenu: boolean;
   remoteConfigSecurityMode: RemoteConfigSecurityMode;
   previewMode: PreviewMode;
+  previewFormat: PreviewFormat;
   setTheme: (theme: ThemeName) => void;
   setAutoScanEnabled: (enabled: boolean) => void;
   setNetworkCaptureEnabled: (enabled: boolean) => void;
@@ -47,6 +49,7 @@ export interface SettingsState {
   setPreferredAudioLanguage: (language: string) => void;
   setNamingTemplate: (template: string) => void;
   setPreviewMode: (mode: PreviewMode) => void;
+  setPreviewFormat: (format: PreviewFormat) => void;
   toggleAutoDetect: () => void;
   toggleNotifications: () => void;
   setDownloadPath: (path: string) => void;
@@ -74,6 +77,7 @@ export const useSettingsStore = create<SettingsState>((set) => ({
   setPreferredAudioLanguage: (language) => set({ preferredAudioLanguage: language }),
   setNamingTemplate: (template) => set({ namingTemplate: template }),
   setPreviewMode: (mode) => set({ previewMode: mode }),
+  setPreviewFormat: (format) => set({ previewFormat: format }),
   toggleAutoDetect: () =>
     set((s) => ({
       autoDetectEnabled: !s.autoDetectEnabled,

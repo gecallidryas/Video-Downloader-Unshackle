@@ -1,4 +1,6 @@
 import { render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import { vi } from 'vitest';
 import { MediaCard } from '../MediaCard';
 import type { DetectedMedia } from '@/src/types/media';
 
@@ -134,4 +136,57 @@ test('renders thumbnail, protocol, quality, and protection badges without changi
   expect(screen.getByText('HLS')).toBeInTheDocument();
   expect(screen.getAllByText('1080p')).toHaveLength(2);
   expect(screen.getByText('Protected')).toBeInTheDocument();
+});
+
+test('requests a hover preview once and restores the static thumbnail on mouse leave', async () => {
+  const user = userEvent.setup();
+  const onPreviewHover = vi.fn();
+
+  render(
+    <MediaCard
+      media={{
+        ...mockVideo,
+        thumbnailUrl: 'https://cdn.example.com/poster.jpg',
+        previewAssetUrl: 'blob:preview-webm',
+      }}
+      onPreview={noop}
+      onRemove={noop}
+      onDownload={noop}
+      onQualityChange={noop}
+      onPreviewHover={onPreviewHover}
+    />,
+  );
+
+  const thumb = screen.getByTestId('media-thumb');
+  expect(screen.getByRole('img', { name: /ocean sunset/i })).toBeInTheDocument();
+
+  await user.hover(thumb);
+  await user.hover(thumb);
+  expect(onPreviewHover).toHaveBeenCalledTimes(1);
+  expect(screen.getByLabelText(/hover preview/i)).toHaveAttribute('src', 'blob:preview-webm');
+
+  await user.unhover(thumb);
+  expect(screen.getByRole('img', { name: /ocean sunset/i })).toBeInTheDocument();
+});
+
+test('keeps preview loading state inside the fixed thumbnail slot', async () => {
+  const user = userEvent.setup();
+
+  render(
+    <MediaCard
+      media={{
+        ...mockVideo,
+        thumbnailUrl: 'https://cdn.example.com/poster.jpg',
+        previewLoading: true,
+      }}
+      onPreview={noop}
+      onRemove={noop}
+      onDownload={noop}
+      onQualityChange={noop}
+      onPreviewHover={noop}
+    />,
+  );
+
+  await user.hover(screen.getByTestId('media-thumb'));
+  expect(screen.getByText(/loading/i)).toBeInTheDocument();
 });

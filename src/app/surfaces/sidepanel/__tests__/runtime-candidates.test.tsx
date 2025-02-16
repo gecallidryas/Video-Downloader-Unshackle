@@ -210,3 +210,48 @@ test('starts download with current quality, track, and trim selections', async (
   await user.click(screen.getByRole('tab', { name: /pending 1/i }));
   expect(screen.getByText('Selectable HLS stream')).toBeInTheDocument();
 });
+
+test('opens preview modal and requests generated preview assets for streamed media', async () => {
+  const user = userEvent.setup();
+  const runtimeClient = buildRuntimeClient([
+    buildCandidate({
+      id: 'hls-preview',
+      displayName: 'Previewable HLS stream',
+      protocol: 'hls',
+      sourceUrl: undefined,
+      manifestUrl: 'https://cdn.example.com/master.m3u8',
+    }),
+  ]);
+
+  render(<SidePanelApp activeTabId={7} runtimeClient={runtimeClient} />);
+
+  expect(await screen.findByText('Previewable HLS stream')).toBeInTheDocument();
+  await user.click(screen.getByRole('button', { name: /preview/i }));
+
+  expect(runtimeClient.getPreviewAsset).toHaveBeenCalledWith('hls-preview', { format: 'webm' });
+  expect(await screen.findByRole('dialog', { name: /preview previewable hls stream/i })).toBeInTheDocument();
+  expect(screen.getByLabelText(/preview video/i)).toHaveAttribute('src', 'preview.webm');
+});
+
+test('preview modal download includes trim selection', async () => {
+  const user = userEvent.setup();
+  const runtimeClient = buildRuntimeClient([
+    buildCandidate({
+      id: 'direct-preview',
+      displayName: 'Previewable direct stream',
+      sourceUrl: 'https://cdn.example.com/video.mp4',
+    }),
+  ]);
+
+  render(<SidePanelApp activeTabId={7} runtimeClient={runtimeClient} />);
+
+  expect(await screen.findByText('Previewable direct stream')).toBeInTheDocument();
+  await user.click(screen.getByRole('button', { name: /preview/i }));
+  await user.type(screen.getByLabelText(/trim start/i), '0:01');
+  await user.type(screen.getByLabelText(/trim end/i), '0:03');
+  await user.click(screen.getByRole('button', { name: /download selection/i }));
+
+  expect(runtimeClient.startDownload).toHaveBeenCalledWith('direct-preview', expect.objectContaining({
+    trim: { startSec: 1, endSec: 3 },
+  }));
+});

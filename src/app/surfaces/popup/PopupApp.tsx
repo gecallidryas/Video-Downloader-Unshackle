@@ -1,4 +1,5 @@
 import { useSettingsStore } from '@/src/state/useSettingsStore';
+import { NativeHelperStatus } from '@/src/ui/feedback/NativeHelperStatus';
 import './PopupApp.css';
 
 function SettingsContent() {
@@ -26,6 +27,8 @@ function SettingsContent() {
   const setNamingTemplate = useSettingsStore((s) => s.setNamingTemplate);
   const previewMode = useSettingsStore((s) => s.previewMode);
   const setPreviewMode = useSettingsStore((s) => s.setPreviewMode);
+  const previewFormat = useSettingsStore((s) => s.previewFormat);
+  const setPreviewFormat = useSettingsStore((s) => s.setPreviewFormat);
   const enableContextMenu = useSettingsStore((s) => s.enableContextMenu);
   const toggleContextMenu = useSettingsStore((s) => s.toggleContextMenu);
 
@@ -205,6 +208,22 @@ function SettingsContent() {
           <option value="video">Video</option>
         </select>
       </label>
+
+      <label className="popup__row">
+        <span className="popup__label">Preview format</span>
+        <select
+          aria-label="Preview format"
+          value={previewFormat}
+          onChange={(e) => setPreviewFormat(e.target.value as Parameters<typeof setPreviewFormat>[0])}
+          className="popup__select"
+        >
+          <option value="webm">WebM</option>
+          <option value="mp4">MP4</option>
+          <option value="gif">GIF</option>
+        </select>
+      </label>
+
+      <NativeHelperStatus status="not-checked" />
 
       <label className="popup__row">
         <span className="popup__label">Context menu</span>

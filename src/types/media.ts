@@ -41,6 +41,8 @@ export interface DetectedMedia {
   size: string;
   duration: string;
   thumbnailUrl?: string;
+  previewAssetUrl?: string;
+  previewLoading?: boolean;
   mediaType: 'video' | 'audio';
   qualities: QualityOption[];
   selectedQuality: string;

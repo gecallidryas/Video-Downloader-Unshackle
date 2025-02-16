@@ -1,3 +1,4 @@
+import { useRef, useState } from 'react';
 import type { DetectedMedia } from '@/src/types/media';
 import type { ProviderPolicyResult } from '@/src/core/policy/evaluate-provider-policy';
 import { ProtectedActionGate } from '@/src/ui/protected/ProtectedActionGate';
@@ -15,6 +16,7 @@ interface MediaCardProps {
   onAudioTrackChange?: (trackIds: string[]) => void;
   onSubtitleTrackChange?: (trackIds: string[]) => void;
   onTrimChange?: (trim: DetectedMedia['trim']) => void;
+  onPreviewHover?: () => void;
   providerPolicy?: ProviderPolicyResult;
   onProtectedProceed?: (
     policy: Extract<ProviderPolicyResult, { kind: 'authorized-workflow' }>,
@@ -49,6 +51,7 @@ export function MediaCard({
   onAudioTrackChange = () => {},
   onSubtitleTrackChange = () => {},
   onTrimChange = () => {},
+  onPreviewHover = () => {},
   providerPolicy,
   onProtectedProceed,
 }: MediaCardProps) {
@@ -60,12 +63,43 @@ export function MediaCard({
   const isBlocked = primaryAction.kind === 'blocked';
   const protectedLabel = protectionBadge(media);
   const trimEnabled = media.protocol === 'hls' || media.protocol === 'dash';
+  const [hoveringThumb, setHoveringThumb] = useState(false);
+  const hoverRequested = useRef(false);
+
+  function handleThumbEnter() {
+    setHoveringThumb(true);
+    if (!hoverRequested.current) {
+      hoverRequested.current = true;
+      onPreviewHover();
+    }
+  }
+
+  function handleThumbLeave() {
+    setHoveringThumb(false);
+  }
 
   return (
     <div className="media-card">
       <div className="media-card__row">
-        <div className="media-card__thumb">
-          {media.thumbnailUrl ? (
+        <div
+          className="media-card__thumb"
+          data-testid="media-thumb"
+          onMouseEnter={handleThumbEnter}
+          onMouseLeave={handleThumbLeave}
+        >
+          {hoveringThumb && media.previewAssetUrl ? (
+            <video
+              className="media-card__thumb-video"
+              aria-label="Hover preview"
+              src={media.previewAssetUrl}
+              muted
+              loop
+              autoPlay
+              playsInline
+            />
+          ) : hoveringThumb && media.previewLoading ? (
+            <span className="media-card__preview-loading">Loading</span>
+          ) : media.thumbnailUrl ? (
             <img
               className="media-card__thumb-img"
               src={media.thumbnailUrl}

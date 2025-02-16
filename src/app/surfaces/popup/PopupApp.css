@@ -118,3 +118,41 @@
   line-height: var(--text-label-lh);
   color: var(--outline);
 }
+
+.native-helper-status {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: var(--touch-target);
+  padding: 4px 8px;
+  border-radius: var(--radius);
+  border: 1px solid var(--outline);
+  background: var(--surface-container-lowest);
+}
+
+.native-helper-status__label,
+.native-helper-status__value {
+  display: block;
+}
+
+.native-helper-status__label {
+  color: var(--on-surface);
+  font-size: var(--text-body-size);
+  font-weight: 500;
+}
+
+.native-helper-status__value {
+  color: var(--on-surface-variant);
+  font-size: var(--text-label-size);
+  line-height: var(--text-label-lh);
+}
+
+.native-helper-status__check {
+  height: 24px;
+  border: 1px solid var(--outline);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--on-surface);
+  font-size: 11px;
+  cursor: pointer;
+}

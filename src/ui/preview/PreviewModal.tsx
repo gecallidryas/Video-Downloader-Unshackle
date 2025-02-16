@@ -10,16 +10,25 @@ interface PreviewModalProps {
   sourceUrl: string;
   protocol: StreamProtocol;
   restrictedMessage?: string;
+  nativeHelperAvailable?: boolean;
   onClose: () => void;
   onDownload: (trim: MediaTrimSelection | null) => void;
 }
 
-function previewNote(protocol: StreamProtocol, restrictedMessage?: string): string {
+function previewNote(
+  protocol: StreamProtocol,
+  restrictedMessage?: string,
+  nativeHelperAvailable = false,
+): string {
   if (restrictedMessage) {
     return restrictedMessage;
   }
 
   if (protocol === 'direct') {
+    if (nativeHelperAvailable) {
+      return 'Native helper is required for direct trim and will export the selected range.';
+    }
+
     return 'Trim is not supported for direct file downloads yet; the full file will be downloaded.';
   }
 
@@ -40,12 +49,13 @@ export function PreviewModal({
   sourceUrl,
   protocol,
   restrictedMessage,
+  nativeHelperAvailable = false,
   onClose,
   onDownload,
 }: PreviewModalProps) {
   const [trim, setTrim] = useState<MediaTrimSelection | null>(null);
-  const trimEnabled = protocol === 'hls' || protocol === 'dash';
-  const note = previewNote(protocol, restrictedMessage);
+  const trimEnabled = protocol === 'hls' || protocol === 'dash' || (protocol === 'direct' && nativeHelperAvailable);
+  const note = previewNote(protocol, restrictedMessage, nativeHelperAvailable);
 
   useEffect(() => {
     if (!open) {

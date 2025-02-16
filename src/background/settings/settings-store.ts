@@ -19,6 +19,7 @@ export type PreferredQuality = 'highest' | 'best' | 'smallest' | 'ask' | '1080p'
 export type OutputFormat = 'auto' | 'mp4' | 'mkv' | 'mp3' | 'webm';
 export type RemoteConfigSecurityMode = 'strict' | 'warn' | 'disabled';
 export type PreviewMode = 'none' | 'image' | 'video';
+export type PreviewFormat = 'webm' | 'mp4' | 'gif';
 export type DefaultDownloadAction =
   | 'download'
   | 'download_as'
@@ -52,6 +53,7 @@ export interface UnifiedSettings {
   enableContextMenu: boolean;
   remoteConfigSecurityMode: RemoteConfigSecurityMode;
   previewMode: PreviewMode;
+  previewFormat: PreviewFormat;
   _schemaVersion: number;
 }
 
@@ -81,6 +83,7 @@ export const DEFAULT_SETTINGS: UnifiedSettings = {
   enableContextMenu: true,
   remoteConfigSecurityMode: 'strict',
   previewMode: 'image',
+  previewFormat: 'webm',
   _schemaVersion: 3,
 };
 

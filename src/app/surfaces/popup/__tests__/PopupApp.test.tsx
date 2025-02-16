@@ -18,6 +18,7 @@ beforeEach(() => {
     preferredAudioLanguage: 'en',
     namingTemplate: '{title}_{quality}_{date}_{time}',
     previewMode: 'image',
+    previewFormat: 'webm',
   });
 });
 
@@ -69,6 +70,17 @@ test('renders source-equivalent theme and download settings in the flat settings
     '{title}_{quality}_{date}_{time}',
   );
   expect(screen.getByRole('combobox', { name: /preview mode/i })).toHaveValue('image');
+  expect(screen.getByRole('combobox', { name: /preview format/i })).toHaveValue('webm');
+  expect(screen.getByText(/native ffmpeg helper/i)).toBeInTheDocument();
+});
+
+test('preview format selection persists to the settings store', async () => {
+  const user = userEvent.setup();
+  render(<PopupApp />);
+
+  await user.selectOptions(screen.getByRole('combobox', { name: /preview format/i }), 'gif');
+
+  expect(useSettingsStore.getState().previewFormat).toBe('gif');
 });
 
 test('theme selection persists to the settings store and document token hook', async () => {
