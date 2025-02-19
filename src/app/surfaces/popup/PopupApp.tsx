@@ -223,7 +223,7 @@ function SettingsContent() {
         </select>
       </label>
 
-      <NativeHelperStatus status="not-checked" />
+      <NativeHelperStatus status="missing" />
 
       <label className="popup__row">
         <span className="popup__label">Context menu</span>

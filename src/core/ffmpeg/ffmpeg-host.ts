@@ -1,5 +1,7 @@
 import type { JobOutput } from '@/video_downloader_types_skeleton';
 
+export const SUPPORTED_FFMPEG_ENGINE = 'native-helper';
+
 export interface FfmpegRemuxInput {
   jobId: string;
   format: 'mp4' | 'webm' | 'mkv' | 'mp3' | string;
@@ -13,6 +15,10 @@ export interface FfmpegHostOptions {
   load: () => Promise<LoadedFfmpegRuntime>;
 }
 
+/**
+ * Legacy lazy runtime adapter retained for tests and future experiments.
+ * Production trim/export/preview work uses the optional native FFmpeg helper.
+ */
 export function createFfmpegHost(options: FfmpegHostOptions) {
   let runtimePromise: Promise<LoadedFfmpegRuntime> | undefined;
 

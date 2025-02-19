@@ -24,7 +24,7 @@ export default defineConfig({
     host_permissions: ['<all_urls>'],
     optional_permissions: ['nativeMessaging'],
     content_security_policy: {
-      extension_pages: "script-src 'self' 'wasm-unsafe-eval'; object-src 'self';",
+      extension_pages: "script-src 'self'; object-src 'self';",
     },
   },
 });

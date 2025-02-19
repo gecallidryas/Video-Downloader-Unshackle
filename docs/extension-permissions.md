@@ -47,12 +47,13 @@ The manifest includes:
 
 ```json
 {
-  "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self';"
+  "extension_pages": "script-src 'self'; object-src 'self';"
 }
 ```
 
-`'wasm-unsafe-eval'` is present for packaged local WASM media tooling such as a
-future ffmpeg/remux path. Remote code loading remains disallowed.
+The native FFmpeg helper is the supported trim/export/preview media engine, so
+extension pages do not require `'wasm-unsafe-eval'` for native media work. Future
+WASM features must justify any CSP expansion with a separate plan and tests.
 
 ## Explicit Boundaries
 

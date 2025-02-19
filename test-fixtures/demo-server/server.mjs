@@ -46,6 +46,7 @@ const server = createServer((request, response) => {
     'content-type': mimeTypes.get(extname(filePath).toLowerCase()) ?? 'application/octet-stream',
     'cache-control': 'no-store',
     'access-control-allow-origin': '*',
+    'x-unshackle-fixture': 'native-ffmpeg-clear-media',
   });
   createReadStream(filePath).pipe(response);
 });

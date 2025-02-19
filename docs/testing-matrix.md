@@ -28,6 +28,9 @@ npm run test:e2e
   and non-matching origins stay blocked.
 - [ ] Preview routing coverage proves preview requests are routed through the
   offscreen host.
+- [ ] Native helper coverage proves ffmpeg commands are built internally,
+  process execution uses `spawn(file, args, { shell: false })`, and helper
+  absence reports setup-required status.
 - [ ] Resume store coverage proves segmented job snapshots can be stored and
   loaded.
 - [ ] Build output includes the offscreen document entrypoint.
@@ -73,7 +76,15 @@ npm test -- src/core/dash/__tests__/parse-mpd.test.ts src/core/dash/__tests__/ru
 Preview, thumbnails, and resume infrastructure:
 
 ```bash
-npm test -- src/core/preview/__tests__/open-preview.test.ts src/background/jobs/__tests__/resume-store.test.ts
+npm test -- src/core/preview/__tests__/open-preview.test.ts src/core/preview/__tests__/native-preview-service.test.ts src/core/thumbs/__tests__/native-thumbnail-service.test.ts src/background/jobs/__tests__/resume-store.test.ts
+```
+
+Native FFmpeg helper:
+
+```bash
+npm test -- native/ffmpeg-helper/src/__tests__/ffmpeg-command.test.ts native/ffmpeg-helper/src/__tests__/process-runner.test.ts native/ffmpeg-helper/src/__tests__/dispatcher.test.ts
+npm run native:test
+npm run native:build
 ```
 
 Unified parity and E2E harness:
@@ -81,6 +92,7 @@ Unified parity and E2E harness:
 ```bash
 npm test -- src/parity/__tests__/unified-fixture-parity.test.ts src/background/messaging/__tests__/runtime-router.test.ts
 npm run test:e2e
+UNSHACKLE_NATIVE_E2E=1 npm run test:e2e -- e2e/native-ffmpeg.spec.ts
 ```
 
 ## Phase 12 Verification Snapshot

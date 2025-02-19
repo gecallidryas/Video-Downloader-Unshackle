@@ -20,7 +20,7 @@ The target is a WXT/React/TypeScript extension with typed contracts and explicit
 | Source behavior | Target mismatch | Why |
 |---|---|---|
 | Source manifest/content scripts are broad and include `<all_urls>` plus many MAIN-world scripts. | Target manifest capability work is staged and documented rather than blindly copying all source host/script behavior. | Broad access needs release hardening and explicit rationale. |
-| Source optional native/mpv path uses `nativeMessaging`. | Native messaging remains optional/disabled unless explicitly implemented. | Prevent unused privileged capability. |
+| Source optional native/mpv path uses `nativeMessaging`. | Native messaging is optional and powers the installed native FFmpeg helper only. | Keep privileged native execution user-installed and scoped to typed helper commands. |
 | Source background owns a broad message API and direct singleton side effects. | Target normalizes source aliases at the runtime-router boundary and keeps canonical typed messages internally. | Avoid leaking legacy message names through the app. |
 | Source Redux-style global store is broadcast to UI. | Target uses typed snapshots/events and Zustand UI stores; Redux is not ported. | Existing target architecture is not Redux-based. |
 
@@ -56,15 +56,15 @@ The target is a WXT/React/TypeScript extension with typed contracts and explicit
 | Source header manager can inject captured sensitive headers and includes broad DNR-style fallback behavior. | Target download paths use safe context only and do not persist cookies/authorization. | Avoid credential replay and broad request rewriting. |
 | Source queue persistence skips surprise restart auto-resume for pending/downloading items. | Target preserves explicit queue ownership and does not silently auto-start unrelated jobs. | Intentional source product behavior retained for safety. |
 | Source controller is a large orchestrator. | Target splits queue, controller decisions, protocol runners, storage cleanup, and export policy into typed modules. | Reduce blast radius and improve tests. |
-| Source direct download trim may be accepted by UI. | Target direct downloads ignore trim with a note until remux/export exists. | Direct file save cannot trim without mux pipeline. |
+| Source direct download trim may be accepted by UI. | Target direct trim routes through the optional native FFmpeg helper when installed; normal untrimmed direct downloads remain browser-managed. | Direct file save cannot trim without native export, and helper absence must not break normal downloads. |
 
 ## Phase 6: Storage and Export
 
 | Source behavior | Target mismatch | Why |
 |---|---|---|
 | Source offscreen document exposes a broad command API. | Target uses a typed offscreen message contract and keeps behavior incremental. | Prevent untyped cross-context commands. |
-| Source ffmpeg/offscreen path is broad and monolithic. | Target keeps ffmpeg local, lazy, and behind mux/export planning. | Avoid loading heavy or privileged code unless explicitly needed. |
-| Source may fall back to large in-memory muxing. | Target adds memory ceilings and split/OPFS policy before large output paths. | Avoid extension instability and memory exhaustion. |
+| Source ffmpeg/offscreen path is broad and monolithic. | Target uses an optional native FFmpeg helper with typed commands and helper-owned output paths. | Avoid loading heavy media engines in extension pages and keep execution outside the browser process. |
+| Source may fall back to large in-memory muxing. | Target native exports write helper-owned files and do not hold full media outputs in browser memory. | Avoid extension instability and memory exhaustion. |
 | Source IndexedDB/OPFS helpers are plain JS singletons. | Target ports storage behavior into typed helpers and job cleanup paths. | Preserve architecture and testability. |
 
 ## Phase 7: Settings, Naming, Notifications, Context Menu
