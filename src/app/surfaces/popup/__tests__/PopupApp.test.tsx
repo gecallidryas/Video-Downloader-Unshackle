@@ -72,6 +72,7 @@ test('renders source-equivalent theme and download settings in the flat settings
   expect(screen.getByRole('combobox', { name: /preview mode/i })).toHaveValue('image');
   expect(screen.getByRole('combobox', { name: /preview format/i })).toHaveValue('webm');
   expect(screen.getByText(/native ffmpeg helper/i)).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: /check helper/i })).toBeInTheDocument();
 });
 
 test('preview format selection persists to the settings store', async () => {

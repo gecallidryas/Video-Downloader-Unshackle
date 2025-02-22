@@ -1,8 +1,15 @@
+import { useState } from 'react';
+import { createNativeFfmpegClient, NativeFfmpegClientError } from '@/src/native/native-ffmpeg-client';
 import { useSettingsStore } from '@/src/state/useSettingsStore';
-import { NativeHelperStatus } from '@/src/ui/feedback/NativeHelperStatus';
+import {
+  NativeHelperStatus,
+  type NativeHelperUiStatus,
+} from '@/src/ui/feedback/NativeHelperStatus';
 import './PopupApp.css';
 
 function SettingsContent() {
+  const [nativeHelperStatus, setNativeHelperStatus] =
+    useState<NativeHelperUiStatus>('missing');
   const theme = useSettingsStore((s) => s.theme);
   const setTheme = useSettingsStore((s) => s.setTheme);
   const autoDetect = useSettingsStore((s) => s.autoDetectEnabled);
@@ -31,6 +38,19 @@ function SettingsContent() {
   const setPreviewFormat = useSettingsStore((s) => s.setPreviewFormat);
   const enableContextMenu = useSettingsStore((s) => s.enableContextMenu);
   const toggleContextMenu = useSettingsStore((s) => s.toggleContextMenu);
+
+  async function checkNativeHelper() {
+    try {
+      const result = await createNativeFfmpegClient().ping();
+      setNativeHelperStatus(result.ffmpegAvailable ? 'connected' : 'ffmpeg-missing');
+    } catch (error) {
+      setNativeHelperStatus(
+        error instanceof NativeFfmpegClientError && error.code === 'FFMPEG_NOT_FOUND'
+          ? 'ffmpeg-missing'
+          : 'missing',
+      );
+    }
+  }
 
   return (
     <>
@@ -223,7 +243,7 @@ function SettingsContent() {
         </select>
       </label>
 
-      <NativeHelperStatus status="missing" />
+      <NativeHelperStatus status={nativeHelperStatus} onCheck={() => void checkNativeHelper()} />
 
       <label className="popup__row">
         <span className="popup__label">Context menu</span>
