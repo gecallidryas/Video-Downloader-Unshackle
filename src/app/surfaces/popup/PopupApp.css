@@ -147,6 +147,13 @@
   line-height: var(--text-label-lh);
 }
 
+.native-helper-status__actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.native-helper-status__setup,
 .native-helper-status__check {
   height: 24px;
   border: 1px solid var(--outline);
@@ -155,4 +162,11 @@
   color: var(--on-surface);
   font-size: 11px;
   cursor: pointer;
+}
+
+.native-helper-status__setup {
+  display: inline-flex;
+  align-items: center;
+  padding: 0 8px;
+  text-decoration: none;
 }

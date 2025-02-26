@@ -1,4 +1,5 @@
 import { spawn } from 'node:child_process';
+import { readFile } from 'node:fs/promises';
 import type { NativeJson } from './native-protocol.js';
 import {
   buildExportArgs,
@@ -31,8 +32,8 @@ export type NativeHelperResponse =
   | { type: 'PONG'; requestId: string; payload: { version: string; ffmpegAvailable: boolean } }
   | { type: 'PROBE_RESULT'; requestId: string; payload: ProbeResult }
   | { type: 'COMPLETED'; requestId: string; payload: ProcessJobResult }
-  | { type: 'THUMBNAIL_RESULT'; requestId: string; payload: { candidateId: string; outputPath: string; mimeType: string } }
-  | { type: 'PREVIEW_CLIP_RESULT'; requestId: string; payload: { candidateId: string; outputPath: string; mimeType: string } }
+  | { type: 'THUMBNAIL_RESULT'; requestId: string; payload: AssetResultPayload }
+  | { type: 'PREVIEW_CLIP_RESULT'; requestId: string; payload: AssetResultPayload }
   | { type: 'CANCELLED'; requestId: string; payload: { jobId: string } }
   | { type: 'CLEANED_UP'; requestId: string; payload: { jobId: string } }
   | { type: 'ERROR'; requestId: string; payload: { code: string; message: string; detail?: NativeJson } };
@@ -45,11 +46,19 @@ export type ProbeResult = {
   codecs?: string[];
 };
 
+type AssetResultPayload = {
+  candidateId: string;
+  outputPath: string;
+  mimeType: string;
+  dataUrl: string;
+};
+
 export type DispatcherDeps = {
   checkExecutable?: (file: 'ffmpeg' | 'ffprobe') => Promise<boolean>;
   ensureOutputDirs?: () => Promise<HelperOutputDirs>;
   runProbe?: (plan: FfmpegCommandPlan) => Promise<ProbeResult>;
   runProcessJob?: (options: RunProcessJobOptions) => Promise<ProcessJobResult>;
+  readAsset?: (outputPath: string) => Promise<Buffer | Uint8Array>;
   registry?: JobRegistry;
 };
 
@@ -156,7 +165,12 @@ async function dispatchThumbnail(
   return {
     type: 'THUMBNAIL_RESULT',
     requestId: request.requestId,
-    payload: { candidateId: request.payload.candidateId, outputPath, mimeType },
+    payload: {
+      candidateId: request.payload.candidateId,
+      outputPath,
+      mimeType,
+      dataUrl: await buildAssetDataUrl(outputPath, mimeType, deps),
+    },
   };
 }
 
@@ -180,8 +194,22 @@ async function dispatchPreview(
   return {
     type: 'PREVIEW_CLIP_RESULT',
     requestId: request.requestId,
-    payload: { candidateId: request.payload.candidateId, outputPath, mimeType },
+    payload: {
+      candidateId: request.payload.candidateId,
+      outputPath,
+      mimeType,
+      dataUrl: await buildAssetDataUrl(outputPath, mimeType, deps),
+    },
   };
+}
+
+async function buildAssetDataUrl(
+  outputPath: string,
+  mimeType: string,
+  deps: DispatcherDeps,
+): Promise<string> {
+  const bytes = await (deps.readAsset ?? readFile)(outputPath);
+  return `data:${mimeType};base64,${Buffer.from(bytes).toString('base64')}`;
 }
 
 async function ensureDirs(deps: DispatcherDeps): Promise<HelperOutputDirs> {

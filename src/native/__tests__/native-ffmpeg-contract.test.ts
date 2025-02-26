@@ -100,6 +100,21 @@ describe('native ffmpeg message contract', () => {
     ).toBe(true);
   });
 
+  test('accepts preview asset responses with extension-safe data URLs', () => {
+    expect(
+      isNativeFfmpegResponse({
+        type: 'PREVIEW_CLIP_RESULT',
+        requestId: 'req-preview',
+        payload: {
+          candidateId: 'candidate-1',
+          outputPath: 'C:\\Users\\tester\\AppData\\Local\\VideoDownloaderUnshackle\\previews\\candidate-1.webm',
+          mimeType: 'video/webm',
+          dataUrl: 'data:video/webm;base64,d2VibS1ieXRlcw==',
+        },
+      }),
+    ).toBe(true);
+  });
+
   test('creates native error responses', () => {
     expect(nativeError('INVALID_REQUEST', 'Missing payload', 'req-bad')).toEqual({
       type: 'ERROR',

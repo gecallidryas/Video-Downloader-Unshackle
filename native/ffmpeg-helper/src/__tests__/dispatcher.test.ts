@@ -130,6 +130,7 @@ describe('native ffmpeg helper dispatcher', () => {
         checkExecutable: vi.fn().mockResolvedValue(true),
         ensureOutputDirs: vi.fn().mockResolvedValue(dirs),
         runProcessJob,
+        readAsset: vi.fn().mockResolvedValue(Buffer.from('jpg-bytes')),
       },
     );
 
@@ -140,6 +141,7 @@ describe('native ffmpeg helper dispatcher', () => {
         candidateId: 'candidate-1',
         outputPath: `${dirs.thumbsDir}\\candidate-1.jpg`,
         mimeType: 'image/jpeg',
+        dataUrl: 'data:image/jpeg;base64,anBnLWJ5dGVz',
       },
     });
   });
@@ -166,6 +168,7 @@ describe('native ffmpeg helper dispatcher', () => {
         checkExecutable: vi.fn().mockResolvedValue(true),
         ensureOutputDirs: vi.fn().mockResolvedValue(dirs),
         runProcessJob,
+        readAsset: vi.fn().mockResolvedValue(Buffer.from('webm-bytes')),
       },
     );
 
@@ -176,6 +179,7 @@ describe('native ffmpeg helper dispatcher', () => {
         candidateId: 'candidate-2',
         outputPath: `${dirs.previewsDir}\\candidate-2.webm`,
         mimeType: 'video/webm',
+        dataUrl: 'data:video/webm;base64,d2VibS1ieXRlcw==',
       },
     });
   });

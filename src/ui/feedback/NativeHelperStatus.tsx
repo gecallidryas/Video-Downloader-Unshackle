@@ -3,6 +3,7 @@ export type NativeHelperUiStatus = 'not-checked' | 'connected' | 'missing' | 'ff
 interface NativeHelperStatusProps {
   status: NativeHelperUiStatus;
   onCheck?: () => void;
+  setupHref?: string;
 }
 
 function statusLabel(status: NativeHelperUiStatus): string {
@@ -19,18 +20,25 @@ function statusLabel(status: NativeHelperUiStatus): string {
   }
 }
 
-export function NativeHelperStatus({ status, onCheck }: NativeHelperStatusProps) {
+export function NativeHelperStatus({ status, onCheck, setupHref }: NativeHelperStatusProps) {
   return (
     <div className="native-helper-status">
       <div>
         <span className="native-helper-status__label">Native FFmpeg helper</span>
         <span className="native-helper-status__value">{statusLabel(status)}</span>
       </div>
-      {onCheck ? (
-        <button type="button" className="native-helper-status__check" onClick={onCheck}>
-          Check helper
-        </button>
-      ) : null}
+      <div className="native-helper-status__actions">
+        {setupHref ? (
+          <a className="native-helper-status__setup" href={setupHref} target="_blank" rel="noreferrer">
+            Setup
+          </a>
+        ) : null}
+        {onCheck ? (
+          <button type="button" className="native-helper-status__check" onClick={onCheck}>
+            Check helper
+          </button>
+        ) : null}
+      </div>
     </div>
   );
 }

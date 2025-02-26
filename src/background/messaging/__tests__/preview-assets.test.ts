@@ -36,12 +36,12 @@ function routerWithCandidate(candidateValue: MediaCandidate) {
     candidateRegistry,
     tabSnapshots: createTabSnapshotStore(),
     ensurePreviewClip: vi.fn().mockResolvedValue({
-      assetUrl: 'C:\\Users\\tester\\AppData\\Local\\VideoDownloaderUnshackle\\previews\\candidate-1.webm',
+      assetUrl: 'data:video/webm;base64,d2VibS1ieXRlcw==',
       mimeType: 'video/webm',
       generated: true,
     }),
     ensureThumbnail: vi.fn().mockResolvedValue({
-      assetUrl: 'C:\\Users\\tester\\AppData\\Local\\VideoDownloaderUnshackle\\thumbs\\candidate-1.jpg',
+      assetUrl: 'data:image/jpeg;base64,anBnLWJ5dGVz',
       mimeType: 'image/jpeg',
       generated: true,
     }),
@@ -60,7 +60,7 @@ describe('preview asset runtime messages', () => {
       type: 'GET_PREVIEW_ASSET_RESULT',
       requestId: 'req-preview',
       payload: {
-        assetUrl: 'C:\\Users\\tester\\AppData\\Local\\VideoDownloaderUnshackle\\previews\\candidate-1.webm',
+        assetUrl: 'data:video/webm;base64,d2VibS1ieXRlcw==',
         mimeType: 'video/webm',
         generated: true,
       },
@@ -78,7 +78,7 @@ describe('preview asset runtime messages', () => {
       type: 'GET_THUMBNAIL_ASSET_RESULT',
       requestId: 'req-thumb',
       payload: {
-        assetUrl: 'C:\\Users\\tester\\AppData\\Local\\VideoDownloaderUnshackle\\thumbs\\candidate-1.jpg',
+        assetUrl: 'data:image/jpeg;base64,anBnLWJ5dGVz',
         mimeType: 'image/jpeg',
         generated: true,
       },

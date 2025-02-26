@@ -80,9 +80,14 @@ export async function ensureNativeThumbnail(
     atSec: options.atSec ?? defaultAtSec(candidate),
     format,
   });
+  const dataUrl = result.dataUrl;
+
+  if (!dataUrl) {
+    throw new Error('Native helper did not return an extension-safe thumbnail asset.');
+  }
 
   return {
-    assetUrl: result.outputPath,
+    assetUrl: dataUrl,
     mimeType: (result.mimeType as ThumbnailAssetResult['mimeType']) || mimeFor(format),
     generated: true,
   };

@@ -117,12 +117,12 @@ export type NativeFfmpegResponse =
   | {
       type: 'THUMBNAIL_RESULT';
       requestId: string;
-      payload: { candidateId: string; outputPath: string; mimeType: string };
+      payload: { candidateId: string; outputPath: string; mimeType: string; dataUrl?: string };
     }
   | {
       type: 'PREVIEW_CLIP_RESULT';
       requestId: string;
-      payload: { candidateId: string; outputPath: string; mimeType: string };
+      payload: { candidateId: string; outputPath: string; mimeType: string; dataUrl?: string };
     }
   | { type: 'CANCELLED'; requestId: string; payload: NativeFfmpegJobPayload }
   | { type: 'CLEANED_UP'; requestId: string; payload: NativeFfmpegJobPayload }
@@ -350,10 +350,11 @@ function isCompletedPayload(value: unknown): boolean {
 function isAssetResultPayload(value: unknown): boolean {
   return (
     isRecord(value) &&
-    hasOnlyKeys(value, ['candidateId', 'outputPath', 'mimeType']) &&
+    hasOnlyKeys(value, ['candidateId', 'outputPath', 'mimeType', 'dataUrl']) &&
     isString(value.candidateId) &&
     isString(value.outputPath) &&
-    isString(value.mimeType)
+    isString(value.mimeType) &&
+    isOptionalString(value.dataUrl)
   );
 }
 

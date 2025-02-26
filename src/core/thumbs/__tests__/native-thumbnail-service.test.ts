@@ -35,6 +35,7 @@ function nativeClient(): NativeFfmpegClient {
       candidateId: 'candidate-1',
       outputPath: 'C:\\Users\\tester\\AppData\\Local\\VideoDownloaderUnshackle\\thumbs\\candidate-1.jpg',
       mimeType: 'image/jpeg',
+      dataUrl: 'data:image/jpeg;base64,anBnLWJ5dGVz',
     }),
     extractPreviewClip: vi.fn(),
     cancelJob: vi.fn(),
@@ -62,7 +63,7 @@ describe('native thumbnail service', () => {
     const client = nativeClient();
 
     await expect(ensureNativeThumbnail(candidate(), { nativeClient: client })).resolves.toEqual({
-      assetUrl: 'C:\\Users\\tester\\AppData\\Local\\VideoDownloaderUnshackle\\thumbs\\candidate-1.jpg',
+      assetUrl: 'data:image/jpeg;base64,anBnLWJ5dGVz',
       mimeType: 'image/jpeg',
       generated: true,
     });
@@ -84,5 +85,18 @@ describe('native thumbnail service', () => {
       ),
     ).rejects.toThrow(/Protected media/);
     expect(client.extractThumbnail).not.toHaveBeenCalled();
+  });
+
+  test('rejects generated thumbnails without extension-safe asset data', async () => {
+    const client = nativeClient();
+    vi.mocked(client.extractThumbnail).mockResolvedValueOnce({
+      candidateId: 'candidate-1',
+      outputPath: 'C:\\Users\\tester\\AppData\\Local\\VideoDownloaderUnshackle\\thumbs\\candidate-1.jpg',
+      mimeType: 'image/jpeg',
+    });
+
+    await expect(ensureNativeThumbnail(candidate(), { nativeClient: client })).rejects.toThrow(
+      /extension-safe thumbnail asset/i,
+    );
   });
 });

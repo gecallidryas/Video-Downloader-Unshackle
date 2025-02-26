@@ -36,6 +36,7 @@ function nativeClient(): NativeFfmpegClient {
       candidateId: 'candidate-1',
       outputPath: 'C:\\Users\\tester\\AppData\\Local\\VideoDownloaderUnshackle\\previews\\candidate-1.webm',
       mimeType: 'video/webm',
+      dataUrl: 'data:video/webm;base64,d2VibS1ieXRlcw==',
     }),
     cancelJob: vi.fn(),
     cleanupJob: vi.fn(),
@@ -59,12 +60,26 @@ describe('native preview service', () => {
       format: 'webm',
     });
     expect(first).toEqual({
-      assetUrl: 'C:\\Users\\tester\\AppData\\Local\\VideoDownloaderUnshackle\\previews\\candidate-1.webm',
+      assetUrl: 'data:video/webm;base64,d2VibS1ieXRlcw==',
       mimeType: 'video/webm',
       generated: true,
     });
     expect(second).toEqual(first);
     expect(getCachedPreview('candidate-1')).toEqual(first);
+  });
+
+  test('rejects generated previews without extension-safe asset data', async () => {
+    const client = nativeClient();
+    vi.mocked(client.extractPreviewClip).mockResolvedValueOnce({
+      candidateId: 'candidate-1',
+      outputPath: 'C:\\Users\\tester\\AppData\\Local\\VideoDownloaderUnshackle\\previews\\candidate-1.webm',
+      mimeType: 'video/webm',
+    });
+    clearPreviewCache('candidate-1');
+
+    await expect(ensurePreviewClip(candidate(), { nativeClient: client })).rejects.toThrow(
+      /extension-safe preview asset/i,
+    );
   });
 
   test('uses requested format settings in the preview cache key', async () => {

@@ -243,7 +243,11 @@ function SettingsContent() {
         </select>
       </label>
 
-      <NativeHelperStatus status={nativeHelperStatus} onCheck={() => void checkNativeHelper()} />
+      <NativeHelperStatus
+        status={nativeHelperStatus}
+        setupHref="docs/native-helper.md"
+        onCheck={() => void checkNativeHelper()}
+      />
 
       <label className="popup__row">
         <span className="popup__label">Context menu</span>

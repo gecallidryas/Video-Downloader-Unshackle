@@ -85,9 +85,14 @@ export async function ensurePreviewClip(
     durationSec,
     format,
   });
+  const dataUrl = result.dataUrl;
+
+  if (!dataUrl) {
+    throw new Error('Native helper did not return an extension-safe preview asset.');
+  }
 
   return setPreviewAsset(key, {
-    assetUrl: result.outputPath,
+    assetUrl: dataUrl,
     mimeType: (result.mimeType as PreviewAsset['mimeType']) || mimeFor(format),
     generated: true,
   });
