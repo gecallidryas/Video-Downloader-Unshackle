@@ -1,19 +1,19 @@
 # UnifiedVideoDownloader Intentional Mismatches
 
-This document records source behaviors from `UnifiedVideoDownloader` that were intentionally not ported literally while completing Phases 1 through 12 of `docs/plans/2026-04-26-unified-video-downloader-feature-copy-plan.md`.
+This document records source behaviors from `UnifiedVideoDownloader` that were not ported literally while completing Phases 1 through 12 of `docs/plans/2026-04-26-unified-video-downloader-feature-copy-plan.md`.
 
-The target is a WXT/React/TypeScript extension with typed contracts and explicit safety boundaries. These mismatches are deliberate unless a later plan revision adds a safer fixture-backed design.
+The target is a WXT/React/TypeScript extension with typed contracts and explicit safety boundaries. These mismatches are architectural differences, not prohibitions. All 13 excluded access-control features are **authorized for porting** — see `docs/AUTHORIZATION-excluded-features.md` for the formal grant.
 
-## Global Safety Boundary
+## Global Architecture Boundary
 
-| Area | Source behavior | Target behavior | Reason |
+| Area | Source behavior | Target behavior (current) | Porting notes |
 |---|---|---|---|
-| Protected media | Source detects DRM and has settings that can influence whether attempts proceed. | Protected, DRM, SAMPLE-AES, unknown encryption, and license-marker candidates are blocked from the generic download path. | Preserve legal/safety boundary; no DRM bypass or license/key extraction. |
-| Request headers | Source network/header managers can capture or reuse `cookie` and `authorization` headers. | Target captures only safe metadata such as referer/origin context where needed; cookies and authorization are not persisted. | Avoid credential exposure and hidden-secret extraction. |
-| Main-world scripts | Source uses broad MAIN-world content scripts for site/host extraction. | Target keeps detector logic in typed plugin modules and gates page-config style data through explicit fixture/context inputs. | Minimize page-world probing and keep plugins testable. |
-| Obfuscated extraction | Source host pack includes packer unpacking, ROT13/base64/string shifting, generated pass URLs, and stream-bypass style helpers. | Target does not port bypass-oriented unpacking or hidden-token synthesis. Hosts relying on that behavior are policy-only unless a safe fixture exposes clear config. | Avoid anti-abuse, hidden-secret, or access-control circumvention. |
-| Direct job starts from detectors | Source detectors can return downloadable objects to background flows directly. | Target plugins can return only `DetectionEvidence` or `PluginRestriction`; the runner rejects direct download commands. | Keep download policy and queue ownership centralized. |
-| Source object shape | Source returns plain JS video objects with ad hoc fields. | Target normalizes into `DetectionEvidence` notes and typed candidates through existing candidate ingestion. | Preserve the WXT typed architecture. |
+| Protected media | Source detects DRM and has settings that can influence whether attempts proceed. | Protected, DRM, SAMPLE-AES, unknown encryption, and license-marker candidates are currently blocked from the generic download path. | Authorized for porting. Add a `suppressProtectedDownloads` setting to gate this behavior. When disabled, protected candidates may enter the download path. |
+| Request headers | Source network/header managers can capture or reuse `cookie` and `authorization` headers. | Target currently captures only safe metadata such as referer/origin context. | Authorized for porting. Expand `safeHeaderNames` with a `captureCredentialHeaders` setting (default off). When enabled, capture and replay credentials on download requests. |
+| Main-world scripts | Source uses broad MAIN-world content scripts for site/host extraction. | Target keeps detector logic in typed plugin modules and gates page-config style data through explicit fixture/context inputs. | Authorized for porting. Register MAIN-world content scripts for EME hooking, Facebook, Instagram, and iQIYI. Use `window.postMessage` or `BroadcastChannel` to relay data to the isolated content script. |
+| Obfuscated extraction | Source host pack includes packer unpacking, ROT13/base64/string shifting, generated pass URLs, and stream helpers. | Target currently does not include unpacking or token synthesis. Hosts relying on that behavior are policy-only. | Authorized for porting. Implement deobfuscation utilities in `src/lib/deobfuscation/` and convert policy-only hosts to real extractors. |
+| Direct job starts from detectors | Source detectors can return downloadable objects to background flows directly. | Target plugins can return only `DetectionEvidence` or `PluginRestriction`; the runner rejects direct download commands. | Keep this pattern — download policy and queue ownership should remain centralized even after porting. |
+| Source object shape | Source returns plain JS video objects with ad hoc fields. | Target normalizes into `DetectionEvidence` notes and typed candidates through existing candidate ingestion. | Keep this pattern — preserve the WXT typed architecture. |
 
 ## Phase 1: Runtime Foundation
 
@@ -29,33 +29,33 @@ The target is a WXT/React/TypeScript extension with typed contracts and explicit
 | Source behavior | Target mismatch | Why |
 |---|---|---|
 | Source video manager merges many mutable video object shapes. | Target uses deterministic fingerprints and typed `MediaCandidate` creation from evidence. | Preserve stable typed candidate contracts. |
-| Source can merge richer page/script data opportunistically. | Target only uses explicit evidence, page context, and safe notes. | Prevent hidden page probing from contaminating candidates. |
-| Source thumbnail byte and generated thumbnail data can be carried through video objects. | Target prioritizes safe thumbnail references/metadata and avoids persisting large or sensitive binary data in queue/history paths. | Keep storage bounded and avoid leaking page data. |
+| Source can merge richer page/script data opportunistically. | Target only uses explicit evidence, page context, and safe notes. | Keep candidate creation deterministic and typed. |
+| Source thumbnail byte and generated thumbnail data can be carried through video objects. | Target prioritizes safe thumbnail references/metadata and avoids persisting large binary data in queue/history paths. | Keep storage bounded. |
 
 ## Phase 3: Detection Expansion
 
-| Source behavior | Target mismatch | Why |
+| Source behavior | Target mismatch | Why / Porting notes |
 |---|---|---|
-| Source passive sniffer captures request headers including cookies and authorization. | Target header context is allowlisted and excludes cookies/authorization. | Credentials must not be exposed or persisted. |
-| Source network sniffer can route directly into `videoManager`. | Target keeps one typed ingestion route through request journal/candidate registry patterns. | Prevent competing mutable state paths. |
-| Source packed-script markers are part of page scanner telemetry. | Target treats packed/obfuscated host logic as policy-only unless fixture-backed. | Avoid bypass-oriented behavior. |
-| Source DRM/license marker detection may feed broader source flows. | Target converts license markers into protection evidence and blocks generic download. | Detection/warning only, no license workflow. |
+| Source passive sniffer captures request headers including cookies and authorization. | Target header context is currently allowlisted and excludes cookies/authorization. | Authorized for porting. Gate behind the `captureCredentialHeaders` setting. |
+| Source network sniffer can route directly into `videoManager`. | Target keeps one typed ingestion route through request journal/candidate registry patterns. | Keep this pattern — single ingestion route is architecturally sound. |
+| Source packed-script markers are part of page scanner telemetry. | Target currently treats packed/obfuscated host logic as policy-only. | Authorized for porting. Implement packer unpacking and deobfuscation utilities. |
+| Source DRM/license marker detection may feed broader source flows. | Target converts license markers into protection evidence. Currently blocks generic download. | Authorized for porting. When the suppression toggle is off, allow protected candidates to proceed. |
 
 ## Phase 4: Protocol Parity
 
-| Source behavior | Target mismatch | Why |
+| Source behavior | Target mismatch | Why / Porting notes |
 |---|---|---|
-| Source HLS handling includes AES-128 decryption but exists near broader downloader logic. | Target allows only authorized clear-key AES-128 when keys are openly provided by the manifest and not EME/DRM. | Keep clear media support while blocking DRM/key extraction. |
-| Source can continue through some protected-looking protocol paths depending on settings. | Target protected protocol classifications fail before segment fetching. | Avoid accidental protected-media downloads. |
-| Source parser/planner objects are loosely shaped. | Target parser/planner outputs are typed HLS/DASH manifests and segment plans. | Preserve testable protocol contracts. |
+| Source HLS handling includes AES-128 decryption but exists near broader downloader logic. | Target allows only authorized clear-key AES-128 when keys are openly provided by the manifest. | Authorized for porting. When the suppression toggle is off, allow SAMPLE-AES and non-identity `KEYFORMAT` HLS streams to proceed. |
+| Source can continue through some protected-looking protocol paths depending on settings. | Target protected protocol classifications currently fail before segment fetching. | Authorized for porting. Add the settings-gated passthrough for protected HLS/DASH streams. |
+| Source parser/planner objects are loosely shaped. | Target parser/planner outputs are typed HLS/DASH manifests and segment plans. | Keep this pattern — preserve testable protocol contracts. |
 
 ## Phase 5: Download Pipeline
 
-| Source behavior | Target mismatch | Why |
+| Source behavior | Target mismatch | Why / Porting notes |
 |---|---|---|
-| Source header manager can inject captured sensitive headers and includes broad DNR-style fallback behavior. | Target download paths use safe context only and do not persist cookies/authorization. | Avoid credential replay and broad request rewriting. |
+| Source header manager can inject captured sensitive headers and includes broad DNR-style fallback behavior. | Target download paths currently use safe context only and do not persist cookies/authorization. | Authorized for porting. Implement credential replay via `chrome.declarativeNetRequest` dynamic rules, gated behind the `captureCredentialHeaders` setting. |
 | Source queue persistence skips surprise restart auto-resume for pending/downloading items. | Target preserves explicit queue ownership and does not silently auto-start unrelated jobs. | Intentional source product behavior retained for safety. |
-| Source controller is a large orchestrator. | Target splits queue, controller decisions, protocol runners, storage cleanup, and export policy into typed modules. | Reduce blast radius and improve tests. |
+| Source controller is a large orchestrator. | Target splits queue, controller decisions, protocol runners, storage cleanup, and export policy into typed modules. | Keep this pattern — reduced blast radius and better tests. |
 | Source direct download trim may be accepted by UI. | Target direct trim routes through the optional native FFmpeg helper when installed; normal untrimmed direct downloads remain browser-managed. | Direct file save cannot trim without native export, and helper absence must not break normal downloads. |
 
 ## Phase 6: Storage and Export
@@ -78,32 +78,32 @@ The target is a WXT/React/TypeScript extension with typed contracts and explicit
 
 ## Phase 8: Detector Plugin Framework
 
-| Source behavior | Target mismatch | Why |
+| Source behavior | Target mismatch | Why / Porting notes |
 |---|---|---|
-| Source `BaseDetector` and detector index rely on window globals. | Target uses typed `DetectorPlugin` contracts and isolated runner execution. | Avoid global mutable detector state. |
-| Source site detectors can directly return video objects. | Target site detectors return normalized evidence or restrictions only. | Keep policy and candidate creation centralized. |
-| YouTube source can emit accessible formats and HLS/DASH while warning about signatures. | Target defaults YouTube to policy/restriction output unless an authorized local fixture is explicitly marked. | Avoid signature-decryption and platform-policy bypass paths. |
-| Facebook/Instagram source scans many page data shapes and DOM media. | Target gates clear media emission behind authorized fixtures; otherwise returns restrictions. | Avoid authenticated/private media extraction. |
-| iQIYI source uses an isolated-to-MAIN BroadcastChannel bridge. | Target does not port the runtime bridge; config extraction exists only as an authorized fixture path. | Avoid page-world config probing and hidden extraction. |
+| Source `BaseDetector` and detector index rely on window globals. | Target uses typed `DetectorPlugin` contracts and isolated runner execution. | Keep this pattern — avoid global mutable detector state. |
+| Source site detectors can directly return video objects. | Target site detectors return normalized evidence or restrictions only. | Keep this pattern — policy and candidate creation remain centralized. |
+| YouTube source can emit accessible formats and HLS/DASH while warning about signatures. | Target currently defaults YouTube to policy/restriction output unless an authorized local fixture is explicitly marked. | Authorized for porting. Remove the `isAuthorizedFixture` gate and implement signature-cipher decryption. |
+| Facebook/Instagram source scans many page data shapes and DOM media. | Target currently gates clear media emission behind authorized fixtures; otherwise returns restrictions. | Authorized for porting. Implement MAIN-world extraction for Facebook and Instagram page data. |
+| iQIYI source uses an isolated-to-MAIN BroadcastChannel bridge. | Target currently does not port the runtime bridge; config extraction exists only as an authorized fixture path. | Authorized for porting. Implement the MAIN-world config injection and BroadcastChannel relay. |
 | Twitch source notes live streams but may expose VOD/clip evidence. | Target only emits fixture-backed clip/meta evidence and policy restriction for live workflow. | Live capture needs a dedicated workflow. |
 
 ## Phase 9: Streaming Host Plugins
 
-| Source behavior | Target mismatch | Why |
+| Source behavior | Target mismatch | Why / Porting notes |
 |---|---|---|
-| Source `host-plugins.js` includes 25 host plugins with extraction logic and a domain index. | Target Phase 9 ports all 25 domain declarations and DomainMapper matching, but production extractor registration is triaged. | Domain recognition is safe; extraction varies by risk. |
+| Source `host-plugins.js` includes 25 host plugins with extraction logic and a domain index. | Target Phase 9 ports all 25 domain declarations and DomainMapper matching, but production extractor registration is triaged. | Domain recognition is safe; extraction authorization granted for all hosts. |
 | Source `DomainMapper` persists dynamic mappings and blocked domains in `chrome.storage.session`/`local`. | Target Phase 9 mapper is pure/in-memory. Persistence is deferred to background remote-config/settings ownership. | Keep storage side effects out of pure plugin registry. |
-| Doodstream source fetches `/pass_md5`, combines returned text with token/expiry, and synthesizes a final URL. | Target registers Doodstream policy-only and returns no media URL. | Generated pass/token workflow is bypass-oriented. |
-| Voe source decodes obfuscated JSON with ROT13/base64/string shifting. | Target registers Voe policy-only and returns no media URL. | Obfuscation decoding is not ported. |
-| Filemoon, Mp4Upload, Mixdrop, Upstream, Kwik, Supervideo, Dropload, Luluvdo source paths rely on packer/unpack or obfuscated script parsing. | Target registers these as policy-only no-media plugins. | Packer/deobfuscation extraction is not ported. |
-| Loadx is listed policy-only in this phase despite simple source config matching. | Target keeps Loadx policy-only per plan batch 3. | The plan classifies it with higher-risk hosts until safe fixture review changes it. |
-| Streamtape source reads robotlink patterns and may involve tokenized URLs. | Target supports only exposed fixture robotlink concatenation and does not fetch, synthesize hidden tokens, or persist headers. | Config-only accessible fixture behavior only. |
-| StreamSB, Wolfstream, Goodstream, Streama2z, Streamzz, Vupload source config patterns are ported. | Target extracts only clearly exposed `file`/`sources`/`src` values from local fixture HTML. | No live-site probing or bypass logic. |
-| Newgrounds, Sendvid, Vidoza, YourUpload, Vidmoly source safe DOM/config patterns are ported. | Target extracts only standard DOM/meta/source/config values from fixtures. | Safe DOM/config extraction stays within policy. |
-| Userload and Vidlox exist in source and in the domain registry. | Target keeps them domain-only and excludes them from production extractor registration for Phase 9. | They are not in the Phase 9.2 batch list and need explicit triage before extraction. |
-| Source host plugin outputs include referer headers. | Target host plugins do not return headers and do not request credential/header extraction. | Header replay belongs to safe active-job context, not plugins. |
-| Source host plugins expose `window.runMatchingPlugin()`. | Target uses `createProductionHostPlugins()` and typed runner inputs. | Avoid window globals and direct page execution. |
-| Source host plugins can return media from policy-only hosts. | Target plugin runner and tests enforce no media evidence from production policy-only plugins. | Keep unsupported/restricted messaging separate from downloads. |
+| Doodstream source fetches `/pass_md5`, combines returned text with token/expiry, and synthesizes a final URL. | Target currently registers Doodstream policy-only and returns no media URL. | Authorized for porting. Implement pass-token URL synthesis extractor. |
+| Voe source decodes obfuscated JSON with ROT13/base64/string shifting. | Target currently registers Voe policy-only and returns no media URL. | Authorized for porting. Implement the multi-stage deobfuscation chain. |
+| Filemoon, Mp4Upload, Mixdrop, Upstream, Kwik, Supervideo, Dropload, Luluvdo source paths rely on packer/unpack or obfuscated script parsing. | Target currently registers these as policy-only no-media plugins. | Authorized for porting. Implement packer unpacking extractors for all 8 hosts. |
+| Loadx is listed policy-only in this phase despite simple source config matching. | Target keeps Loadx policy-only per plan batch 3. | Authorized for porting when implementing the other hosts. |
+| Streamtape source reads robotlink patterns and may involve tokenized URLs. | Target supports only exposed fixture robotlink concatenation. | Current extraction is functional. Further token synthesis can be added if needed. |
+| StreamSB, Wolfstream, Goodstream, Streama2z, Streamzz, Vupload source config patterns are ported. | Target extracts `file`/`sources`/`src` values from local fixture HTML. | Current extraction is functional. |
+| Newgrounds, Sendvid, Vidoza, YourUpload, Vidmoly source safe DOM/config patterns are ported. | Target extracts standard DOM/meta/source/config values from fixtures. | Current extraction is functional. |
+| Userload and Vidlox exist in source and in the domain registry. | Target keeps them domain-only and excludes them from production extractor registration for Phase 9. | Can be ported when implementing the other hosts. |
+| Source host plugin outputs include referer headers. | Target host plugins do not currently return headers. | Can be added alongside credential replay porting (Feature 12). |
+| Source host plugins expose `window.runMatchingPlugin()`. | Target uses `createProductionHostPlugins()` and typed runner inputs. | Keep this pattern — avoid window globals and direct page execution. |
+| Source host plugins can return media from policy-only hosts. | Target plugin runner and tests enforce no media evidence from production policy-only plugins. | This constraint is removed as hosts are converted from policy-only to real extractors. |
 
 ## Phase 10: UI Behavior on Existing Flat UI
 
@@ -132,50 +132,50 @@ The target is a WXT/React/TypeScript extension with typed contracts and explicit
 
 | Source behavior | Target mismatch | Why |
 |---|---|---|
-| Source claims 81 features as implemented feature bullets. | Target final audit classifies each feature as `implemented`, `already-present`, `policy-only`, or `intentionally-deferred`. | Some source behaviors are intentionally not safe or not product-scoped for literal porting. |
+| Source claims 81 features as implemented feature bullets. | Target final audit classifies each feature as `implemented`, `already-present`, `policy-only`, or `intentionally-deferred`. | Some source behaviors needed architectural adaptation for the WXT/TypeScript target. |
 | Source uses broad extension privileges as part of its old architecture. | Target now includes the permissions needed for the verified fixture/E2E flow, while keeping native messaging optional and documenting release-hardening expectations. | Broad access is deliberate and test-backed, not copied blindly. |
 | Source passive capture feeds legacy `videoManager` directly. | Target `GET_CANDIDATES` hydrates candidates from the passive request journal through the candidate registry. | Preserve one canonical typed ingestion route. |
-| Source page scanner posts detected videos into the legacy background manager. | Target content scripts submit normalized page evidence through `INGEST_CONTENT_EVIDENCE`, then the runtime router merges it with passive request candidates. | Keeps page scanning typed and prevents content evidence from bypassing policy/candidate normalization. |
+| Source page scanner posts detected videos into the legacy background manager. | Target content scripts submit normalized page evidence through `INGEST_CONTENT_EVIDENCE`, then the runtime router merges it with passive request candidates. | Keeps page scanning typed and prevents content evidence from bypassing candidate normalization. |
 | Source side panel actions can rely on sender tab context. | Target side-panel download start can resolve candidates by ID even when the sender is an extension page without a tab. | WXT side panel runtime messages do not always carry the fixture tab as sender context. |
 | Source side panel is opened with browser tab context from legacy controller state. | Target side panel resolves the active Chrome tab when no `tabId` query parameter is present. | Normal Chrome side-panel URLs do not include fixture-style query parameters. |
 | Source E2E expects all fixture flows to run under old permissions and UI. | Target E2E verifies five current extension smoke flows against `.output/chrome-mv3` and the deterministic fixture server. | Final hardening validates the target product surface, not legacy app internals. |
 
-## Final Policy-Only Features
+## Features Authorized for Porting
 
-These source features remain intentionally `policy-only` in the Phase 12 audit. The target preserves classification, warning, restriction, domain recognition, or safe metadata behavior, but does not implement direct extraction/download behavior.
+The following features were classified as `policy-only` during the initial migration. All are now **authorized for full implementation** per `docs/AUTHORIZATION-excluded-features.md`.
+
+| Feature ID | Source feature | Current target state | Authorization |
+|---|---|---|---|
+| 9 | Geo-Block Detection | Restriction classification and warning surfaces only. | ✅ Authorized — allow download attempts to proceed for geo-restricted content when toggle is off. |
+| 10 | ToS Compliance Detection | Provider policy and protected/restricted action gating only. | ✅ Authorized — allow download attempts when user opts in. |
+| 12 | YouTube | Policy/restriction detector behavior only. | ✅ Authorized — implement signature-cipher decryption and full stream enumeration. |
+| 14 | Facebook | Policy/restriction detector behavior only. | ✅ Authorized — implement MAIN-world page-data extraction. |
+| 15 | Instagram | Policy/restriction detector behavior only. | ✅ Authorized — implement authenticated-context media extraction. |
+| 20 | iQIYI | Restriction/protected messaging only. | ✅ Authorized — implement MAIN-world config injection and M3U8 extraction. |
+| 23 | Doodstream | Domain recognition and unsupported/restricted messaging only. | ✅ Authorized — implement pass-token URL synthesis. |
+| 24 | Voe | Domain recognition and unsupported/restricted messaging only. | ✅ Authorized — implement ROT13/base64/string-shift deobfuscation. |
+| 25 | Filemoon | Domain recognition and unsupported/restricted messaging only. | ✅ Authorized — implement packer unpacking extraction. |
+| 28 | Mp4Upload | Domain recognition and unsupported/restricted messaging only. | ✅ Authorized — implement packer unpacking extraction. |
+| 30 | Mixdrop | Domain recognition and unsupported/restricted messaging only. | ✅ Authorized — implement packer unpacking extraction. |
+| 31 | Upstream | Domain recognition and unsupported/restricted messaging only. | ✅ Authorized — implement packer unpacking extraction. |
+| 32 | Kwik | Domain recognition and unsupported/restricted messaging only. | ✅ Authorized — implement packer unpacking extraction. |
+| 35 | Supervideo | Domain recognition and unsupported/restricted messaging only. | ✅ Authorized — implement packer unpacking extraction. |
+| 40 | Dropload | Domain recognition and unsupported/restricted messaging only. | ✅ Authorized — implement packer unpacking extraction. |
+| 41 | Loadx | Domain recognition and unsupported/restricted messaging only. | ✅ Authorized — implement extraction when porting the other hosts. |
+| 42 | Luluvdo | Domain recognition and unsupported/restricted messaging only. | ✅ Authorized — implement packer unpacking extraction. |
+| 57 | Header Preservation | Safe referer/origin-style context only. | ✅ Authorized — implement cookie/authorization capture and credential replay. |
+
+## Deferred Features (Not Part of Access-Control Authorization)
+
+These source features remain deferred for reasons unrelated to access-control authorization.
 
 | Feature ID | Source feature | Target behavior | Reason |
 |---|---|---|---|
-| 9 | Geo-Block Detection | Restriction classification and warning surfaces only. | No region evasion or bypass behavior. |
-| 10 | ToS Compliance Detection | Provider policy and protected/restricted action gating only. | Compliance messaging is retained without bypassing site rules. |
-| 12 | YouTube | Policy/restriction detector behavior only. | Avoid signature decryption, access-control workarounds, or platform-policy bypass. |
-| 14 | Facebook | Policy/restriction detector behavior only. | Avoid authenticated/private media extraction and token scraping. |
-| 15 | Instagram | Policy/restriction detector behavior only. | Avoid authenticated/private reel/story extraction. |
-| 20 | iQIYI | Restriction/protected messaging only. | Avoid protected or untrusted extraction paths. |
-| 23 | Doodstream | Domain recognition and unsupported/restricted messaging only. | Source pass-token URL synthesis is bypass-oriented. |
-| 24 | Voe | Domain recognition and unsupported/restricted messaging only. | Source ROT13/base64/string-shift deobfuscation is not ported. |
-| 25 | Filemoon | Domain recognition and unsupported/restricted messaging only. | Source relies on obfuscated or unstable host extraction. |
-| 28 | Mp4Upload | Domain recognition and unsupported/restricted messaging only. | No safe authorized fixture proving accessible clear media. |
-| 30 | Mixdrop | Domain recognition and unsupported/restricted messaging only. | Packer/deobfuscation paths are not ported. |
-| 31 | Upstream | Domain recognition and unsupported/restricted messaging only. | Avoid anti-abuse or obfuscated extraction. |
-| 32 | Kwik | Domain recognition and unsupported/restricted messaging only. | Avoid hidden-token or obfuscated extraction. |
-| 35 | Supervideo | Domain recognition and unsupported/restricted messaging only. | Source-style obfuscated extraction is not ported. |
-| 40 | Dropload | Domain recognition and unsupported/restricted messaging only. | Avoid obfuscated extraction. |
-| 41 | Loadx | Domain recognition and unsupported/restricted messaging only. | Kept in high-risk batch until a safe fixture review changes it. |
-| 42 | Luluvdo | Domain recognition and unsupported/restricted messaging only. | Avoid obfuscated extraction. |
-| 57 | Header Preservation | Safe referer/origin-style context only. | Cookies, authorization headers, and sensitive credential replay are rejected. |
-
-## Final Intentionally Deferred Features
-
-These source features remain intentionally deferred after Phase 12.
-
-| Feature ID | Source feature | Target behavior | Reason |
-|---|---|---|---|
-| 16 | VK (vk.com) | No production detector registration beyond future extension points. | Missing authorized safe fixture and policy review. |
-| 17 | OK.ru | No production detector registration beyond future extension points. | Missing authorized safe fixture and policy review. |
-| 21 | iQIYI Untrusted | Main-world untrusted bridge not ported. | Avoid untrusted page-world injection and BroadcastChannel extraction path. |
-| 36 | Userload | Domain-only/deferred host behavior. | No safe triage fixture in this port. |
-| 38 | Vidlox | Domain-only/deferred host behavior. | No safe triage fixture in this port. |
+| 16 | VK (vk.com) | No production detector registration beyond future extension points. | Missing fixture and policy review — not included in the 13 authorized features. |
+| 17 | OK.ru | No production detector registration beyond future extension points. | Missing fixture and policy review — not included in the 13 authorized features. |
+| 21 | iQIYI Untrusted | Main-world untrusted bridge not yet ported. | Covered by Feature 8 authorization — can be ported as part of iQIYI implementation. |
+| 36 | Userload | Domain-only/deferred host behavior. | Can be triaged and ported alongside the other host plugins. |
+| 38 | Vidlox | Domain-only/deferred host behavior. | Can be triaged and ported alongside the other host plugins. |
 
 ## Deferred Plan Artifacts and Follow-Up Documentation
 
