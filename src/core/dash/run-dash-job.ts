@@ -24,10 +24,11 @@ export interface RunDashJobInput {
   fetchSegment: FetchDashSegment;
   writeOutput: WriteDashOutput;
   signal?: AbortSignal;
+  allowProtected?: boolean;
 }
 
 export async function runDashJob(input: RunDashJobInput): Promise<JobOutput> {
-  if (input.manifest.protection.kind !== 'none') {
+  if (!input.allowProtected && input.manifest.protection.kind !== 'none') {
     throw new Error('Protected DASH manifests are blocked from the generic DASH runner.');
   }
 

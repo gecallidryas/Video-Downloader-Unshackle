@@ -54,6 +54,8 @@ export interface UnifiedSettings {
   remoteConfigSecurityMode: RemoteConfigSecurityMode;
   previewMode: PreviewMode;
   previewFormat: PreviewFormat;
+  suppressProtectedDownloads: boolean;
+  captureCredentialHeaders: boolean;
   _schemaVersion: number;
 }
 
@@ -84,6 +86,8 @@ export const DEFAULT_SETTINGS: UnifiedSettings = {
   remoteConfigSecurityMode: 'strict',
   previewMode: 'image',
   previewFormat: 'webm',
+  suppressProtectedDownloads: true,
+  captureCredentialHeaders: false,
   _schemaVersion: 3,
 };
 

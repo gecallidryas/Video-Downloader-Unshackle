@@ -31,6 +31,8 @@ describe('background settings store', () => {
       defaultActionPerHost: {},
       enableContextMenu: true,
       remoteConfigSecurityMode: 'strict',
+      suppressProtectedDownloads: true,
+      captureCredentialHeaders: false,
     });
   });
 

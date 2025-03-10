@@ -31,10 +31,12 @@ export interface RunHlsJobInput {
   ) => Promise<Uint8Array>;
   writeOutput: WriteHlsOutput;
   signal?: AbortSignal;
+  allowProtected?: boolean;
 }
 
 export async function runHlsJob(input: RunHlsJobInput): Promise<JobOutput> {
   if (
+    !input.allowProtected &&
     input.manifest.protection.kind !== 'none' &&
     input.manifest.protection.kind !== 'aes-128'
   ) {

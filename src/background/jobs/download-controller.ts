@@ -30,11 +30,13 @@ export interface DownloadControllerStartOptions {
 export type RunHlsControllerJob = (input: {
   job: DownloadJob;
   manifest: ParsedHlsManifest;
+  allowProtected?: boolean;
 }) => Promise<JobOutput>;
 
 export type RunDashControllerJob = (input: {
   job: DownloadJob;
   manifest: ParsedDashManifest;
+  allowProtected?: boolean;
 }) => Promise<JobOutput>;
 
 export type RunNativeExportControllerJob = (input: {
@@ -50,6 +52,7 @@ export interface DownloadControllerOptions {
   fetchText?: (url: string, init: RequestInit) => Promise<string>;
   cancelDownload?: (downloadId: number) => Promise<void>;
   now?: () => number;
+  suppressProtectedDownloads?: boolean;
 }
 
 export interface ManagedDownloadOptions extends DownloadControllerStartOptions {
@@ -57,6 +60,8 @@ export interface ManagedDownloadOptions extends DownloadControllerStartOptions {
   historyStore: HistoryStore;
 }
 
+// Note: geo-restricted candidates have status='unsupported' (not 'protected') and are
+// not blocked by this gate — they proceed into the pipeline and fail at network fetch time.
 function isProtected(candidate: MediaCandidate): boolean {
   return (
     candidate.status === 'protected' ||
@@ -122,7 +127,9 @@ export function createDownloadController(options: DownloadControllerOptions) {
     job: DownloadJob,
     startOptions: DownloadControllerStartOptions = {},
   ): Promise<JobOutput> {
-    if (isProtected(candidate)) {
+    const allowProtected = options.suppressProtectedDownloads === false;
+
+    if (!allowProtected && isProtected(candidate)) {
       throw new Error('Protected media cannot be downloaded by the generic pipeline.');
     }
 
@@ -171,6 +178,7 @@ export function createDownloadController(options: DownloadControllerOptions) {
       return options.runHls({
         job: controllerJob,
         manifest: parseHlsManifest({ manifestUrl, content: manifestText }),
+        allowProtected,
       });
     }
 
@@ -178,6 +186,7 @@ export function createDownloadController(options: DownloadControllerOptions) {
       return options.runDash({
         job: controllerJob,
         manifest: parseMpd({ manifestUrl, content: manifestText }),
+        allowProtected,
       });
     }
 
@@ -271,6 +280,7 @@ export const defaultDownloadController = createDownloadController({
         fileName: 'hls-output.mp4',
         mimeType: 'video/mp4',
       }),
+      allowProtected: input.allowProtected,
     }),
   runDash: (input) =>
     runDashJob({
@@ -280,5 +290,6 @@ export const defaultDownloadController = createDownloadController({
         fileName: 'dash-output.mp4',
         mimeType: 'video/mp4',
       }),
+      allowProtected: input.allowProtected,
     }),
 });
