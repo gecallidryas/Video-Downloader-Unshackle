@@ -152,6 +152,60 @@ describe('download controller decision flow', () => {
     expect(runDash).toHaveBeenCalled();
   });
 
+  test('allows protected HLS candidate when suppressProtectedDownloads is false', async () => {
+    const runHls = vi.fn().mockResolvedValue({ fileName: 'drm.mp4', mimeType: 'video/mp4' });
+    const fetchText = vi
+      .fn()
+      .mockResolvedValue('#EXTM3U\n#EXTINF:1,\nseg.ts\n#EXT-X-ENDLIST');
+    const controller = createDownloadController({
+      downloadFile: vi.fn(),
+      runHls,
+      runDash: vi.fn(),
+      fetchText,
+      suppressProtectedDownloads: false,
+    });
+
+    const protectedCandidate = candidate({
+      protocol: 'hls',
+      status: 'protected',
+      sourceUrl: undefined,
+      manifestUrl: 'https://cdn.example.com/drm.m3u8',
+      protection: { kind: 'drm', drmSystems: ['widevine'] },
+    });
+
+    // Should NOT throw — suppressProtectedDownloads: false means allow protected media
+    await expect(
+      controller.start(protectedCandidate, job(), { selection: { mode: 'best' } }),
+    ).resolves.toMatchObject({ fileName: 'drm.mp4' });
+
+    expect(fetchText).toHaveBeenCalledWith('https://cdn.example.com/drm.m3u8', expect.any(Object));
+    expect(runHls).toHaveBeenCalledWith(
+      expect.objectContaining({ allowProtected: true }),
+    );
+  });
+
+  test('rejects protected HLS candidate when suppressProtectedDownloads is unset (default)', async () => {
+    const controller = createDownloadController({
+      downloadFile: vi.fn(),
+      runHls: vi.fn(),
+      runDash: vi.fn(),
+      fetchText: vi.fn(),
+      // suppressProtectedDownloads intentionally omitted — defaults to blocking
+    });
+
+    const protectedCandidate = candidate({
+      protocol: 'hls',
+      status: 'protected',
+      sourceUrl: undefined,
+      manifestUrl: 'https://cdn.example.com/drm.m3u8',
+      protection: { kind: 'drm', drmSystems: ['widevine'] },
+    });
+
+    await expect(
+      controller.start(protectedCandidate, job(), { selection: { mode: 'best' } }),
+    ).rejects.toThrow('Protected media cannot be downloaded');
+  });
+
   test('rejects protected candidates before fetching segments and records controller failures', async () => {
     const jobStore = createJobStore(() => 300);
     const historyStore = createHistoryStore(() => 300);

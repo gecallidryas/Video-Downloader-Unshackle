@@ -266,6 +266,17 @@ export function createDownloadController(options: DownloadControllerOptions) {
   };
 }
 
+/**
+ * Safe-by-default dev stub controller.
+ *
+ * This controller is created without a `suppressProtectedDownloads` option, so
+ * `allowProtected` will always be `false` and protected candidates will be
+ * rejected before any network activity. It is NOT wired into production — it
+ * exists only as a convenient default for development and testing.
+ *
+ * Production code must construct a controller via `createDownloadController`
+ * and pass `suppressProtectedDownloads` derived from the user's actual settings.
+ */
 export const defaultDownloadController = createDownloadController({
   downloadFile: async (candidate) => ({
     fileName: candidate.displayName,
