@@ -108,7 +108,6 @@ export function createYouTubeDetector(): DetectorPlugin {
         response.streamingData?.hlsManifestUrl,
         response.streamingData?.dashManifestUrl,
       ].filter((url): url is string => Boolean(url));
-      const clearMediaCount = clearFormats.length + manifestUrls.length;
       const playabilityStatus = response.playabilityStatus;
       const playable = !playabilityStatus || playabilityStatus.status === 'OK';
 
@@ -126,40 +125,6 @@ export function createYouTubeDetector(): DetectorPlugin {
             details: { title },
           }),
         };
-      }
-
-      if (!context.isAuthorizedFixture) {
-        if (encryptedFormats.length > 0) {
-          return {
-            kind: 'restriction',
-            restriction: createPolicyRestriction(context, {
-              status: 'unsupported',
-              code: 'signature-required',
-              message:
-                'This YouTube media includes streams that require signature decryption, which is not ported.',
-              sourcePluginId: pluginId,
-              details: {
-                title,
-                encryptedCount: encryptedFormats.length,
-                clearMediaCount,
-              },
-            }),
-          };
-        }
-
-        if (clearMediaCount > 0) {
-          return {
-            kind: 'restriction',
-            restriction: createPolicyRestriction(context, {
-              status: 'unsupported',
-              code: 'tos-restricted',
-              message:
-                'YouTube clear media evidence is emitted only for authorized local fixtures.',
-              sourcePluginId: pluginId,
-              details: { title, clearMediaCount },
-            }),
-          };
-        }
       }
 
       const outputs: PluginDetectionOutput[] = clearFormats.map((format) => ({
@@ -191,6 +156,20 @@ export function createYouTubeDetector(): DetectorPlugin {
             confidence: 0.72,
           }),
         });
+      }
+
+      if (outputs.length === 0 && encryptedFormats.length > 0) {
+        return {
+          kind: 'restriction',
+          restriction: createPolicyRestriction(context, {
+            status: 'unsupported',
+            code: 'signature-required',
+            message:
+              'YouTube streams require signature decryption; no clear formats available.',
+            sourcePluginId: pluginId,
+            details: { title, encryptedCount: encryptedFormats.length },
+          }),
+        };
       }
 
       return outputs;

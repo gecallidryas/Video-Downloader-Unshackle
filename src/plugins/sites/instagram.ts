@@ -4,7 +4,6 @@ import type {
 } from '@/src/core/plugins/detector-plugin';
 import {
   createMediaEvidence,
-  createPolicyRestriction,
   resolveUrl,
   safeParseJson,
   scriptTexts,
@@ -196,7 +195,7 @@ export function createInstagramDetector(): DetectorPlugin {
     id: pluginId,
     name: 'Instagram',
     domains: ['instagram.com'],
-    capabilities: ['dom-scan', 'player-config', 'policy-warning'],
+    capabilities: ['dom-scan', 'player-config'],
     detect: async (context) => {
       if (!context.document) {
         return [];
@@ -206,20 +205,6 @@ export function createInstagramDetector(): DetectorPlugin {
 
       if (media.length === 0) {
         return [];
-      }
-
-      if (!context.isAuthorizedFixture) {
-        return {
-          kind: 'restriction',
-          restriction: createPolicyRestriction(context, {
-            status: 'unsupported',
-            code: 'tos-restricted',
-            message:
-              'Instagram clear media evidence is emitted only for an authorized fixture.',
-            sourcePluginId: pluginId,
-            details: { clearMediaCount: media.length },
-          }),
-        };
       }
 
       return media.map<PluginDetectionOutput>((item) => ({

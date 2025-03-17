@@ -13,12 +13,54 @@ function htmlDocument(markup: string): Document {
 }
 
 describe('policy-only site detectors', () => {
-  test('reports YouTube signature-protected streams without emitting generic download evidence', async () => {
+  test('reports signature-required restriction when YouTube has only encrypted formats', async () => {
     const documentRef = htmlDocument(`
       <script>
         var ytInitialPlayerResponse = {
           "videoDetails": {
-            "title": "Signature Fixture",
+            "title": "Encrypted Only Fixture",
+            "lengthSeconds": "90"
+          },
+          "playabilityStatus": { "status": "OK" },
+          "streamingData": {
+            "adaptiveFormats": [
+              {
+                "signatureCipher": "s=abc&url=https%3A%2F%2Frr.example%2Fprotected.mp4",
+                "qualityLabel": "1080p"
+              }
+            ]
+          }
+        };
+      </script>
+    `);
+
+    const result = await runDetectorPlugins([createYouTubeDetector()], {
+      url: new URL('https://www.youtube.com/watch?v=abc'),
+      document: documentRef,
+      now: () => 400,
+    });
+
+    expect(result.errors).toEqual([]);
+    expect(result.evidence).toEqual([]);
+    expect(result.restrictions).toEqual([
+      expect.objectContaining({
+        code: 'signature-required',
+        status: 'unsupported',
+        message: expect.stringContaining('signature decryption'),
+        details: expect.objectContaining({
+          title: 'Encrypted Only Fixture',
+          encryptedCount: 1,
+        }),
+      }),
+    ]);
+  });
+
+  test('emits clear format evidence from YouTube even when some formats are encrypted', async () => {
+    const documentRef = htmlDocument(`
+      <script>
+        var ytInitialPlayerResponse = {
+          "videoDetails": {
+            "title": "Mixed Formats Fixture",
             "lengthSeconds": "90"
           },
           "playabilityStatus": { "status": "OK" },
@@ -45,26 +87,34 @@ describe('policy-only site detectors', () => {
     const result = await runDetectorPlugins([createYouTubeDetector()], {
       url: new URL('https://www.youtube.com/watch?v=abc'),
       document: documentRef,
-      now: () => 400,
+      now: () => 401,
     });
 
     expect(result.errors).toEqual([]);
-    expect(result.evidence).toEqual([]);
-    expect(result.restrictions).toEqual([
-      expect.objectContaining({
-        code: 'signature-required',
-        status: 'unsupported',
-        message: expect.stringContaining('signature decryption'),
-        details: expect.objectContaining({
-          title: 'Signature Fixture',
-          encryptedCount: 1,
-          clearMediaCount: 2,
-        }),
-      }),
+    expect(result.restrictions).toEqual([]);
+    expect(result.evidence.map((item) => item.url)).toEqual([
+      'https://rr.example/clear.mp4',
+      'https://manifest.googlevideo.example/master.m3u8',
     ]);
+    expect(result.evidence[0]?.notes).toEqual(
+      expect.arrayContaining([
+        'plugin:youtube',
+        'source:youtube-clear-format',
+        'protocol:direct',
+        'quality:360p',
+        'title:Mixed Formats Fixture',
+      ]),
+    );
+    expect(result.evidence[1]?.notes).toEqual(
+      expect.arrayContaining([
+        'source:youtube-hls',
+        'protocol:hls',
+        'manifest-url:https://manifest.googlevideo.example/master.m3u8',
+      ]),
+    );
   });
 
-  test('allows Facebook clear media only for authorized local fixtures', async () => {
+  test('emits Facebook clear media evidence without fixture authorization', async () => {
     const documentRef = htmlDocument(`
       <script>
         require("VideoPlayer", [], {
@@ -75,34 +125,19 @@ describe('policy-only site detectors', () => {
       <meta property="og:title" content="Facebook Fixture">
     `);
 
-    const blocked = await runDetectorPlugins([createFacebookDetector()], {
+    const result = await runDetectorPlugins([createFacebookDetector()], {
       url: new URL('https://www.facebook.com/watch/fixture'),
       document: documentRef,
       now: () => 500,
     });
 
-    expect(blocked.evidence).toEqual([]);
-    expect(blocked.restrictions).toEqual([
-      expect.objectContaining({
-        code: 'tos-restricted',
-        message: expect.stringContaining('authorized fixture'),
-        details: expect.objectContaining({ clearMediaCount: 2 }),
-      }),
-    ]);
-
-    const authorized = await runDetectorPlugins([createFacebookDetector()], {
-      url: new URL('https://www.facebook.com/watch/fixture'),
-      document: documentRef,
-      isAuthorizedFixture: true,
-      now: () => 500,
-    });
-
-    expect(authorized.restrictions).toEqual([]);
-    expect(authorized.evidence.map((item) => item.url)).toEqual([
+    expect(result.errors).toEqual([]);
+    expect(result.restrictions).toEqual([]);
+    expect(result.evidence.map((item) => item.url)).toEqual([
       'https://video.xx.fbcdn.net/sd.mp4',
       'https://video.xx.fbcdn.net/hd.mp4',
     ]);
-    expect(authorized.evidence[0]?.notes).toEqual(
+    expect(result.evidence[0]?.notes).toEqual(
       expect.arrayContaining([
         'plugin:facebook',
         'source:facebook-sd',
@@ -113,7 +148,7 @@ describe('policy-only site detectors', () => {
     );
   });
 
-  test('reports Instagram exposed media as restricted unless fixture-authorized', async () => {
+  test('emits Instagram exposed media evidence without fixture authorization', async () => {
     const documentRef = htmlDocument(`
       <video src="https://scontent.cdninstagram.com/reel.mp4"></video>
       <script>
@@ -132,13 +167,19 @@ describe('policy-only site detectors', () => {
       now: () => 600,
     });
 
-    expect(result.evidence).toEqual([]);
-    expect(result.restrictions).toEqual([
-      expect.objectContaining({
-        code: 'tos-restricted',
-        details: expect.objectContaining({ clearMediaCount: 2 }),
-      }),
+    expect(result.errors).toEqual([]);
+    expect(result.restrictions).toEqual([]);
+    expect(result.evidence.map((item) => item.url)).toEqual([
+      'https://scontent.cdninstagram.com/reel.mp4',
+      'https://scontent.cdninstagram.com/graphql.mp4',
     ]);
+    expect(result.evidence[1]?.notes).toEqual(
+      expect.arrayContaining([
+        'plugin:instagram',
+        'source:instagram-additional',
+        'protocol:direct',
+      ]),
+    );
   });
 
   test('keeps iQIYI config-bridge extraction policy-gated', async () => {

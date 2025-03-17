@@ -4,7 +4,6 @@ import type {
 } from '@/src/core/plugins/detector-plugin';
 import {
   createMediaEvidence,
-  createPolicyRestriction,
   firstMetaContent,
   resolveUrl,
   safeParseJson,
@@ -117,7 +116,7 @@ export function createFacebookDetector(): DetectorPlugin {
       'm.facebook.com',
       'web.facebook.com',
     ],
-    capabilities: ['player-config', 'policy-warning'],
+    capabilities: ['player-config'],
     detect: async (context) => {
       if (!context.document) {
         return [];
@@ -127,20 +126,6 @@ export function createFacebookDetector(): DetectorPlugin {
 
       if (media.length === 0) {
         return [];
-      }
-
-      if (!context.isAuthorizedFixture) {
-        return {
-          kind: 'restriction',
-          restriction: createPolicyRestriction(context, {
-            status: 'unsupported',
-            code: 'tos-restricted',
-            message:
-              'Facebook clear media evidence is emitted only for an authorized fixture.',
-            sourcePluginId: pluginId,
-            details: { clearMediaCount: media.length },
-          }),
-        };
       }
 
       return media.map<PluginDetectionOutput>((item) => ({
