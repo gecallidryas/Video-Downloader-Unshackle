@@ -173,6 +173,9 @@ describe('policy-only site detectors', () => {
       'https://scontent.cdninstagram.com/reel.mp4',
       'https://scontent.cdninstagram.com/graphql.mp4',
     ]);
+    expect(result.evidence[0]?.notes).toEqual(
+      expect.arrayContaining(['plugin:instagram', 'source:instagram-video-element', 'protocol:direct']),
+    );
     expect(result.evidence[1]?.notes).toEqual(
       expect.arrayContaining([
         'plugin:instagram',

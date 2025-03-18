@@ -122,7 +122,7 @@ export function createYouTubeDetector(): DetectorPlugin {
             code: playabilityRestrictionCode(playabilityStatus?.status, reason),
             message: `${title ?? 'This video'}: ${reason}`,
             sourcePluginId: pluginId,
-            details: { title },
+            details: { title, rawStatus: playabilityStatus?.status },
           }),
         };
       }
