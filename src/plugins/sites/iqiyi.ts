@@ -4,7 +4,6 @@ import type {
 } from '@/src/core/plugins/detector-plugin';
 import {
   createMediaEvidence,
-  createPolicyRestriction,
   uniqueByUrl,
 } from './base-detector';
 
@@ -90,7 +89,7 @@ export function createIqiyiDetector(): DetectorPlugin {
     id: pluginId,
     name: 'iQIYI',
     domains: ['iqiyi.com'],
-    capabilities: ['player-config', 'policy-warning'],
+    capabilities: ['player-config'],
     detect: async (context) => {
       const extracted = extractCandidates(context.globalData);
       const title =
@@ -101,23 +100,6 @@ export function createIqiyiDetector(): DetectorPlugin {
 
       if (candidates.length === 0) {
         return [];
-      }
-
-      if (!context.isAuthorizedFixture) {
-        return {
-          kind: 'restriction',
-          restriction: createPolicyRestriction(context, {
-            status: 'unsupported',
-            code: 'unsupported-host',
-            message:
-              'iQIYI MAIN-world config bridge extraction is not ported outside authorized fixtures.',
-            sourcePluginId: pluginId,
-            details: {
-              clearMediaCount: candidates.length,
-              title,
-            },
-          }),
-        };
       }
 
       return candidates.map<PluginDetectionOutput>((candidate) => ({

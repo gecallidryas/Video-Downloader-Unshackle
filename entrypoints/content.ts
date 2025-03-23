@@ -53,11 +53,60 @@ export async function submitPageMediaEvidence(
   }
 }
 
+export function relayMainWorldMessages(
+  runtime: Pick<typeof chrome.runtime, 'sendMessage'> | undefined =
+    typeof chrome !== 'undefined' ? chrome.runtime : undefined,
+): void {
+  if (!runtime?.sendMessage) {
+    return;
+  }
+
+  window.addEventListener('message', (event) => {
+    if (!event.data || typeof event.data !== 'object') return;
+
+    const { type } = event.data as { type?: string };
+
+    if (type === 'iq_on_config') {
+      const payload = (event.data as { payload?: { title?: string; m3u8Urls?: string[] } }).payload;
+      if (!payload?.m3u8Urls?.length) return;
+      try {
+        void runtime.sendMessage(
+          createRuntimeRequest('INGEST_IQIYI_CONFIG', {
+            pageUrl: location.href,
+            title: payload.title ?? document.title ?? 'iQIYI',
+            m3u8Urls: payload.m3u8Urls,
+          }),
+        );
+      } catch {
+        // Extension context may be invalidated; fail silently.
+      }
+      return;
+    }
+
+    if (type === 'unshackle_drm_detected') {
+      const data = event.data as { drmName?: string; trigger?: string; url?: string };
+      if (!data.drmName) return;
+      try {
+        void runtime.sendMessage(
+          createRuntimeRequest('DRM_DETECTED', {
+            drmName: data.drmName,
+            trigger: data.trigger ?? '',
+            url: data.url ?? location.href,
+          }),
+        );
+      } catch {
+        // Extension context may be invalidated; fail silently.
+      }
+    }
+  });
+}
+
 export default defineContentScript({
   matches: ['<all_urls>'],
   allFrames: true,
   matchAboutBlank: true,
   main() {
     void submitPageMediaEvidence();
+    relayMainWorldMessages();
   },
 });

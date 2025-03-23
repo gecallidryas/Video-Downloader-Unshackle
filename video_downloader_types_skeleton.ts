@@ -354,6 +354,8 @@ export interface MessageEnvelope<TType extends string, TPayload> {
 export type RuntimeRequest =
   | MessageEnvelope<'SCAN_ACTIVE_TAB', { tabId: number }>
   | MessageEnvelope<'INGEST_CONTENT_EVIDENCE', { pageUrl: string; pageTitle?: string; evidence: DetectionEvidence[]; pageContext?: unknown }>
+  | MessageEnvelope<'INGEST_IQIYI_CONFIG', { pageUrl: string; title: string; m3u8Urls: string[] }>
+  | MessageEnvelope<'DRM_DETECTED', { drmName: string; trigger: string; url: string }>
   | MessageEnvelope<'GET_CANDIDATES', { tabId: number }>
   | MessageEnvelope<'REQUEST_HOST_ACCESS', { origin: string }>
   | MessageEnvelope<'START_PREVIEW', { candidateId: string }>
@@ -371,6 +373,8 @@ export type RuntimeRequest =
 export type RuntimeResponse =
   | MessageEnvelope<'SCAN_ACTIVE_TAB_RESULT', { candidates: MediaCandidate[] }>
   | MessageEnvelope<'INGEST_CONTENT_EVIDENCE_RESULT', { candidates: MediaCandidate[] }>
+  | MessageEnvelope<'INGEST_IQIYI_CONFIG_RESULT', { candidates: MediaCandidate[] }>
+  | MessageEnvelope<'DRM_DETECTED_RESULT', { ok: boolean }>
   | MessageEnvelope<'GET_CANDIDATES_RESULT', { candidates: MediaCandidate[] }>
   | MessageEnvelope<'REQUEST_HOST_ACCESS_RESULT', { granted: boolean; origin: string }>
   | MessageEnvelope<'START_PREVIEW_RESULT', { ok: boolean }>

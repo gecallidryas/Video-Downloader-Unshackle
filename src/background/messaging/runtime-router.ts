@@ -29,6 +29,13 @@ import {
 import { parseHlsManifest } from '@/src/core/hls/parse-hls-manifest';
 import type { CandidateEvidence } from '@/src/core/candidates/classify-candidate';
 
+export interface DrmDetectionRecord {
+  drmName: string;
+  trigger: string;
+  url: string;
+  detectedAt: number;
+}
+
 export interface RuntimeRouterDependencies {
   candidateRegistry: CandidateRegistry;
   tabSnapshots: TabSnapshotStore;
@@ -45,6 +52,7 @@ export interface RuntimeRouterDependencies {
   ensureThumbnail?: (candidate: MediaCandidate) => Promise<GeneratedAssetResult>;
   getQueueStats?: () => QueueStats | Promise<QueueStats>;
   requestHostAccess?: (originPattern: string) => Promise<boolean>;
+  drmDetections?: Map<string, DrmDetectionRecord[]>;
 }
 
 export interface RuntimeRouter {
@@ -72,6 +80,8 @@ type RoutedRuntimeRequest = Extract<
   {
     type:
       | 'INGEST_CONTENT_EVIDENCE'
+      | 'INGEST_IQIYI_CONFIG'
+      | 'DRM_DETECTED'
       | 'GET_CANDIDATES'
       | 'GET_QUEUE_STATS'
       | 'REQUEST_HOST_ACCESS'
@@ -84,6 +94,8 @@ type RoutedRuntimeRequest = Extract<
 
 const handledRequestTypes = new Set<RoutedRuntimeRequest['type']>([
   'INGEST_CONTENT_EVIDENCE',
+  'INGEST_IQIYI_CONFIG',
+  'DRM_DETECTED',
   'GET_CANDIDATES',
   'GET_QUEUE_STATS',
   'REQUEST_HOST_ACCESS',
@@ -429,6 +441,80 @@ export function createRuntimeRouter(
           return createRuntimeResponse(
             'INGEST_CONTENT_EVIDENCE_RESULT',
             { candidates },
+            request.requestId,
+          );
+        }
+
+        case 'INGEST_IQIYI_CONFIG': {
+          if (!senderSnapshot) {
+            return createRuntimeErrorResponse(
+              'NO_SENDER_TAB',
+              'iQIYI config must be sent from a tab.',
+              request.requestId,
+            );
+          }
+
+          const { pageUrl, title, m3u8Urls } = request.payload;
+          const now = Date.now();
+
+          const evidence: CandidateEvidence[] = m3u8Urls.map((url) => ({
+            source: 'player-config' as const,
+            confidence: 0.68,
+            url,
+            initiatorUrl: pageUrl,
+            notes: [
+              'plugin:iqiyi',
+              'source:iqiyi-config',
+              'protocol:hls',
+              `title:${title}`,
+              `manifest-url:${url}`,
+            ],
+            createdAt: now,
+          }));
+
+          const existing = dependencies.candidateRegistry.get(senderSnapshot.tabId);
+          const ingested = dependencies.candidateRegistry.setFromEvidence({
+            tabId: senderSnapshot.tabId,
+            pageUrl: pageUrl || senderSnapshot.url || '',
+            pageTitle: title ?? senderSnapshot.title,
+            evidence,
+          });
+          const hydrated = await Promise.all(
+            ingested.map((candidate) =>
+              hydrateManifestCandidate(candidate, dependencies.fetchManifest),
+            ),
+          );
+          const merged = dedupeCandidates([...existing, ...hydrated]);
+
+          dependencies.candidateRegistry.set(senderSnapshot.tabId, merged);
+
+          return createRuntimeResponse(
+            'INGEST_IQIYI_CONFIG_RESULT',
+            { candidates: merged },
+            request.requestId,
+          );
+        }
+
+        case 'DRM_DETECTED': {
+          const { drmName, trigger, url } = request.payload;
+
+          if (dependencies.drmDetections) {
+            const existing = dependencies.drmDetections.get(url) ?? [];
+            const alreadyRecorded = existing.some(
+              (record) => record.drmName === drmName,
+            );
+
+            if (!alreadyRecorded) {
+              dependencies.drmDetections.set(url, [
+                ...existing,
+                { drmName, trigger, url, detectedAt: Date.now() },
+              ]);
+            }
+          }
+
+          return createRuntimeResponse(
+            'DRM_DETECTED_RESULT',
+            { ok: true },
             request.requestId,
           );
         }

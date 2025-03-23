@@ -351,3 +351,115 @@ test('DEBUG_GET_EVIDENCE returns candidate evidence without exposing raw request
     },
   });
 });
+
+test('INGEST_IQIYI_CONFIG stores HLS candidates from iQIYI MAIN-world bridge', async () => {
+  const { router, candidateRegistry } = buildRouter();
+
+  const sender = {
+    tab: {
+      id: 9,
+      url: 'https://www.iqiyi.com/v_fixture.html',
+      title: 'iQIYI Fixture',
+    } as chrome.tabs.Tab,
+    frameId: 0,
+  };
+
+  const response = await router.handleMessage(
+    createRuntimeRequest(
+      'INGEST_IQIYI_CONFIG',
+      {
+        pageUrl: 'https://www.iqiyi.com/v_fixture.html',
+        title: 'iQIYI Fixture',
+        m3u8Urls: ['https://iqiyi.example/stream/master.m3u8'],
+      },
+      'req-iqiyi',
+    ),
+    sender,
+  );
+
+  expect(response.type).toBe('INGEST_IQIYI_CONFIG_RESULT');
+  if (response.type !== 'INGEST_IQIYI_CONFIG_RESULT') return;
+
+  expect(response.payload.candidates).toHaveLength(1);
+  expect(response.payload.candidates[0]).toMatchObject({
+    protocol: 'hls',
+    pageTitle: 'iQIYI Fixture',
+    pageUrl: 'https://www.iqiyi.com/v_fixture.html',
+  });
+  expect(candidateRegistry.get(9)).toHaveLength(1);
+});
+
+test('INGEST_IQIYI_CONFIG returns NO_SENDER_TAB error when sent without a tab', async () => {
+  const { router } = buildRouter();
+
+  const response = await router.handleMessage(
+    createRuntimeRequest(
+      'INGEST_IQIYI_CONFIG',
+      {
+        pageUrl: 'https://www.iqiyi.com/v_fixture.html',
+        title: 'iQIYI Fixture',
+        m3u8Urls: ['https://iqiyi.example/stream/master.m3u8'],
+      },
+      'req-iqiyi-notab',
+    ),
+  );
+
+  expect(response.type).toBe('ERROR');
+  if (response.type !== 'ERROR') return;
+  expect(response.payload.code).toBe('NO_SENDER_TAB');
+});
+
+test('DRM_DETECTED records detections in the drmDetections map', async () => {
+  const drmDetections = new Map();
+  const router = createRuntimeRouter({
+    candidateRegistry: createCandidateRegistry(),
+    tabSnapshots: createTabSnapshotStore(),
+    drmDetections,
+  });
+
+  const response = await router.handleMessage(
+    createRuntimeRequest(
+      'DRM_DETECTED',
+      {
+        drmName: 'Widevine',
+        trigger: 'keySystemRequest',
+        url: 'https://video.example.com/watch',
+      },
+      'req-drm',
+    ),
+  );
+
+  expect(response.type).toBe('DRM_DETECTED_RESULT');
+  if (response.type !== 'DRM_DETECTED_RESULT') return;
+  expect(response.payload.ok).toBe(true);
+  expect(drmDetections.get('https://video.example.com/watch')).toEqual([
+    expect.objectContaining({
+      drmName: 'Widevine',
+      trigger: 'keySystemRequest',
+      url: 'https://video.example.com/watch',
+    }),
+  ]);
+});
+
+test('DRM_DETECTED deduplicates repeated reports for the same DRM system', async () => {
+  const drmDetections = new Map();
+  const router = createRuntimeRouter({
+    candidateRegistry: createCandidateRegistry(),
+    tabSnapshots: createTabSnapshotStore(),
+    drmDetections,
+  });
+  const payload = {
+    drmName: 'Widevine',
+    trigger: 'keySystemRequest',
+    url: 'https://video.example.com/watch',
+  };
+
+  await router.handleMessage(
+    createRuntimeRequest('DRM_DETECTED', payload, 'req-drm-1'),
+  );
+  await router.handleMessage(
+    createRuntimeRequest('DRM_DETECTED', payload, 'req-drm-2'),
+  );
+
+  expect(drmDetections.get('https://video.example.com/watch')).toHaveLength(1);
+});

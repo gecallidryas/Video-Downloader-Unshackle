@@ -185,7 +185,7 @@ describe('policy-only site detectors', () => {
     );
   });
 
-  test('keeps iQIYI config-bridge extraction policy-gated', async () => {
+  test('emits iQIYI clear media evidence without fixture authorization', async () => {
     const result = await runDetectorPlugins([createIqiyiDetector()], {
       url: new URL('https://www.iqiyi.com/v_fixture.html'),
       document: htmlDocument('<title>iQIYI Fixture</title>'),
@@ -204,39 +204,9 @@ describe('policy-only site detectors', () => {
       now: () => 700,
     });
 
-    expect(result.evidence).toEqual([]);
-    expect(result.restrictions).toEqual([
-      expect.objectContaining({
-        code: 'unsupported-host',
-        message: expect.stringContaining('MAIN-world config bridge'),
-        details: expect.objectContaining({
-          clearMediaCount: 1,
-          title: 'iQIYI Fixture',
-        }),
-      }),
-    ]);
-
-    const authorized = await runDetectorPlugins([createIqiyiDetector()], {
-      url: new URL('https://www.iqiyi.com/v_fixture.html'),
-      document: htmlDocument('<title>iQIYI Fixture</title>'),
-      globalData: {
-        __dash: {
-          data: {
-            program: {
-              name: 'iQIYI Fixture',
-              video: {
-                m3u8: 'https://iqiyi.example/clear/master.m3u8',
-              },
-            },
-          },
-        },
-      },
-      isAuthorizedFixture: true,
-      now: () => 700,
-    });
-
-    expect(authorized.restrictions).toEqual([]);
-    expect(authorized.evidence).toEqual([
+    expect(result.errors).toEqual([]);
+    expect(result.restrictions).toEqual([]);
+    expect(result.evidence).toEqual([
       expect.objectContaining({
         url: 'https://iqiyi.example/clear/master.m3u8',
         notes: expect.arrayContaining([
