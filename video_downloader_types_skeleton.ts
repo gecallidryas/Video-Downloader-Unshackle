@@ -345,6 +345,21 @@ export interface BinaryStore {
   exists(path: string): Promise<boolean>;
 }
 
+export interface PageContext {
+  pageTitle?: string;
+  ogTitle?: string;
+  twitterTitle?: string;
+  thumbnailDataUrl?: string;
+  ogImageSecure?: string;
+  ogImage?: string;
+  twitterImage?: string;
+  imageSrc?: string;
+  thumbnailLink?: string;
+  vpPreviewThumb?: string;
+  linkAsImage?: string;
+  videoPosterCandidates?: Array<string | { src?: string; videoUrl?: string; poster?: string; thumbnail?: string }>;
+}
+
 export interface MessageEnvelope<TType extends string, TPayload> {
   type: TType;
   requestId: string;
@@ -353,7 +368,7 @@ export interface MessageEnvelope<TType extends string, TPayload> {
 
 export type RuntimeRequest =
   | MessageEnvelope<'SCAN_ACTIVE_TAB', { tabId: number }>
-  | MessageEnvelope<'INGEST_CONTENT_EVIDENCE', { pageUrl: string; pageTitle?: string; evidence: DetectionEvidence[]; pageContext?: unknown }>
+  | MessageEnvelope<'INGEST_CONTENT_EVIDENCE', { pageUrl: string; pageTitle?: string; evidence: DetectionEvidence[]; pageContext?: PageContext }>
   | MessageEnvelope<'INGEST_IQIYI_CONFIG', { pageUrl: string; title: string; m3u8Urls: string[] }>
   | MessageEnvelope<'DRM_DETECTED', { drmName: string; trigger: string; url: string }>
   | MessageEnvelope<'GET_CANDIDATES', { tabId: number }>

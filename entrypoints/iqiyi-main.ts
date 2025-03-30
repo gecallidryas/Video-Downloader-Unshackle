@@ -9,6 +9,12 @@ export default defineContentScript({
   world: 'MAIN',
   runAt: 'document_idle',
   main() {
+    // TODO: this function is duplicated in src/plugins/sites/iqiyi.ts.
+    // It cannot be imported from there because this entrypoint runs in the
+    // MAIN world, which has no access to background/extension modules — the
+    // browser enforces a hard boundary between the MAIN world and the
+    // extension's ISOLATED world, so a shared import is not possible without
+    // a build-time copy step.
     function collectM3u8Urls(value: unknown, out: Set<string>): void {
       if (!value || typeof value !== 'object') {
         return;

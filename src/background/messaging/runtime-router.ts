@@ -319,7 +319,7 @@ async function ingestContentEvidence(
     pageUrl: request.payload.pageUrl || senderSnapshot.url || '',
     pageTitle: request.payload.pageTitle ?? senderSnapshot.title,
     evidence: contentEvidence,
-    pageContext: request.payload.pageContext as never,
+    pageContext: request.payload.pageContext,
   });
   const hydrated = await Promise.all(
     candidates.map((candidate) =>
