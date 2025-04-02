@@ -8,6 +8,12 @@ import type {
   PluginDetectionOutput,
 } from '@/src/core/plugins/detector-plugin';
 import type { HostDomainRegistryEntry } from './host-domain-registry';
+import {
+  unpackDeanEdwardsPacker,
+  rot13,
+  removeSpecialSequences,
+  shiftString,
+} from '@/src/lib/deobfuscation';
 
 export interface HostMediaResult {
   url: string;
@@ -20,7 +26,7 @@ export interface HostMediaResult {
 
 export type HostExtractor = (
   context: DetectorPluginContext,
-) => HostMediaResult[];
+) => HostMediaResult[] | Promise<HostMediaResult[]>;
 
 function scriptTexts(documentRef: Document): string[] {
   return Array.from(documentRef.querySelectorAll<HTMLScriptElement>('script'))
@@ -166,7 +172,7 @@ export function createHostPlugin(
         return [];
       }
 
-      return uniqueByUrl(extract(context)).map<PluginDetectionOutput>((result) => ({
+      return uniqueByUrl(await extract(context)).map<PluginDetectionOutput>((result) => ({
         kind: 'evidence',
         evidence: createEvidence(context, entry.id, result),
       }));
@@ -348,4 +354,148 @@ export function extractFilePatternHost(
 
     return url ? [{ url, source, protocol: protocol ?? inferProtocol(url) }] : [];
   };
+}
+
+// --- Packer-based extractors ---
+
+function extractPackedScript(text: string): string | undefined {
+  return text.match(/eval\(function\(p,a,c,k,e,(?:d|r)\)[\s\S]*?(?=<\/script>)/)?.[0];
+}
+
+export function extractFilemoon(context: DetectorPluginContext): HostMediaResult[] {
+  const text = htmlText(context.document!);
+  const packed = extractPackedScript(text);
+  if (!packed) return [];
+  const unpacked = unpackDeanEdwardsPacker(packed);
+  const match = unpacked.match(/file\s*:\s*["']([^"']+)["']/);
+  const url = resolveUrl(match?.[1], context.url.href);
+  return url ? [{ url, source: 'filemoon-unpacked', protocol: 'hls' }] : [];
+}
+
+export function extractMp4upload(context: DetectorPluginContext): HostMediaResult[] {
+  const text = htmlText(context.document!);
+  const packed = extractPackedScript(text);
+  if (!packed) return [];
+  const unpacked = unpackDeanEdwardsPacker(packed);
+  const match = unpacked.match(/player\.src\(["']([^"']+)["']\)/);
+  const url = resolveUrl(match?.[1], context.url.href);
+  return url ? [{ url, source: 'mp4upload-unpacked', protocol: 'direct' }] : [];
+}
+
+export function extractMixdrop(context: DetectorPluginContext): HostMediaResult[] {
+  const text = htmlText(context.document!);
+  const packed = extractPackedScript(text);
+  if (!packed) return [];
+  const unpacked = unpackDeanEdwardsPacker(packed);
+  const match = unpacked.match(/wurl\s*=\s*["']([^"']+)["']/);
+  if (!match?.[1]) return [];
+  let url = match[1];
+  if (url.startsWith('//')) url = `https:${url}`;
+  return [{ url, source: 'mixdrop-unpacked', protocol: 'direct' }];
+}
+
+export function extractUpstream(context: DetectorPluginContext): HostMediaResult[] {
+  const text = htmlText(context.document!);
+  const packed = extractPackedScript(text);
+  if (!packed) return [];
+  const unpacked = unpackDeanEdwardsPacker(packed);
+  const match = unpacked.match(/file\s*:\s*["']([^"']+\.m3u8[^"']*)["']/);
+  const url = resolveUrl(match?.[1], context.url.href);
+  return url ? [{ url, source: 'upstream-unpacked', protocol: 'hls' }] : [];
+}
+
+export function extractKwik(context: DetectorPluginContext): HostMediaResult[] {
+  const text = htmlText(context.document!);
+  const packed = extractPackedScript(text);
+  if (!packed) return [];
+  const unpacked = unpackDeanEdwardsPacker(packed);
+  const match = unpacked.match(/source\s*=\s*["']([^"']+)["']/);
+  const url = resolveUrl(match?.[1], context.url.href);
+  return url ? [{ url, source: 'kwik-unpacked', protocol: 'direct' }] : [];
+}
+
+export function extractSupervideo(context: DetectorPluginContext): HostMediaResult[] {
+  const text = htmlText(context.document!);
+  const packed = extractPackedScript(text);
+  if (!packed) return [];
+  const unpacked = unpackDeanEdwardsPacker(packed);
+  const match = unpacked.match(/file\s*:\s*["']([^"']+)["']/);
+  const url = resolveUrl(match?.[1], context.url.href);
+  return url ? [{ url, source: 'supervideo-unpacked', protocol: 'hls' }] : [];
+}
+
+export function extractDropload(context: DetectorPluginContext): HostMediaResult[] {
+  const text = htmlText(context.document!);
+  const packed = extractPackedScript(text);
+  if (!packed) return [];
+  const unpacked = unpackDeanEdwardsPacker(packed);
+  const match = unpacked.match(/file\s*:\s*["']([^"']+)["']/);
+  const url = resolveUrl(match?.[1], context.url.href);
+  return url ? [{ url, source: 'dropload-unpacked', protocol: 'hls' }] : [];
+}
+
+export function extractLuluvdo(context: DetectorPluginContext): HostMediaResult[] {
+  const text = htmlText(context.document!);
+  const packed = extractPackedScript(text);
+  if (!packed) return [];
+  const unpacked = unpackDeanEdwardsPacker(packed);
+  const match = unpacked.match(/file\s*:\s*["']([^"']+\.m3u8[^"']*)["']/);
+  const url = resolveUrl(match?.[1], context.url.href);
+  return url ? [{ url, source: 'luluvdo-unpacked', protocol: 'hls' }] : [];
+}
+
+// --- VOE deobfuscation extractor ---
+
+export function extractVoe(context: DetectorPluginContext): HostMediaResult[] {
+  const html = htmlText(context.document!);
+  // Bail on redirect pages
+  if (/window\.location\.href\s*=\s*['"]/.test(html)) return [];
+  const jsonMatch = html.match(/<script[^>]+type="application\/json"[^>]*>([\s\S]*?)<\/script>/);
+  if (!jsonMatch?.[1]) return [];
+  let json: string[];
+  try {
+    json = JSON.parse(jsonMatch[1]) as string[];
+  } catch {
+    return [];
+  }
+  if (!Array.isArray(json) || !json[0]) return [];
+  try {
+    let deobf = json[0];
+    deobf = rot13(deobf);
+    deobf = removeSpecialSequences(deobf);
+    deobf = atob(deobf);
+    deobf = shiftString(deobf);
+    deobf = deobf.split('').reverse().join('');
+    deobf = atob(deobf);
+    const payload = JSON.parse(deobf) as { source?: string };
+    const url = payload['source'];
+    if (!url) return [];
+    return [{ url, source: 'voe-deobfuscated', protocol: 'hls' }];
+  } catch {
+    return [];
+  }
+}
+
+// --- Doodstream pass_md5 extractor (async) ---
+
+export function extractDoodstream(context: DetectorPluginContext): Promise<HostMediaResult[]> {
+  const html = htmlText(context.document!);
+  const REGEX = /(\/pass_md5\/[^']+)'.+?((?:\?|&)token=[^&]+&expiry=\d*)/s;
+  const match = html.match(REGEX);
+  if (!match?.[1] || !match?.[2]) return Promise.resolve([]);
+  const passPath = match[1];
+  const token = match[2];
+  const host = context.url.hostname;
+  const fullPassUrl = `https://${host}${passPath}`;
+  const videoId = context.url.pathname.split('/').pop() ?? '';
+  const referer = `https://${host}/e/${videoId}`;
+  return fetch(fullPassUrl, {
+    headers: { Range: 'bytes=0-', Referer: referer },
+  })
+    .then((res) => res.text())
+    .then((part) => {
+      const url = `${part}1234567890${token}${Date.now()}`;
+      return [{ url, source: 'doodstream-pass-token', protocol: 'hls' as const }];
+    })
+    .catch(() => []);
 }

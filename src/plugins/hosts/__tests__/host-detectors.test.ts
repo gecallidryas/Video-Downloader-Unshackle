@@ -1,10 +1,12 @@
-import { describe, expect, test } from 'vitest';
+import { describe, expect, test, vi } from 'vitest';
 import { runDetectorPlugins } from '@/src/core/plugins/plugin-runner';
 import {
   createConfigOnlyHostPlugins,
   createPolicyOnlyHostPlugins,
   createProductionHostPlugins,
   createSafeDomHostPlugins,
+  createPackerHostPlugins,
+  createDeobfuscatedHostPlugins,
 } from '../host-plugin-registry';
 
 function htmlDocument(markup: string): Document {
@@ -190,24 +192,11 @@ describe('config-only host extractors', () => {
 });
 
 describe('policy-only host extractors', () => {
-  test('registers policy-only hosts as restrictions with no media evidence', async () => {
-    const result = await runHost(
-      'https://doodstream.com/e/abc',
-      "<script>var pass='/pass_md5/abc'; var token='?token=secret&expiry=1';</script>",
-    );
-
-    expect(result.evidence).toEqual([]);
-    expect(result.restrictions).toEqual([
-      expect.objectContaining({
-        sourcePluginId: 'doodstream',
-        status: 'unsupported',
-        code: 'unsupported-host',
-        message: expect.stringContaining('policy-only'),
-      }),
-    ]);
+  test('policy-only list is empty — all hosts have real extractors now', () => {
+    expect(createPolicyOnlyHostPlugins()).toEqual([]);
   });
 
-  test('keeps Phase 9 production host registry limited to safe, config, and no-media policy plugins', () => {
+  test('keeps Phase 4 production host registry with safe, config, packer, and deobfuscated plugins', () => {
     expect(createSafeDomHostPlugins().map((plugin) => plugin.id)).toEqual([
       'newgrounds',
       'sendvid',
@@ -223,10 +212,9 @@ describe('policy-only host extractors', () => {
       'streama2z',
       'streamzz',
       'vupload',
+      'loadx',
     ]);
-    expect(createPolicyOnlyHostPlugins().map((plugin) => plugin.id)).toEqual([
-      'doodstream',
-      'voe',
+    expect(createPackerHostPlugins().map((plugin) => plugin.id)).toEqual([
       'filemoon',
       'mp4upload',
       'mixdrop',
@@ -234,8 +222,11 @@ describe('policy-only host extractors', () => {
       'kwik',
       'supervideo',
       'dropload',
-      'loadx',
       'luluvdo',
+    ]);
+    expect(createDeobfuscatedHostPlugins().map((plugin) => plugin.id)).toEqual([
+      'voe',
+      'doodstream',
     ]);
   });
 });
