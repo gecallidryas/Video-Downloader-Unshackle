@@ -495,7 +495,7 @@ export function extractDoodstream(context: DetectorPluginContext): Promise<HostM
     .then((res) => res.text())
     .then((part) => {
       const url = `${part}1234567890${token}${Date.now()}`;
-      return [{ url, source: 'doodstream-pass-token', protocol: 'hls' as const }];
+      return [{ url, source: 'doodstream-pass-token', protocol: 'direct' as const }];
     })
     .catch(() => []);
 }

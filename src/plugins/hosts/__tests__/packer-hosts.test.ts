@@ -319,7 +319,7 @@ describe('extractDoodstream', () => {
       /^https:\/\/cdn\.doodstream\.com\/video-base-url\/1234567890\?token=supersecrettoken&expiry=9999999999\d+$/,
     );
     expect(result[0]?.source).toBe('doodstream-pass-token');
-    expect(result[0]?.protocol).toBe('hls');
+    expect(result[0]?.protocol).toBe('direct');
   });
 
   test('returns [] when fetch fails', async () => {
