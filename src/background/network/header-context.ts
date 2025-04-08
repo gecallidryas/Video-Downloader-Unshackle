@@ -6,6 +6,8 @@ export interface HeaderContext {
   headers: {
     referer?: string;
     origin?: string;
+    cookie?: string;
+    authorization?: string;
   };
 }
 
@@ -20,9 +22,16 @@ export interface HeaderContextStore {
   getByRequestId(requestId: string): HeaderContext | undefined;
   getByUrl(url: string): HeaderContext | undefined;
   deleteRequest(requestId: string): void;
+  /** Update runtime options (e.g. after settings load). */
+  updateOptions(options: HeaderContextStoreOptions): void;
+}
+
+export interface HeaderContextStoreOptions {
+  captureCredentialHeaders?: boolean;
 }
 
 const safeHeaderNames = new Set(['referer', 'origin']);
+const credentialHeaderNames = new Set(['cookie', 'authorization']);
 
 function cloneContext(context: HeaderContext | undefined): HeaderContext | undefined {
   return context
@@ -35,28 +44,50 @@ function cloneContext(context: HeaderContext | undefined): HeaderContext | undef
 
 function normalizeSafeHeaders(
   headers: RequestHeaderLike[] | undefined,
+  captureCredentials: boolean,
 ): HeaderContext['headers'] {
   return (headers ?? []).reduce<HeaderContext['headers']>((acc, header) => {
     const name = header.name.trim().toLowerCase();
     const value = header.value?.trim();
 
-    if (safeHeaderNames.has(name) && value) {
-      acc[name as keyof HeaderContext['headers']] = value;
+    if (!value) return acc;
+
+    if (safeHeaderNames.has(name)) {
+      acc[name as 'referer' | 'origin'] = value;
+    } else if (captureCredentials && credentialHeaderNames.has(name)) {
+      acc[name as 'cookie' | 'authorization'] = value;
     }
 
     return acc;
   }, {});
 }
 
-export function createHeaderContextStore(): HeaderContextStore {
+export function createHeaderContextStore(
+  options: HeaderContextStoreOptions = {},
+): HeaderContextStore {
+  let captureCredentialHeaders = options.captureCredentialHeaders ?? false;
   const byRequestId = new Map<string, HeaderContext>();
   const byUrl = new Map<string, HeaderContext>();
 
   return {
-    capture(input) {
-      const safeHeaders = normalizeSafeHeaders(input.requestHeaders);
+    updateOptions(newOptions) {
+      if (newOptions.captureCredentialHeaders !== undefined) {
+        captureCredentialHeaders = newOptions.captureCredentialHeaders;
+      }
+    },
 
-      if (!safeHeaders.referer && !safeHeaders.origin) {
+    capture(input) {
+      const safeHeaders = normalizeSafeHeaders(
+        input.requestHeaders,
+        captureCredentialHeaders,
+      );
+
+      if (
+        !safeHeaders.referer &&
+        !safeHeaders.origin &&
+        !safeHeaders.cookie &&
+        !safeHeaders.authorization
+      ) {
         return undefined;
       }
 

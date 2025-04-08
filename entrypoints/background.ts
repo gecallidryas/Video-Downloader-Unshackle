@@ -133,6 +133,10 @@ export function initializeBackgroundShell() {
 
   chrome.sidePanel.setPanelBehavior(getSidePanelBehavior());
   void settingsStore.load().then((settings) => {
+    // Apply settings that require the store to be fully loaded first.
+    headerContext.updateOptions({
+      captureCredentialHeaders: settings.captureCredentialHeaders,
+    });
     notificationManager.applySettings(settings);
     return contextMenuManager.register();
   });
