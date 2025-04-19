@@ -2,6 +2,7 @@ import { describe, expect, test, vi } from 'vitest';
 import mediaPlaylist from '@/src/fixtures/hls/media.m3u8?raw';
 import protectedPlaylist from '@/src/fixtures/hls/protected.m3u8?raw';
 import type { DownloadJob } from '@/video_downloader_types_skeleton';
+import * as segmentScheduler from '@/src/core/download/segment-scheduler';
 import { parseHlsManifest } from '../parse-hls-manifest';
 import { planHlsSegments } from '../plan-hls-segments';
 import { runHlsJob } from '../run-hls-job';
@@ -103,6 +104,78 @@ describe('HLS planning and execution', () => {
       mimeType: 'video/mp4',
       sizeBytes: 4,
     });
+  });
+
+  test('passes concurrency and maxConcurrentPerHost through to scheduleSegments', async () => {
+    const manifest = parseHlsManifest({
+      manifestUrl: 'https://cdn.example.com/hls/video/720p/prog.m3u8',
+      content: mediaPlaylist,
+    });
+    const spy = vi.spyOn(segmentScheduler, 'scheduleSegments').mockResolvedValue([
+      new Uint8Array([0]),
+      new Uint8Array([1]),
+      new Uint8Array([2]),
+      new Uint8Array([3]),
+    ]);
+    const writeOutput = vi.fn().mockResolvedValue({
+      fileName: 'assembled-hls.mp4',
+      mimeType: 'video/mp4',
+      sizeBytes: 4,
+    });
+
+    await runHlsJob({
+      job: buildJob(),
+      manifest,
+      fetchSegment: vi.fn(),
+      writeOutput,
+      concurrency: 5,
+      maxConcurrentPerHost: 3,
+    });
+
+    expect(spy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        concurrency: 5,
+        maxConcurrentPerHost: 3,
+      }),
+    );
+    spy.mockRestore();
+  });
+
+  test('defaults concurrency to 1 when not specified', async () => {
+    const manifest = parseHlsManifest({
+      manifestUrl: 'https://cdn.example.com/hls/video/720p/prog.m3u8',
+      content: mediaPlaylist,
+    });
+    const spy = vi.spyOn(segmentScheduler, 'scheduleSegments').mockResolvedValue([
+      new Uint8Array([0]),
+      new Uint8Array([1]),
+      new Uint8Array([2]),
+      new Uint8Array([3]),
+    ]);
+    const writeOutput = vi.fn().mockResolvedValue({
+      fileName: 'assembled-hls.mp4',
+      mimeType: 'video/mp4',
+      sizeBytes: 4,
+    });
+
+    await runHlsJob({
+      job: buildJob(),
+      manifest,
+      fetchSegment: vi.fn(),
+      writeOutput,
+    });
+
+    expect(spy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        concurrency: 1,
+      }),
+    );
+    expect(spy).toHaveBeenCalledWith(
+      expect.not.objectContaining({
+        maxConcurrentPerHost: expect.anything(),
+      }),
+    );
+    spy.mockRestore();
   });
 
   test('rejects protected HLS manifests before segment fetching', async () => {
