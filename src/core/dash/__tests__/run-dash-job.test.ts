@@ -2,6 +2,7 @@ import { describe, expect, test, vi } from 'vitest';
 import clearMpd from '@/src/fixtures/dash/clear.mpd?raw';
 import protectedMpd from '@/src/fixtures/dash/protected.mpd?raw';
 import type { DownloadJob } from '@/video_downloader_types_skeleton';
+import * as segmentScheduler from '@/src/core/download/segment-scheduler';
 import { parseMpd } from '../parse-mpd';
 import { planDashSegments } from '../plan-dash-segments';
 import { runDashJob } from '../run-dash-job';
@@ -124,5 +125,93 @@ describe('DASH planning and execution', () => {
       }),
     ).rejects.toThrow('Protected DASH manifests are blocked from the generic DASH runner.');
     expect(fetchSegment).not.toHaveBeenCalled();
+  });
+
+  test('passes concurrency and maxConcurrentPerHost through to scheduleSegments', async () => {
+    const manifest = parseMpd({
+      manifestUrl: 'https://cdn.example.com/dash/clear.mpd',
+      content: clearMpd,
+    });
+    const fetchSegment = vi
+      .fn()
+      .mockResolvedValue(new Uint8Array([0]));
+    const writeOutput = vi.fn().mockResolvedValue({
+      fileName: 'out.mp4',
+      mimeType: 'video/mp4',
+      sizeBytes: 1,
+    });
+
+    const spy = vi.spyOn(segmentScheduler, 'scheduleSegments').mockResolvedValue([
+      new Uint8Array([0]),
+      new Uint8Array([1]),
+      new Uint8Array([2]),
+      new Uint8Array([3]),
+    ]);
+
+    try {
+      await runDashJob({
+        job: buildJob({ selection: { mode: 'custom', variantId: 'video-720' } }),
+        manifest,
+        fetchSegment,
+        writeOutput,
+        concurrency: 5,
+        maxConcurrentPerHost: 3,
+      });
+
+      expect(spy).toHaveBeenCalledOnce();
+      expect(spy).toHaveBeenCalledWith(
+        expect.objectContaining({
+          concurrency: 5,
+          maxConcurrentPerHost: 3,
+        }),
+      );
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  test('defaults concurrency to 1 when not specified', async () => {
+    const manifest = parseMpd({
+      manifestUrl: 'https://cdn.example.com/dash/clear.mpd',
+      content: clearMpd,
+    });
+    const fetchSegment = vi
+      .fn()
+      .mockResolvedValue(new Uint8Array([0]));
+    const writeOutput = vi.fn().mockResolvedValue({
+      fileName: 'out.mp4',
+      mimeType: 'video/mp4',
+      sizeBytes: 1,
+    });
+
+    const spy = vi.spyOn(segmentScheduler, 'scheduleSegments').mockResolvedValue([
+      new Uint8Array([0]),
+      new Uint8Array([1]),
+      new Uint8Array([2]),
+      new Uint8Array([3]),
+    ]);
+
+    try {
+      await runDashJob({
+        job: buildJob({ selection: { mode: 'custom', variantId: 'video-720' } }),
+        manifest,
+        fetchSegment,
+        writeOutput,
+      });
+
+      expect(spy).toHaveBeenCalledOnce();
+      expect(spy).toHaveBeenCalledWith(
+        expect.objectContaining({
+          concurrency: 1,
+        }),
+      );
+      expect(spy).toHaveBeenCalledWith(
+        expect.not.objectContaining({
+          maxConcurrentPerHost: expect.anything(),
+        }),
+      );
+    } finally {
+      spy.mockRestore();
+    }
   });
 });

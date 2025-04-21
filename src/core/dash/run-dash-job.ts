@@ -25,6 +25,8 @@ export interface RunDashJobInput {
   writeOutput: WriteDashOutput;
   signal?: AbortSignal;
   allowProtected?: boolean;
+  concurrency?: number;
+  maxConcurrentPerHost?: number;
 }
 
 export async function runDashJob(input: RunDashJobInput): Promise<JobOutput> {
@@ -39,7 +41,8 @@ export async function runDashJob(input: RunDashJobInput): Promise<JobOutput> {
   const parts = await scheduleSegments({
     jobId: input.job.id,
     segments: plan.segments,
-    concurrency: 1,
+    concurrency: input.concurrency ?? 1,
+    maxConcurrentPerHost: input.maxConcurrentPerHost,
     signal: input.signal,
     fetchSegment: (segment) => input.fetchSegment(segment, plan),
   });
