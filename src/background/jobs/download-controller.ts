@@ -19,6 +19,8 @@ import { runDashJob } from '@/src/core/dash/run-dash-job';
 
 export interface DownloadControllerSettings {
   defaultOutputFormat?: DownloadSelection['outputKind'];
+  maxConcurrentSegments?: number;
+  maxConcurrentSegmentsPerHost?: number;
 }
 
 export interface DownloadControllerStartOptions {
@@ -31,12 +33,16 @@ export type RunHlsControllerJob = (input: {
   job: DownloadJob;
   manifest: ParsedHlsManifest;
   allowProtected?: boolean;
+  concurrency?: number;
+  maxConcurrentPerHost?: number;
 }) => Promise<JobOutput>;
 
 export type RunDashControllerJob = (input: {
   job: DownloadJob;
   manifest: ParsedDashManifest;
   allowProtected?: boolean;
+  concurrency?: number;
+  maxConcurrentPerHost?: number;
 }) => Promise<JobOutput>;
 
 export type RunNativeExportControllerJob = (input: {
@@ -174,11 +180,25 @@ export function createDownloadController(options: DownloadControllerOptions) {
       signal: startOptions.signal,
     });
 
+    const concurrencyFields: {
+      concurrency?: number;
+      maxConcurrentPerHost?: number;
+    } = {};
+
+    if (startOptions.settings?.maxConcurrentSegments !== undefined) {
+      concurrencyFields.concurrency = startOptions.settings.maxConcurrentSegments;
+    }
+
+    if (startOptions.settings?.maxConcurrentSegmentsPerHost !== undefined) {
+      concurrencyFields.maxConcurrentPerHost = startOptions.settings.maxConcurrentSegmentsPerHost;
+    }
+
     if (candidate.protocol === 'hls') {
       return options.runHls({
         job: controllerJob,
         manifest: parseHlsManifest({ manifestUrl, content: manifestText }),
         allowProtected,
+        ...concurrencyFields,
       });
     }
 
@@ -187,6 +207,7 @@ export function createDownloadController(options: DownloadControllerOptions) {
         job: controllerJob,
         manifest: parseMpd({ manifestUrl, content: manifestText }),
         allowProtected,
+        ...concurrencyFields,
       });
     }
 

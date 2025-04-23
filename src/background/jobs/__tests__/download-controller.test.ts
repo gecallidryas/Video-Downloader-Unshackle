@@ -206,6 +206,95 @@ describe('download controller decision flow', () => {
     ).rejects.toThrow('Protected media cannot be downloaded');
   });
 
+  test('threads concurrency settings through to runHls', async () => {
+    const runHls = vi.fn().mockResolvedValue({ fileName: 'hls.mp4', mimeType: 'video/mp4' });
+    const fetchText = vi
+      .fn()
+      .mockResolvedValue('#EXTM3U\n#EXT-X-TARGETDURATION:6\n#EXTINF:6,\nseg0.ts\n#EXT-X-ENDLIST');
+    const controller = createDownloadController({
+      downloadFile: vi.fn(),
+      runHls,
+      runDash: vi.fn(),
+      fetchText,
+    });
+
+    await controller.start(
+      candidate({ protocol: 'hls', sourceUrl: undefined, manifestUrl: 'https://cdn.example.com/master.m3u8' }),
+      job(),
+      {
+        selection: { mode: 'best' },
+        settings: {
+          maxConcurrentSegments: 8,
+          maxConcurrentSegmentsPerHost: 4,
+        },
+      },
+    );
+
+    expect(runHls).toHaveBeenCalledWith(
+      expect.objectContaining({
+        concurrency: 8,
+        maxConcurrentPerHost: 4,
+      }),
+    );
+  });
+
+  test('threads concurrency settings through to runDash', async () => {
+    const runDash = vi.fn().mockResolvedValue({ fileName: 'dash.mp4', mimeType: 'video/mp4' });
+    const fetchText = vi
+      .fn()
+      .mockResolvedValue(
+        '<MPD mediaPresentationDuration="PT1S"><Period><AdaptationSet contentType="video"><Representation id="v1"><BaseURL>video.mp4</BaseURL></Representation></AdaptationSet></Period></MPD>',
+      );
+    const controller = createDownloadController({
+      downloadFile: vi.fn(),
+      runHls: vi.fn(),
+      runDash,
+      fetchText,
+    });
+
+    await controller.start(
+      candidate({ protocol: 'dash', sourceUrl: undefined, manifestUrl: 'https://cdn.example.com/manifest.mpd' }),
+      job(),
+      {
+        selection: { mode: 'best' },
+        settings: {
+          maxConcurrentSegments: 12,
+          maxConcurrentSegmentsPerHost: 6,
+        },
+      },
+    );
+
+    expect(runDash).toHaveBeenCalledWith(
+      expect.objectContaining({
+        concurrency: 12,
+        maxConcurrentPerHost: 6,
+      }),
+    );
+  });
+
+  test('omits concurrency fields from runHls when settings are not provided', async () => {
+    const runHls = vi.fn().mockResolvedValue({ fileName: 'hls.mp4', mimeType: 'video/mp4' });
+    const fetchText = vi
+      .fn()
+      .mockResolvedValue('#EXTM3U\n#EXT-X-TARGETDURATION:6\n#EXTINF:6,\nseg0.ts\n#EXT-X-ENDLIST');
+    const controller = createDownloadController({
+      downloadFile: vi.fn(),
+      runHls,
+      runDash: vi.fn(),
+      fetchText,
+    });
+
+    await controller.start(
+      candidate({ protocol: 'hls', sourceUrl: undefined, manifestUrl: 'https://cdn.example.com/master.m3u8' }),
+      job(),
+      { selection: { mode: 'best' } },
+    );
+
+    const callArg = runHls.mock.calls[0][0];
+    expect(callArg).not.toHaveProperty('concurrency');
+    expect(callArg).not.toHaveProperty('maxConcurrentPerHost');
+  });
+
   test('rejects protected candidates before fetching segments and records controller failures', async () => {
     const jobStore = createJobStore(() => 300);
     const historyStore = createHistoryStore(() => 300);
