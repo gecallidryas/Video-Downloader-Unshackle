@@ -71,25 +71,30 @@ describe('scheduleSegments', () => {
   });
 
   test('retries failed segments, applies byte-range headers, and reports progress', async () => {
+    vi.useFakeTimers();
+
     const progress = vi.fn();
     const fetchSegment = vi
       .fn()
       .mockRejectedValueOnce(new Error('temporary failure'))
       .mockResolvedValueOnce(new Uint8Array([7]));
 
-    await expect(
-      scheduleSegments({
-        segments: [
-          {
-            ...segment(0),
-            byteRange: { start: 10, end: 19 },
-          },
-        ],
-        fetchAttempts: 2,
-        onProgress: progress,
-        fetchSegment,
-      }),
-    ).resolves.toEqual([new Uint8Array([7])]);
+    const resultPromise = scheduleSegments({
+      segments: [
+        {
+          ...segment(0),
+          byteRange: { start: 10, end: 19 },
+        },
+      ],
+      fetchAttempts: 2,
+      onProgress: progress,
+      fetchSegment,
+    });
+
+    // Advance timers to resolve the backoff delay between retries
+    await vi.runAllTimersAsync();
+
+    await expect(resultPromise).resolves.toEqual([new Uint8Array([7])]);
 
     expect(fetchSegment).toHaveBeenCalledTimes(2);
     expect(fetchSegment.mock.calls[0][1]).toMatchObject({
@@ -98,6 +103,45 @@ describe('scheduleSegments', () => {
     expect(progress).toHaveBeenLastCalledWith(
       expect.objectContaining({ downloaded: 1, failed: 0, total: 1 }),
     );
+
+    vi.useRealTimers();
+  });
+
+  test('retries use exponential backoff with increasing delays', async () => {
+    vi.useFakeTimers();
+
+    const delays: number[] = [];
+    const originalSetTimeout = globalThis.setTimeout;
+    const setTimeoutSpy = vi
+      .spyOn(globalThis, 'setTimeout')
+      .mockImplementation((fn: TimerHandler, ms?: number, ...args: unknown[]) => {
+        if (ms && ms >= 400) {
+          delays.push(ms);
+        }
+        return originalSetTimeout(fn as (...args: unknown[]) => void, 0, ...args);
+      });
+
+    const fetchSegment = vi
+      .fn()
+      .mockRejectedValueOnce(new Error('fail-1'))
+      .mockRejectedValueOnce(new Error('fail-2'))
+      .mockResolvedValueOnce(new Uint8Array([42]));
+
+    const resultPromise = scheduleSegments({
+      segments: [segment(0)],
+      fetchAttempts: 3,
+      fetchSegment,
+    });
+
+    await vi.runAllTimersAsync();
+
+    await expect(resultPromise).resolves.toEqual([new Uint8Array([42])]);
+    expect(fetchSegment).toHaveBeenCalledTimes(3);
+    expect(delays).toHaveLength(2);
+    expect(delays[1]).toBeGreaterThan(delays[0]);
+
+    setTimeoutSpy.mockRestore();
+    vi.useRealTimers();
   });
 
   test('supports cancellation and skips resumed segments already present in storage', async () => {

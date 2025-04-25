@@ -2,7 +2,12 @@ import type { ProtectionInfo, SegmentDescriptor } from '@/video_downloader_types
 import { decryptAes128Segment } from '@/src/core/hls/decrypt-aes128-segment';
 import { createBandwidthLimiter } from './bandwidth-limiter';
 import type { SegmentProgressCallback } from './progress-events';
-import { normalizeRetryAttempts } from './retry-policy';
+import {
+  normalizeRetryAttempts,
+  RETRY_BASE_DELAY_MS,
+  RETRY_JITTER_MS,
+  RETRY_MAX_DELAY_MS,
+} from './retry-policy';
 
 export interface SegmentFetchRequest {
   headers: Record<string, string>;
@@ -71,9 +76,10 @@ function throwIfAborted(signal: AbortSignal | undefined): void {
   }
 }
 
-async function retry<T>(
+async function retryWithBackoff<T>(
   attempts: number,
   operation: () => Promise<T>,
+  signal?: AbortSignal,
 ): Promise<T> {
   let lastError: unknown;
 
@@ -82,6 +88,26 @@ async function retry<T>(
       return await operation();
     } catch (error) {
       lastError = error;
+      if (attempt < attempts - 1) {
+        const delay = Math.min(
+          RETRY_BASE_DELAY_MS * 2 ** attempt +
+            Math.floor(Math.random() * RETRY_JITTER_MS),
+          RETRY_MAX_DELAY_MS,
+        );
+        await new Promise<void>((resolve, reject) => {
+          const timer = setTimeout(resolve, delay);
+          signal?.addEventListener(
+            'abort',
+            () => {
+              clearTimeout(timer);
+              reject(
+                signal.reason ?? new DOMException('Aborted', 'AbortError'),
+              );
+            },
+            { once: true },
+          );
+        });
+      }
     }
   }
 
@@ -198,11 +224,14 @@ export async function scheduleSegments(
 
       try {
         throwIfAborted(options.signal);
-        const data = await retry(attempts, async () =>
-          fetchSegment(segment, {
-            headers: rangeHeaders(segment),
-            signal: options.signal,
-          }),
+        const data = await retryWithBackoff(
+          attempts,
+          async () =>
+            fetchSegment(segment, {
+              headers: rangeHeaders(segment),
+              signal: options.signal,
+            }),
+          options.signal,
         );
         const finalData = await decryptIfNeeded(segment, data, options);
         bytes = finalData.byteLength;

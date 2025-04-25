@@ -3,8 +3,12 @@ export interface RetryPolicy {
   delayMs?: number;
 }
 
+export const RETRY_BASE_DELAY_MS = 500;
+export const RETRY_JITTER_MS = 300;
+export const RETRY_MAX_DELAY_MS = 15_000;
+
 export function normalizeRetryAttempts(attempts: number | undefined): number {
-  return Math.max(1, Math.floor(Number(attempts) || 1));
+  return Math.max(1, Math.floor(Number(attempts) || 3));
 }
 
 export function isAbortError(error: unknown): boolean {
