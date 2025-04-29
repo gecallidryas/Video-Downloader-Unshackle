@@ -1,4 +1,5 @@
 import type { DownloadSelection, SegmentDescriptor, SegmentPlan } from '@/video_downloader_types_skeleton';
+import { filterSegmentsByTrim } from '../download/filter-segments-by-trim';
 import type { ParsedDashManifest } from './parse-mpd';
 import { selectDashRepresentation } from './select-representation';
 
@@ -99,6 +100,6 @@ export function planDashSegments(
     variantId: representation.id,
     selectedAudioTrackIds: options.selection?.audioTrackIds ?? [],
     selectedSubtitleTrackIds: options.selection?.subtitleTrackIds ?? [],
-    segments,
+    segments: filterSegmentsByTrim(segments, options.selection?.trim),
   };
 }

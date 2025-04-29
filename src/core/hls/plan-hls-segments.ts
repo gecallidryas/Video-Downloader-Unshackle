@@ -1,4 +1,5 @@
 import type { DownloadSelection, SegmentPlan } from '@/video_downloader_types_skeleton';
+import { filterSegmentsByTrim } from '../download/filter-segments-by-trim';
 import type { ParsedHlsManifest } from './parse-hls-manifest';
 import { selectHlsVariant } from './select-hls-variant';
 
@@ -44,6 +45,9 @@ export function planHlsSegments(
     variantId: variant.id,
     selectedAudioTrackIds: options.selection?.audioTrackIds ?? [],
     selectedSubtitleTrackIds: options.selection?.subtitleTrackIds ?? [],
-    segments: [...initSegment, ...manifest.segments],
+    segments: filterSegmentsByTrim(
+      [...initSegment, ...manifest.segments],
+      options.selection?.trim,
+    ),
   };
 }
