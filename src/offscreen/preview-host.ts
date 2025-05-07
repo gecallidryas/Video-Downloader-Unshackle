@@ -3,6 +3,8 @@ import type {
   MediaCandidate,
 } from '@/video_downloader_types_skeleton';
 import { isOffscreenCommand, type OffscreenCommand } from '@/src/shared/contracts/offscreen';
+import { captureVideoFrame } from './capture-video-frame';
+import { recordPreviewClip } from './record-preview-clip';
 
 export type PreviewHostMessage =
   | {
@@ -13,15 +15,29 @@ export type PreviewHostMessage =
   | {
       type: 'CLOSE_PREVIEW';
       candidateId: string;
+    }
+  | {
+      type: 'EXTRACT_THUMBNAIL';
+      url: string;
+      atSec: number;
+      format: 'jpeg' | 'png' | 'webp';
+    }
+  | {
+      type: 'GENERATE_PREVIEW_CLIP';
+      url: string;
+      startSec: number;
+      durationSec: number;
     };
 
 export interface PreviewHostResponse {
   ok: boolean;
   command?: OffscreenCommand['type'];
+  assetUrl?: string;
+  mimeType?: string;
 }
 
 export interface PreviewHost {
-  handleMessage(message: PreviewHostMessage | OffscreenCommand): PreviewHostResponse;
+  handleMessage(message: PreviewHostMessage | OffscreenCommand): PreviewHostResponse | Promise<PreviewHostResponse>;
   getCurrentCandidate(): MediaCandidate | undefined;
 }
 
@@ -52,6 +68,32 @@ export function createPreviewHost(): PreviewHost {
         return { ok: true };
       }
 
+      if (message.type === 'EXTRACT_THUMBNAIL') {
+        return captureVideoFrame({
+          url: message.url,
+          atSec: message.atSec,
+          format: message.format,
+          timeoutMs: 10_000,
+        }).then((dataUrl) => ({
+          ok: true,
+          assetUrl: dataUrl,
+          mimeType: `image/${message.format}`,
+        }));
+      }
+
+      if (message.type === 'GENERATE_PREVIEW_CLIP') {
+        return recordPreviewClip({
+          url: message.url,
+          startSec: message.startSec,
+          durationSec: message.durationSec,
+          timeoutMs: 15_000,
+        }).then((clip) => ({
+          ok: true,
+          assetUrl: clip.dataUrl,
+          mimeType: clip.mimeType,
+        }));
+      }
+
       if (currentCandidate?.id === message.candidateId) {
         currentCandidate = undefined;
       }
@@ -65,6 +107,13 @@ export function createPreviewHost(): PreviewHost {
   };
 }
 
+const PREVIEW_HOST_MESSAGE_TYPES = new Set([
+  'OPEN_PREVIEW',
+  'CLOSE_PREVIEW',
+  'EXTRACT_THUMBNAIL',
+  'GENERATE_PREVIEW_CLIP',
+]);
+
 export function registerPreviewHost(
   previewHost: PreviewHost,
   runtime: PreviewRuntimeHost = chrome.runtime,
@@ -74,14 +123,20 @@ export function registerPreviewHost(
       typeof message !== 'object' ||
       message === null ||
       !('type' in message) ||
-      (message.type !== 'OPEN_PREVIEW' &&
-        message.type !== 'CLOSE_PREVIEW' &&
+      (!PREVIEW_HOST_MESSAGE_TYPES.has((message as { type: string }).type) &&
         !isOffscreenCommand(message))
     ) {
       return undefined;
     }
 
-    sendResponse(previewHost.handleMessage(message as PreviewHostMessage | OffscreenCommand));
+    const result = previewHost.handleMessage(message as PreviewHostMessage | OffscreenCommand);
+
+    if (result instanceof Promise) {
+      void result.then(sendResponse);
+      return true;
+    }
+
+    sendResponse(result);
 
     return false;
   });
