@@ -108,9 +108,16 @@ export function initializeBackgroundShell() {
       return response.text();
     },
     ensurePreviewClip: (candidate, options) =>
-      ensurePreviewClip(candidate, { nativeClient, ...options }),
+      ensurePreviewClip(candidate, {
+        nativeClient,
+        offscreenRecord: (message) => chrome.runtime.sendMessage(message),
+        ...options,
+      }),
     ensureThumbnail: (candidate) =>
-      ensureNativeThumbnail(candidate, { nativeClient }),
+      ensureNativeThumbnail(candidate, {
+        nativeClient,
+        offscreenCapture: (message) => chrome.runtime.sendMessage(message),
+      }),
   });
   const autoScan = createAutoScanController({
     statusStore: tabVideoStatus,

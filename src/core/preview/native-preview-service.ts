@@ -16,7 +16,10 @@ export interface PreviewAsset {
 }
 
 export interface EnsurePreviewClipOptions {
-  nativeClient: NativeFfmpegClient;
+  nativeClient?: NativeFfmpegClient;
+  offscreenRecord?: (
+    message: Record<string, unknown>,
+  ) => Promise<{ ok: boolean; assetUrl: string; mimeType: string }>;
   format?: NativeFfmpegPreviewFormat;
   startSec?: number;
   durationSec?: number;
@@ -78,24 +81,59 @@ export async function ensurePreviewClip(
     return cached;
   }
 
-  const result = await options.nativeClient.extractPreviewClip({
-    candidateId: candidate.id,
-    inputUrl: inputUrlFor(candidate),
-    startSec,
-    durationSec,
-    format,
-  });
-  const dataUrl = result.dataUrl;
+  // Strategy 1: native FFmpeg client
+  if (options.nativeClient) {
+    const result = await options.nativeClient.extractPreviewClip({
+      candidateId: candidate.id,
+      inputUrl: inputUrlFor(candidate),
+      startSec,
+      durationSec,
+      format,
+    });
+    const dataUrl = result.dataUrl;
 
-  if (!dataUrl) {
-    throw new Error('Native helper did not return an extension-safe preview asset.');
+    if (!dataUrl) {
+      throw new Error('Native helper did not return an extension-safe preview asset.');
+    }
+
+    return setPreviewAsset(key, {
+      assetUrl: dataUrl,
+      mimeType: (result.mimeType as PreviewAsset['mimeType']) || mimeFor(format),
+      generated: true,
+    });
   }
 
-  return setPreviewAsset(key, {
-    assetUrl: dataUrl,
-    mimeType: (result.mimeType as PreviewAsset['mimeType']) || mimeFor(format),
-    generated: true,
-  });
+  // Strategy 2: offscreen MediaRecorder (only works for direct protocol)
+  if (options.offscreenRecord && candidate.protocol === 'direct') {
+    const offscreenResult = await options.offscreenRecord({
+      type: 'GENERATE_PREVIEW_CLIP',
+      url: inputUrlFor(candidate),
+      startSec,
+      durationSec,
+    });
+
+    if (!offscreenResult.ok || !offscreenResult.assetUrl) {
+      throw new Error('Offscreen MediaRecorder did not return a preview asset.');
+    }
+
+    // MediaRecorder on Chromium always outputs WebM
+    const offscreenKey = previewCacheKey({
+      candidateId: candidate.id,
+      format: 'webm',
+      startSec,
+      durationSec,
+    });
+
+    return setPreviewAsset(offscreenKey, {
+      assetUrl: offscreenResult.assetUrl,
+      mimeType: (offscreenResult.mimeType as PreviewAsset['mimeType']) || 'video/webm',
+      generated: true,
+    });
+  }
+
+  throw new Error(
+    'No preview generation strategy available. Provide a native client or offscreen recorder for a direct-protocol candidate.',
+  );
 }
 
 export function getCachedPreview(candidateId: string): PreviewAsset | undefined {
