@@ -9,7 +9,8 @@ export interface ThumbnailAssetResult {
 }
 
 export interface EnsureNativeThumbnailOptions {
-  nativeClient: NativeFfmpegClient;
+  nativeClient?: NativeFfmpegClient;
+  offscreenCapture?: (message: Record<string, unknown>) => Promise<{ ok: boolean; assetUrl: string; mimeType: string }>;
   format?: NativeFfmpegThumbnailFormat;
   atSec?: number;
 }
@@ -74,21 +75,42 @@ export async function ensureNativeThumbnail(
   }
 
   const format = options.format ?? 'jpg';
-  const result = await options.nativeClient.extractThumbnail({
-    candidateId: candidate.id,
-    inputUrl: inputUrlFor(candidate),
-    atSec: options.atSec ?? defaultAtSec(candidate),
-    format,
-  });
-  const dataUrl = result.dataUrl;
 
-  if (!dataUrl) {
-    throw new Error('Native helper did not return an extension-safe thumbnail asset.');
+  if (options.nativeClient) {
+    const result = await options.nativeClient.extractThumbnail({
+      candidateId: candidate.id,
+      inputUrl: inputUrlFor(candidate),
+      atSec: options.atSec ?? defaultAtSec(candidate),
+      format,
+    });
+    const dataUrl = result.dataUrl;
+
+    if (!dataUrl) {
+      throw new Error('Native helper did not return an extension-safe thumbnail asset.');
+    }
+
+    return {
+      assetUrl: dataUrl,
+      mimeType: (result.mimeType as ThumbnailAssetResult['mimeType']) || mimeFor(format),
+      generated: true,
+    };
   }
 
-  return {
-    assetUrl: dataUrl,
-    mimeType: (result.mimeType as ThumbnailAssetResult['mimeType']) || mimeFor(format),
-    generated: true,
-  };
+  if (options.offscreenCapture && candidate.protocol === 'direct') {
+    const canvasFormat = format === 'jpg' ? 'jpeg' : format;
+    const result = await options.offscreenCapture({
+      type: 'EXTRACT_THUMBNAIL',
+      url: inputUrlFor(candidate),
+      atSec: options.atSec ?? defaultAtSec(candidate),
+      format: canvasFormat,
+    });
+
+    return {
+      assetUrl: result.assetUrl,
+      mimeType: result.mimeType as ThumbnailAssetResult['mimeType'],
+      generated: true,
+    };
+  }
+
+  throw new Error('No thumbnail generation method available.');
 }

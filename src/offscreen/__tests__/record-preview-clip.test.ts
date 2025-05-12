@@ -183,7 +183,7 @@ describe('recordPreviewClip', () => {
   test('records a preview clip and returns a data URL', async () => {
     const mockStream = createMockStream();
     const mockVideo = createMockVideoElement();
-    mockVideo.captureStream = vi.fn().mockReturnValue(mockStream);
+    (mockVideo as any).captureStream = vi.fn().mockReturnValue(mockStream);
 
     vi.spyOn(document, 'createElement').mockImplementation((tag: string) => {
       if (tag === 'video') return mockVideo;
@@ -211,14 +211,14 @@ describe('recordPreviewClip', () => {
       mimeType: 'video/webm',
     });
 
-    expect(mockVideo.captureStream).toHaveBeenCalled();
+    expect((mockVideo as any).captureStream).toHaveBeenCalled();
   });
 
   test('sets video.currentTime to startSec (clamped to duration)', async () => {
     const mockStream = createMockStream();
     const mockVideo = createMockVideoElement();
     (mockVideo as any).duration = 3; // shorter than startSec=5
-    mockVideo.captureStream = vi.fn().mockReturnValue(mockStream);
+    (mockVideo as any).captureStream = vi.fn().mockReturnValue(mockStream);
 
     vi.spyOn(document, 'createElement').mockImplementation((tag: string) => {
       if (tag === 'video') return mockVideo;
@@ -299,7 +299,7 @@ describe('recordPreviewClip', () => {
   test('rejects when video.play() fails', async () => {
     const mockStream = createMockStream();
     const mockVideo = createMockVideoElement();
-    mockVideo.captureStream = vi.fn().mockReturnValue(mockStream);
+    (mockVideo as any).captureStream = vi.fn().mockReturnValue(mockStream);
     (mockVideo as any).play = vi.fn().mockRejectedValue(new Error('Autoplay blocked'));
 
     vi.spyOn(document, 'createElement').mockImplementation((tag: string) => {
@@ -322,7 +322,7 @@ describe('recordPreviewClip', () => {
   test('rejects when FileReader fails', async () => {
     const mockStream = createMockStream();
     const mockVideo = createMockVideoElement();
-    mockVideo.captureStream = vi.fn().mockReturnValue(mockStream);
+    (mockVideo as any).captureStream = vi.fn().mockReturnValue(mockStream);
 
     vi.spyOn(document, 'createElement').mockImplementation((tag: string) => {
       if (tag === 'video') return mockVideo;
