@@ -1,6 +1,7 @@
 import type { ProtectionInfo, SegmentDescriptor } from '@/video_downloader_types_skeleton';
 import { decryptAes128Segment } from '@/src/core/hls/decrypt-aes128-segment';
 import { createBandwidthLimiter } from './bandwidth-limiter';
+import { isNonRetryableError, SegmentFetchError } from './error-classification';
 import type { SegmentProgressCallback } from './progress-events';
 import {
   normalizeRetryAttempts,
@@ -64,7 +65,7 @@ async function defaultFetchSegment(
   });
 
   if (!response.ok) {
-    throw new Error(`Failed to fetch segment ${segment.index}: ${response.status}`);
+    throw new SegmentFetchError(response.status, response.statusText);
   }
 
   return new Uint8Array(await response.arrayBuffer());
@@ -87,6 +88,10 @@ async function retryWithBackoff<T>(
     try {
       return await operation();
     } catch (error) {
+      if (isNonRetryableError(error)) {
+        throw error;
+      }
+
       lastError = error;
       if (attempt < attempts - 1) {
         const delay = Math.min(
