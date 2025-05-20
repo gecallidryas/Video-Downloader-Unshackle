@@ -35,6 +35,7 @@ export interface UnifiedSettings {
   maxConcurrentDownloads: number;
   maxConcurrentSegments: number;
   maxConcurrentSegmentsPerHost: number;
+  segmentTimeoutMs: number;
   maxBandwidthPerHostKBps: number;
   preferredQuality: PreferredQuality;
   defaultOutputFormat: OutputFormat;
@@ -56,6 +57,7 @@ export interface UnifiedSettings {
   previewFormat: PreviewFormat;
   suppressProtectedDownloads: boolean;
   captureCredentialHeaders: boolean;
+  advancedMode: boolean;
   _schemaVersion: number;
 }
 
@@ -67,6 +69,7 @@ export const DEFAULT_SETTINGS: UnifiedSettings = {
   maxConcurrentDownloads: 3,
   maxConcurrentSegments: 5,
   maxConcurrentSegmentsPerHost: 3,
+  segmentTimeoutMs: 30_000,
   maxBandwidthPerHostKBps: 0,
   preferredQuality: 'highest',
   defaultOutputFormat: 'auto',
@@ -88,7 +91,8 @@ export const DEFAULT_SETTINGS: UnifiedSettings = {
   previewFormat: 'webm',
   suppressProtectedDownloads: true,
   captureCredentialHeaders: false,
-  _schemaVersion: 3,
+  advancedMode: false,
+  _schemaVersion: 5,
 };
 
 export interface SettingsStorageAdapter {

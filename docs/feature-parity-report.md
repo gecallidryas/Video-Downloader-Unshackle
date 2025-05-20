@@ -362,7 +362,7 @@ Status meanings in this section:
 | Download | Oldest queued job starts first | queue sort by `createdAt` | present/partial | Keep deterministic scheduling. |
 | Download | Fragment concurrency setting | config `concurrency` | present | Keep. |
 | Download | Fetch attempts setting defaults to 100 | config | present/partial | Unshackle likely lower; puemos shows aggressive retry stance. |
-| Download | Fetch retry backoff 100ms increasing 1.15x | FetchLoader | partial | Consider stronger backoff policy, but avoid 100 attempts by default. |
+| Download | Fetch retry backoff 100ms increasing 1.15x | FetchLoader | present | Unshackle exposes tested exponential backoff computation with jitter and a 15s cap while keeping conservative retry attempts. |
 | Download | Do not retry HTTP status errors | FetchLoader `HttpError` | present | Unshackle now classifies 400/401/403/404/405/410/451 as non-retryable `SegmentFetchError`s and does not retry them. |
 | Download | Download video and audio fragment arrays in one bucket | job + bucket lengths | present/partial | Unshackle's storage model differs; concept useful. |
 | Download | Audio fragment indexes offset by video fragment count | `downloadJobEpic` | present/partial | Useful if single bucket stores both streams. |
@@ -919,7 +919,7 @@ The entire tool is one shell script with no imports, modules, or configuration f
 | P2 | Add bulk retry pass after initial download | `src/core/download/segment-scheduler.ts` | Two-pass approach (download all, then retry all failures once) is a useful complement to per-segment retry. |
 | P2 | Add auto-highest quality selection policy | `src/core/hls/select-hls-variant.ts`, settings | Add configurable default quality policy (highest/lowest/ask). |
 | P2 | Add sidecar subtitle download option | `src/core/export/*`, UI | Users may prefer sidecar files over muxed subtitles. |
-| P2 | Add segment fetch timeout setting | `src/core/download/segment-scheduler.ts`, settings | Verify Unshackle has a configurable segment timeout; 30s is a reasonable default. |
+| P1 | Add segment fetch timeout setting | `src/core/download/segment-scheduler.ts`, settings | Implemented as `segmentTimeoutMs` with a 30s default and settings schema v5. |
 | P3 | Add relative URL resolution fixtures for nested paths | `src/core/hls/__tests__/parse-hls-manifest.test.ts` | Add test cases for relative variant URLs, relative segment URLs, and mixed absolute/relative within the same manifest. |
 | P3 | Add aria2 external tool profile | integrations/settings | aria2c with `-x16 -s16 -j N` is a practical power-user integration. |
 

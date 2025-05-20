@@ -115,7 +115,7 @@ describe('scheduleSegments', () => {
     const setTimeoutSpy = vi
       .spyOn(globalThis, 'setTimeout')
       .mockImplementation((fn: TimerHandler, ms?: number, ...args: unknown[]) => {
-        if (ms && ms >= 400) {
+        if (ms && ms >= 400 && ms < 30_000) {
           delays.push(ms);
         }
         return originalSetTimeout(fn as (...args: unknown[]) => void, 0, ...args);
@@ -170,5 +170,35 @@ describe('scheduleSegments', () => {
     expect(fetchSegment).toHaveBeenCalledTimes(1);
     expect(fetchSegment.mock.calls[0][0]).toMatchObject({ index: 1 });
     expect(storage.writeFragment).toHaveBeenCalledWith('job-1', 1, new Uint8Array([1]));
+  });
+
+  test('aborts a segment fetch after the configured timeout', async () => {
+    vi.useFakeTimers();
+
+    const controller = new AbortController();
+    const fetchSegment = vi.fn(
+      async (_item: SegmentDescriptor, request) =>
+        new Promise<Uint8Array>((_resolve, reject) => {
+          request.signal?.addEventListener('abort', () => {
+            reject(request.signal?.reason ?? new DOMException('Aborted', 'AbortError'));
+          });
+        }),
+    );
+
+    const resultPromise = scheduleSegments({
+      segments: [segment(0)],
+      fetchSegment,
+      segmentTimeoutMs: 100,
+      signal: controller.signal,
+    });
+    const rejection = expect(resultPromise).rejects.toThrow();
+
+    await vi.advanceTimersByTimeAsync(100);
+
+    expect(fetchSegment.mock.calls[0]?.[1].signal?.aborted).toBe(true);
+    await rejection;
+
+    controller.abort();
+    vi.useRealTimers();
   });
 });

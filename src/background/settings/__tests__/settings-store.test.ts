@@ -17,6 +17,7 @@ describe('background settings store', () => {
       maxConcurrentDownloads: 3,
       maxConcurrentSegments: 5,
       maxConcurrentSegmentsPerHost: 3,
+      segmentTimeoutMs: 30_000,
       maxBandwidthPerHostKBps: 0,
       preferredQuality: 'highest',
       defaultOutputFormat: 'auto',
@@ -33,7 +34,23 @@ describe('background settings store', () => {
       remoteConfigSecurityMode: 'strict',
       suppressProtectedDownloads: true,
       captureCredentialHeaders: false,
+      advancedMode: false,
+      _schemaVersion: 5,
     });
+  });
+
+  test('advancedMode defaults to false', async () => {
+    const store = createSettingsStore();
+    const settings = await store.load();
+
+    expect(settings.advancedMode).toBe(false);
+  });
+
+  test('captureCredentialHeaders defaults to false', async () => {
+    const store = createSettingsStore();
+    const settings = await store.load();
+
+    expect(settings.captureCredentialHeaders).toBe(false);
   });
 
   test('persists set, setMany, and reset operations through the storage adapter', async () => {

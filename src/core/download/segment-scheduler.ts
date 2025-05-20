@@ -4,10 +4,9 @@ import { createBandwidthLimiter } from './bandwidth-limiter';
 import { isNonRetryableError, SegmentFetchError } from './error-classification';
 import type { SegmentProgressCallback } from './progress-events';
 import {
+  computeBackoffDelay,
+  isAbortError,
   normalizeRetryAttempts,
-  RETRY_BASE_DELAY_MS,
-  RETRY_JITTER_MS,
-  RETRY_MAX_DELAY_MS,
 } from './retry-policy';
 
 export interface SegmentFetchRequest {
@@ -37,8 +36,11 @@ export interface ScheduleSegmentsOptions {
   fetchKey?: (keyUri: string, request: SegmentFetchRequest) => Promise<Uint8Array>;
   storage?: SegmentSchedulerStorage;
   signal?: AbortSignal;
+  segmentTimeoutMs?: number;
   onProgress?: SegmentProgressCallback;
 }
+
+const DEFAULT_SEGMENT_TIMEOUT_MS = 30_000;
 
 function hostFromUrl(url: string): string {
   try {
@@ -88,17 +90,17 @@ async function retryWithBackoff<T>(
     try {
       return await operation();
     } catch (error) {
+      if (signal?.aborted || isAbortError(error)) {
+        throw error;
+      }
+
       if (isNonRetryableError(error)) {
         throw error;
       }
 
       lastError = error;
       if (attempt < attempts - 1) {
-        const delay = Math.min(
-          RETRY_BASE_DELAY_MS * 2 ** attempt +
-            Math.floor(Math.random() * RETRY_JITTER_MS),
-          RETRY_MAX_DELAY_MS,
-        );
+        const delay = computeBackoffDelay(attempt);
         await new Promise<void>((resolve, reject) => {
           const timer = setTimeout(resolve, delay);
           signal?.addEventListener(
@@ -117,6 +119,34 @@ async function retryWithBackoff<T>(
   }
 
   throw lastError;
+}
+
+function composeSegmentSignal(
+  signal: AbortSignal | undefined,
+  timeoutMs: number,
+): { signal: AbortSignal; dispose: () => void } {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => {
+    controller.abort(new DOMException('Segment fetch timed out.', 'AbortError'));
+  }, timeoutMs);
+
+  const abortFromParent = () => {
+    controller.abort(signal?.reason ?? new DOMException('Aborted', 'AbortError'));
+  };
+
+  if (signal?.aborted) {
+    abortFromParent();
+  } else {
+    signal?.addEventListener('abort', abortFromParent, { once: true });
+  }
+
+  return {
+    signal: controller.signal,
+    dispose: () => {
+      clearTimeout(timeout);
+      signal?.removeEventListener('abort', abortFromParent);
+    },
+  };
 }
 
 async function decryptIfNeeded(
@@ -162,6 +192,10 @@ export async function scheduleSegments(
   const attempts = normalizeRetryAttempts(options.fetchAttempts);
   const globalLimit = Math.max(1, Math.floor(options.concurrency ?? 1));
   const hostLimit = Math.max(1, Math.floor(options.maxConcurrentPerHost ?? globalLimit));
+  const segmentTimeoutMs = Math.max(
+    1,
+    Math.floor(options.segmentTimeoutMs ?? DEFAULT_SEGMENT_TIMEOUT_MS),
+  );
   const limiter = createBandwidthLimiter(options.bandwidthBytesPerSecond);
   const results = new Array<Uint8Array | undefined>(options.segments.length);
   const queue: SegmentDescriptor[] = [];
@@ -231,11 +265,14 @@ export async function scheduleSegments(
         throwIfAborted(options.signal);
         const data = await retryWithBackoff(
           attempts,
-          async () =>
-            fetchSegment(segment, {
+          async () => {
+            const segmentSignal = composeSegmentSignal(options.signal, segmentTimeoutMs);
+
+            return fetchSegment(segment, {
               headers: rangeHeaders(segment),
-              signal: options.signal,
-            }),
+              signal: segmentSignal.signal,
+            }).finally(segmentSignal.dispose);
+          },
           options.signal,
         );
         const finalData = await decryptIfNeeded(segment, data, options);
