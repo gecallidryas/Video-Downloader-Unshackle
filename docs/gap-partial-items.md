@@ -26,7 +26,7 @@ Extracted from `feature-parity-report.md` across all 8 reference analyses. Every
 
 | # | Item | Status | Stronger in | Action |
 |---|---|---|---|---|
-| 10 | Broken-pipe recovery and ranged resume | partial | live-stream (strong) | Retry partial ranges, lower concurrency after repeated init timeouts, detect short/extra segments. |
+| 10 | Broken-pipe recovery and ranged resume | done | live-stream (strong) | Scheduler retries partial fetches with resume ranges, rejoins partial bytes, and lowers effective host concurrency after repeated recoverable failures. |
 | 11 | Range splitting of large single files | partial/gap | live-stream, Unified | Port concept into `segment-scheduler` for direct/range-capable media. |
 | 12 | Direct range downloader | gap | live-stream | Improves large direct files and live/archive downloads. |
 | 13 | Timeline/discontinuity handling | partial | live-stream (user timeline choice), Unified | Add timeline-aware planning and UI/automatic ad-skip policy. |

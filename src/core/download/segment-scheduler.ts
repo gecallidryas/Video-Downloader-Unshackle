@@ -1,7 +1,11 @@
 import type { ProtectionInfo, SegmentDescriptor } from '@/video_downloader_types_skeleton';
 import { decryptAes128Segment } from '@/src/core/hls/decrypt-aes128-segment';
 import { createBandwidthLimiter } from './bandwidth-limiter';
-import { isNonRetryableError, SegmentFetchError } from './error-classification';
+import {
+  isNonRetryableError,
+  partialContentFromError,
+  SegmentFetchError,
+} from './error-classification';
 import type { SegmentProgressCallback } from './progress-events';
 import {
   computeBackoffDelay,
@@ -54,6 +58,36 @@ function rangeHeaders(segment: SegmentDescriptor): Record<string, string> {
   return segment.byteRange
     ? { Range: `bytes=${segment.byteRange.start}-${segment.byteRange.end}` }
     : {};
+}
+
+function resumeRangeHeaders(
+  segment: SegmentDescriptor,
+  resumeOffset: number,
+): Record<string, string> {
+  if (resumeOffset <= 0) {
+    return rangeHeaders(segment);
+  }
+
+  if (segment.byteRange) {
+    return {
+      Range: `bytes=${segment.byteRange.start + resumeOffset}-${segment.byteRange.end}`,
+    };
+  }
+
+  return { Range: `bytes=${resumeOffset}-` };
+}
+
+function joinParts(parts: Uint8Array[]): Uint8Array {
+  const totalBytes = parts.reduce((sum, part) => sum + part.byteLength, 0);
+  const joined = new Uint8Array(totalBytes);
+  let offset = 0;
+
+  for (const part of parts) {
+    joined.set(part, offset);
+    offset += part.byteLength;
+  }
+
+  return joined;
 }
 
 async function defaultFetchSegment(
@@ -185,6 +219,50 @@ async function decryptIfNeeded(
   });
 }
 
+async function fetchSegmentWithRecovery(
+  segment: SegmentDescriptor,
+  options: ScheduleSegmentsOptions,
+  fetchSegment: FetchScheduledSegment,
+  attempts: number,
+  segmentTimeoutMs: number,
+  onHostRecoverableFailure: () => void,
+): Promise<Uint8Array> {
+  let resumeOffset = 0;
+  const recoveredParts: Uint8Array[] = [];
+
+  const data = await retryWithBackoff(
+    attempts,
+    async () => {
+      const segmentSignal = composeSegmentSignal(options.signal, segmentTimeoutMs);
+
+      try {
+        return await fetchSegment(segment, {
+          headers: resumeRangeHeaders(segment, resumeOffset),
+          signal: segmentSignal.signal,
+        });
+      } catch (error) {
+        const partial = partialContentFromError(error);
+
+        if (partial && !options.signal?.aborted) {
+          resumeOffset += partial.partialBytes;
+          onHostRecoverableFailure();
+
+          if (partial.partialData) {
+            recoveredParts.push(partial.partialData);
+          }
+        }
+
+        throw error;
+      } finally {
+        segmentSignal.dispose();
+      }
+    },
+    options.signal,
+  );
+
+  return recoveredParts.length > 0 ? joinParts([...recoveredParts, data]) : data;
+}
+
 export async function scheduleSegments(
   options: ScheduleSegmentsOptions,
 ): Promise<Uint8Array[]> {
@@ -200,6 +278,9 @@ export async function scheduleSegments(
   const results = new Array<Uint8Array | undefined>(options.segments.length);
   const queue: SegmentDescriptor[] = [];
   const activeByHost = new Map<string, number>();
+  const recoverableFailuresByHost = new Map<string, number>();
+  const effectiveHostLimit = (host: string) =>
+    (recoverableFailuresByHost.get(host) ?? 0) >= 2 ? 1 : hostLimit;
   let downloaded = 0;
   let failed = 0;
 
@@ -229,7 +310,7 @@ export async function scheduleSegments(
       const queueIndex = queue.findIndex((candidate) => {
         const host = hostFromUrl(candidate.url);
 
-        return (activeByHost.get(host) ?? 0) < hostLimit;
+        return (activeByHost.get(host) ?? 0) < effectiveHostLimit(host);
       });
 
       if (queueIndex === -1) {
@@ -263,17 +344,18 @@ export async function scheduleSegments(
 
       try {
         throwIfAborted(options.signal);
-        const data = await retryWithBackoff(
+        const data = await fetchSegmentWithRecovery(
+          segment,
+          options,
+          fetchSegment,
           attempts,
-          async () => {
-            const segmentSignal = composeSegmentSignal(options.signal, segmentTimeoutMs);
-
-            return fetchSegment(segment, {
-              headers: rangeHeaders(segment),
-              signal: segmentSignal.signal,
-            }).finally(segmentSignal.dispose);
+          segmentTimeoutMs,
+          () => {
+            recoverableFailuresByHost.set(
+              host,
+              (recoverableFailuresByHost.get(host) ?? 0) + 1,
+            );
           },
-          options.signal,
         );
         const finalData = await decryptIfNeeded(segment, data, options);
         bytes = finalData.byteLength;

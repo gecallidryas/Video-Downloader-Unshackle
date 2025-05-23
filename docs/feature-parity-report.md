@@ -100,7 +100,7 @@ Status values:
 | Direct media download | present | present | present | Keep Chrome downloads path; consider File System Access fallback for advanced/raw mode. |
 | File System Access direct writes | gap | not primary | present | Useful for long live streams and large raw downloads; design as optional browser-capability path. |
 | Range splitting of large single files | partial/gap | present | present | Port concept into `segment-scheduler` for direct/range-capable media. |
-| Broken-pipe recovery and ranged resume | partial | present | strong | High-value robustness port: retry partial ranges, lower concurrency after repeated init timeouts, detect short/extra segments. |
+| Broken-pipe recovery and ranged resume | present | present | strong | Scheduler now resumes partial fetches with `Range` headers, rejoins recovered bytes, and lowers effective host concurrency after repeated recoverable failures. |
 | User URL replacement on failed segment | gap | not clear | present | Consider as advanced recovery UI for expired live URLs. |
 | Segment concurrency | present | present | present | Keep settings-driven scheduler; live-stream caps UI threads to 1-5. |
 | Per-host concurrency/bandwidth | present | present | gap | Unshackle/Unified are stronger. |
@@ -217,7 +217,7 @@ These are the highest-value enrichment items from the two references, ordered by
 |---:|---|---|---|---|
 | P0 | Reconcile protected/credential defaults | Unified parity vs safe policy | `src/background/settings/settings-store.ts`, `docs/provider-policy.md` | Decide release posture before more parity claims. |
 | P0 | Production HLS/DASH path audit | Unified + current source | `entrypoints/background.ts`, `src/background/jobs/download-controller.ts` | Confirm whether native export is the intended default for segmented media; document fallback behavior. |
-| P1 | Broken-pipe/range recovery policy | live-stream `mget/plugins/error.js` | `src/core/download/segment-scheduler.ts`, HLS/DASH/direct runners | Add typed retry reasons, partial-range recovery, timeout tuning, and non-retry status handling. |
+| P1 | Broken-pipe/range recovery policy | live-stream `mget/plugins/error.js` | `src/core/download/segment-scheduler.ts`, HLS/DASH/direct runners | Implemented typed non-retry status handling, timeout tuning, and partial-range recovery in the scheduler; direct range downloads are tracked separately. |
 | P1 | Direct range downloader | live-stream `mget/mget.js` | `src/core/direct/*`, `src/core/download/*`, `src/core/storage/*` | Improves large direct files and live/archive downloads. |
 | P1 | Timeline/discontinuity handling | live-stream `index.js` | `src/core/hls/plan-hls-segments.ts`, `src/ui/media/*` | Useful for ad-separated streams and live recordings. |
 | P1 | Init segment cache/dedupe | live-stream `index.js` + cache plugin | `src/core/download/segment-scheduler.ts`, `src/core/storage/*` | Avoid duplicate init fetches and writes. |
