@@ -53,7 +53,7 @@ Recommended direction: keep Unshackle as the typed all-in-one extension, use Uni
 | Streaming host plugins | 25-host registry plus safety tests | 25-host baseline | None | Unified remains the host/plugin parity baseline. |
 | HLS parsing | Present | Present | Present via `m3u8-parser` | Compare live-stream's timeline, media group, init-map, and quality handling against Unshackle parser tests. |
 | DASH parsing | Present | Present | Present via `mpd-parser` | Live-stream has basic MPD parser delegation, not a full typed planner. |
-| Direct media download | Present via `chrome.downloads` and native export | Present | Present through job window and File System Access | Live-stream's direct-to-disk writer is a useful robustness option. |
+| Direct media download | Present via `chrome.downloads`, native export, and tested direct range chunks | Present | Present through job window and File System Access | Range-capable direct downloads now use HEAD probing and scheduler-managed byte ranges. |
 | Segmented download engine | Present in core tests; production path currently favors native FFmpeg export | Present | Strong custom `MyGet` range/thread engine | Port ideas into `segment-scheduler`, not the JS class hierarchy. |
 | AES-128 clear-key HLS | Present | Present | Present | Keep clear-key only; never extend into DRM/key extraction. |
 | DRM/protected handling | Detects/protects in several paths; default setting needs review | Broad detection and mixed policy defaults | Mostly blocklist/compliance, not DRM-centric | Release posture should be safe-by-default. |
@@ -97,9 +97,9 @@ Status values:
 | SAMPLE-AES/DRM download | not-scope | risky/mixed | unsupported | Preserve block/warn behavior only. |
 | DASH MPD parsing | present | present | present | Keep Unshackle typed parser as canonical. |
 | DASH live/SegmentTimeline robustness | present/partial | present | parser library dependent | Use Unified as main baseline; live-stream adds little here. |
-| Direct media download | present | present | present | Keep Chrome downloads path; consider File System Access fallback for advanced/raw mode. |
+| Direct media download | present | present | present | Keep Chrome downloads path; direct range chunks are now available for range-capable media. |
 | File System Access direct writes | gap | not primary | present | Useful for long live streams and large raw downloads; design as optional browser-capability path. |
-| Range splitting of large single files | partial/gap | present | present | Port concept into `segment-scheduler` for direct/range-capable media. |
+| Range splitting of large single files | present | present | present | Added direct media range splitting plus `downloadDirectWithRanges` for range-capable large files. |
 | Broken-pipe recovery and ranged resume | present | present | strong | Scheduler now resumes partial fetches with `Range` headers, rejoins recovered bytes, and lowers effective host concurrency after repeated recoverable failures. |
 | User URL replacement on failed segment | gap | not clear | present | Consider as advanced recovery UI for expired live URLs. |
 | Segment concurrency | present | present | present | Keep settings-driven scheduler; live-stream caps UI threads to 1-5. |

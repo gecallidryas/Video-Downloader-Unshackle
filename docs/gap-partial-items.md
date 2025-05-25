@@ -27,8 +27,8 @@ Extracted from `feature-parity-report.md` across all 8 reference analyses. Every
 | # | Item | Status | Stronger in | Action |
 |---|---|---|---|---|
 | 10 | Broken-pipe recovery and ranged resume | done | live-stream (strong) | Scheduler retries partial fetches with resume ranges, rejoins partial bytes, and lowers effective host concurrency after repeated recoverable failures. |
-| 11 | Range splitting of large single files | partial/gap | live-stream, Unified | Port concept into `segment-scheduler` for direct/range-capable media. |
-| 12 | Direct range downloader | gap | live-stream | Improves large direct files and live/archive downloads. |
+| 11 | Range splitting of large single files | done | live-stream, Unified | Added tested `splitIntoRanges` utility for fixed-size direct media chunks. |
+| 12 | Direct range downloader | done | live-stream | Added `downloadDirectWithRanges` with HEAD probing, range-capable chunk downloads through the scheduler, and ordered assembly. |
 | 13 | Timeline/discontinuity handling | partial | live-stream (user timeline choice), Unified | Add timeline-aware planning and UI/automatic ad-skip policy. |
 | 14 | Init segment cache/dedupe | partial | live-stream, puemos | Avoid duplicate init fetches and writes. |
 | 15 | Do not retry HTTP status errors (403/404) | done | puemos, stream-detector | Added `SegmentFetchError`, non-retryable HTTP status classification, and scheduler no-retry coverage. |
