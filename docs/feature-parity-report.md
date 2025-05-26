@@ -91,7 +91,7 @@ Status values:
 | Blob-generated M3U8 detection | partial/gap | broad MAIN-world scanner | present via `Blob` proxy when `mime-watch` enabled | Port only as opt-in diagnostic/advanced scanner; avoid always-on page-world monkeypatching. |
 | HLS master/media parsing | present | present | present | Extend tests with live-stream cases for media groups and timeline selection. |
 | HLS alternate audio/subtitle groups | present/partial | present | present in playlist flattening | Compare parser output with live-stream behavior; ensure UI can select groups reliably. |
-| HLS discontinuity/timeline handling | partial | present | present with user timeline choice | Add timeline-aware planning and UI/automatic ad-skip policy only with explicit user choice. |
+| HLS discontinuity/timeline handling | present | present | present with user timeline choice | Planner now groups discontinuity timelines and supports include-all, skip-ads, and ask-user policy values. |
 | HLS init-map caching | partial | present | present | Add scheduler/storage test for repeated init segment fetch dedupe. |
 | HLS AES-128 clear-key decrypt | present | present | present | Keep clear-key-only boundary. |
 | SAMPLE-AES/DRM download | not-scope | risky/mixed | unsupported | Preserve block/warn behavior only. |
