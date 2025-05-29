@@ -6,6 +6,10 @@ import {
   partialContentFromError,
   SegmentFetchError,
 } from './error-classification';
+import {
+  createInitSegmentCache,
+  type InitSegmentCache,
+} from './init-segment-cache';
 import type { SegmentProgressCallback } from './progress-events';
 import {
   computeBackoffDelay,
@@ -38,6 +42,7 @@ export interface ScheduleSegmentsOptions {
   fetchAttempts?: number;
   fetchSegment?: FetchScheduledSegment;
   fetchKey?: (keyUri: string, request: SegmentFetchRequest) => Promise<Uint8Array>;
+  initSegmentCache?: InitSegmentCache;
   storage?: SegmentSchedulerStorage;
   signal?: AbortSignal;
   segmentTimeoutMs?: number;
@@ -230,35 +235,43 @@ async function fetchSegmentWithRecovery(
   let resumeOffset = 0;
   const recoveredParts: Uint8Array[] = [];
 
-  const data = await retryWithBackoff(
-    attempts,
-    async () => {
-      const segmentSignal = composeSegmentSignal(options.signal, segmentTimeoutMs);
+  const runFetch = () =>
+    retryWithBackoff(
+      attempts,
+      async () => {
+        const segmentSignal = composeSegmentSignal(options.signal, segmentTimeoutMs);
 
-      try {
-        return await fetchSegment(segment, {
-          headers: resumeRangeHeaders(segment, resumeOffset),
-          signal: segmentSignal.signal,
-        });
-      } catch (error) {
-        const partial = partialContentFromError(error);
+        try {
+          return await fetchSegment(segment, {
+            headers: resumeRangeHeaders(segment, resumeOffset),
+            signal: segmentSignal.signal,
+          });
+        } catch (error) {
+          const partial = partialContentFromError(error);
 
-        if (partial && !options.signal?.aborted) {
-          resumeOffset += partial.partialBytes;
-          onHostRecoverableFailure();
+          if (partial && !options.signal?.aborted) {
+            resumeOffset += partial.partialBytes;
+            onHostRecoverableFailure();
 
-          if (partial.partialData) {
-            recoveredParts.push(partial.partialData);
+            if (partial.partialData) {
+              recoveredParts.push(partial.partialData);
+            }
           }
-        }
 
-        throw error;
-      } finally {
-        segmentSignal.dispose();
-      }
-    },
-    options.signal,
-  );
+          throw error;
+        } finally {
+          segmentSignal.dispose();
+        }
+      },
+      options.signal,
+    );
+  const data =
+    segment.initSegment && options.initSegmentCache
+      ? await options.initSegmentCache.getOrFetch(
+          { uri: segment.url, byteRange: segment.byteRange },
+          runFetch,
+        )
+      : await runFetch();
 
   return recoveredParts.length > 0 ? joinParts([...recoveredParts, data]) : data;
 }
@@ -275,6 +288,7 @@ export async function scheduleSegments(
     Math.floor(options.segmentTimeoutMs ?? DEFAULT_SEGMENT_TIMEOUT_MS),
   );
   const limiter = createBandwidthLimiter(options.bandwidthBytesPerSecond);
+  const initSegmentCache = options.initSegmentCache ?? createInitSegmentCache();
   const results = new Array<Uint8Array | undefined>(options.segments.length);
   const queue: SegmentDescriptor[] = [];
   const activeByHost = new Map<string, number>();
@@ -346,7 +360,7 @@ export async function scheduleSegments(
         throwIfAborted(options.signal);
         const data = await fetchSegmentWithRecovery(
           segment,
-          options,
+          { ...options, initSegmentCache },
           fetchSegment,
           attempts,
           segmentTimeoutMs,

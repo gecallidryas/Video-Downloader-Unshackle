@@ -92,7 +92,7 @@ Status values:
 | HLS master/media parsing | present | present | present | Extend tests with live-stream cases for media groups and timeline selection. |
 | HLS alternate audio/subtitle groups | present/partial | present | present in playlist flattening | Compare parser output with live-stream behavior; ensure UI can select groups reliably. |
 | HLS discontinuity/timeline handling | present | present | present with user timeline choice | Planner now groups discontinuity timelines and supports include-all, skip-ads, and ask-user policy values. |
-| HLS init-map caching | partial | present | present | Add scheduler/storage test for repeated init segment fetch dedupe. |
+| HLS init-map caching | present | present | present | Added a URI+byterange init segment cache wired into the scheduler with duplicate-fetch tests. |
 | HLS AES-128 clear-key decrypt | present | present | present | Keep clear-key-only boundary. |
 | SAMPLE-AES/DRM download | not-scope | risky/mixed | unsupported | Preserve block/warn behavior only. |
 | DASH MPD parsing | present | present | present | Keep Unshackle typed parser as canonical. |
