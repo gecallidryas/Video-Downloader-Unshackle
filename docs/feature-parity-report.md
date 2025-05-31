@@ -913,8 +913,8 @@ The entire tool is one shell script with no imports, modules, or configuration f
 
 | Priority | Item | Target landing zone | Notes |
 |---:|---|---|---|
-| P1 | Add sequence-number IV fallback test | `src/core/hls/__tests__/decrypt-aes128-segment.test.ts` | HLS spec says when `#EXT-X-KEY` lacks an `IV` attribute, use the media sequence number as the IV. hls_downloader's random-IV fallback is a bug that validates adding this test. |
-| P1 | Add I-frame stream filtering test | `src/core/hls/__tests__/parse-hls-manifest.test.ts` | hls_downloader strips `#EXT-X-I-FRAME-STREAM-INF` lines. Verify Unshackle's parser ignores I-frame-only variants. |
+| P1 | Add sequence-number IV fallback test | `src/core/hls/__tests__/iv-fallback.test.ts` | Added decrypt regression proving HLS omitted-IV fallback uses the media sequence number. |
+| P1 | Add I-frame stream filtering test | `src/core/hls/__tests__/iframe-filtering.test.ts` | Added parser regression proving I-frame-only stream tags are ignored as variants. |
 | P2 | Add "save raw TS" export option | `src/core/export/*`, settings | hls_downloader's `-f` flag skips ffmpeg and saves raw `.ts`. Useful when native helper is unavailable. |
 | P2 | Add bulk retry pass after initial download | `src/core/download/segment-scheduler.ts` | Two-pass approach (download all, then retry all failures once) is a useful complement to per-segment retry. |
 | P2 | Add auto-highest quality selection policy | `src/core/hls/select-hls-variant.ts`, settings | Add configurable default quality policy (highest/lowest/ask). |
