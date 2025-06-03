@@ -36,7 +36,7 @@ Extracted from `feature-parity-report.md` across all 8 reference analyses. Every
 | 17 | Segment fetch timeout setting | done | hls_downloader (30s), live-stream | Added configurable `segmentTimeoutMs` defaulting to 30s, settings schema v5, and timeout tests. |
 | 18 | Sequence-number IV fallback for AES-128 | done | HLS spec (hls_downloader exposed bug) | Added decrypt regression proving omitted IV uses media sequence number. |
 | 19 | I-frame stream filtering | done | hls_downloader | Added parser regression proving `#EXT-X-I-FRAME-STREAM-INF` does not create variants. |
-| 20 | Live HLS retry telemetry | partial | cat-catch, live-stream | Track no-new-segment retry count, last sequence, idle/live states. |
+| 20 | Live HLS retry telemetry | done | cat-catch, live-stream | Added `createLiveHlsTelemetry` tracker for no-new-segment retries, last sequence, total refreshes, and live/idle state. |
 
 ### HLS/DASH Parsing
 

@@ -575,7 +575,7 @@ The UI is split across specialized HTML pages: `popup.html` for detected resourc
 | P1 | Add manual HLS ingest modes | side panel/parser route | URL, text, file, raw TS list conversion, base URL override, and safe request profile. |
 | P1 | Add HLS segment repair controls | HLS job detail UI and tests | Segment selection, regex filtering, index/time ranges, discontinuity groups, retry failed, stop single fragment, and force partial export. |
 | P1 | Add HLS range expansion tests | HLS parser/planner fixtures | Cover cat-catch-style `${range:start-end,pad}` operator only if it is exposed as explicit manual input. |
-| P1 | Add live HLS retry telemetry | live job runner | Track no-new-segment retry count, last sequence, and user-visible idle/live states. |
+| P1 | Add live HLS retry telemetry | `src/core/hls/live-hls-telemetry.ts` | Added tracker for no-new-segment retries, last sequence, total refreshes, and live/idle state. |
 | P1 | Add DASH representation inspector | DASH parser UI | Show audio/video representation metadata and reuse HLS-style job runner for clear segment lists. |
 | P1 | Add settings import/export with secret redaction | settings schema | Export versioned JSON; redact Aria2 tokens, webhook secrets, MQTT passwords, and any future header profiles. |
 | P2 | Add copy/share template engine | row actions, settings | Safe tags for URL, title, filename, extension, size, referer/origin only when permitted; no cookie/auth variables by default. |
