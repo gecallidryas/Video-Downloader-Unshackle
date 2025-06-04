@@ -137,6 +137,45 @@ describe('parseHlsManifest', () => {
     expect(liveManifest).toMatchObject({ isLive: true, isEvent: false });
   });
 
+  test('uses EXT-X-MEDIA-SEQUENCE for segment media sequence values', () => {
+    const manifest = parseHlsManifest({
+      manifestUrl: 'https://cdn.example.com/hls/live.m3u8',
+      content: [
+        '#EXTM3U',
+        '#EXT-X-TARGETDURATION:4',
+        '#EXT-X-MEDIA-SEQUENCE:42',
+        '#EXTINF:4,',
+        'live-42.ts',
+        '#EXTINF:4,',
+        'live-43.ts',
+      ].join('\n'),
+    });
+
+    expect(manifest.segments).toEqual([
+      expect.objectContaining({ index: 1, mediaSequence: 42 }),
+      expect.objectContaining({ index: 2, mediaSequence: 43 }),
+    ]);
+  });
+
+  test('defaults media sequence values to zero-based HLS sequence numbers', () => {
+    const manifest = parseHlsManifest({
+      manifestUrl: 'https://cdn.example.com/hls/vod.m3u8',
+      content: [
+        '#EXTM3U',
+        '#EXTINF:4,',
+        'seg-0.ts',
+        '#EXTINF:4,',
+        'seg-1.ts',
+        '#EXT-X-ENDLIST',
+      ].join('\n'),
+    });
+
+    expect(manifest.segments).toEqual([
+      expect.objectContaining({ index: 1, mediaSequence: 0 }),
+      expect.objectContaining({ index: 2, mediaSequence: 1 }),
+    ]);
+  });
+
   test('classifies AES-128 clear-key and DRM-style HLS protection separately', () => {
     expect(
       classifyHlsProtection([

@@ -40,4 +40,30 @@ describe('broken-pipe recovery', () => {
 
     vi.useRealTimers();
   });
+
+  test('does not resume from missing partial bytes', async () => {
+    vi.useFakeTimers();
+
+    const fetchSegment = vi
+      .fn()
+      .mockRejectedValueOnce(
+        Object.assign(new Error('broken pipe'), {
+          partialBytes: 3,
+        }),
+      )
+      .mockResolvedValueOnce(new Uint8Array([1, 2, 3, 4, 5]));
+
+    const resultPromise = scheduleSegments({
+      segments: [segment()],
+      fetchAttempts: 2,
+      fetchSegment,
+    });
+
+    await vi.runAllTimersAsync();
+
+    await expect(resultPromise).resolves.toEqual([new Uint8Array([1, 2, 3, 4, 5])]);
+    expect(fetchSegment.mock.calls[1]?.[1].headers).toEqual({});
+
+    vi.useRealTimers();
+  });
 });

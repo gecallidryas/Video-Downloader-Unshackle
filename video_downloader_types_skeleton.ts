@@ -159,6 +159,7 @@ export interface DashManifest extends NormalizedManifestBase {
 export interface SegmentDescriptor {
   id: string;
   index: number;
+  mediaSequence?: number;
   url: string;
   initSegment?: boolean;
   byteRange?: { start: number; end: number };

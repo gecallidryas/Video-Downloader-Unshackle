@@ -26,17 +26,17 @@ Extracted from `feature-parity-report.md` across all 8 reference analyses. Every
 
 | # | Item | Status | Stronger in | Action |
 |---|---|---|---|---|
-| 10 | Broken-pipe recovery and ranged resume | done | live-stream (strong) | Scheduler retries partial fetches with resume ranges, rejoins partial bytes, and lowers effective host concurrency after repeated recoverable failures. |
+| 10 | Broken-pipe recovery and ranged resume | done | live-stream (strong) | Scheduler retries partial fetches with validated retained bytes, resumes ranges only when safe, rejoins bytes, and lowers effective host concurrency after repeated recoverable failures. |
 | 11 | Range splitting of large single files | done | live-stream, Unified | Added tested `splitIntoRanges` utility for fixed-size direct media chunks. |
 | 12 | Direct range downloader | done | live-stream | Added `downloadDirectWithRanges` with HEAD probing, range-capable chunk downloads through the scheduler, and ordered assembly. |
-| 13 | Timeline/discontinuity handling | done | live-stream (user timeline choice), Unified | Added discontinuity grouping plus `include-all`/`skip-ads`/`ask-user` planner policy surface. |
+| 13 | Timeline/discontinuity handling | done | live-stream (user timeline choice), Unified | Added discontinuity grouping plus planner policy surface; UI-level user choice remains future repair/UX work. |
 | 14 | Init segment cache/dedupe | done | live-stream, puemos | Added URI+byterange init segment cache and scheduler dedupe for duplicate init fetches. |
 | 15 | Do not retry HTTP status errors (403/404) | done | puemos, stream-detector | Added `SegmentFetchError`, non-retryable HTTP status classification, and scheduler no-retry coverage. |
 | 16 | Fetch retry backoff policy | done | puemos (100ms × 1.15x) | Extracted `computeBackoffDelay` with cap/jitter tests and scheduler coverage. |
 | 17 | Segment fetch timeout setting | done | hls_downloader (30s), live-stream | Added configurable `segmentTimeoutMs` defaulting to 30s, settings schema v5, and timeout tests. |
-| 18 | Sequence-number IV fallback for AES-128 | done | HLS spec (hls_downloader exposed bug) | Added decrypt regression proving omitted IV uses media sequence number. |
+| 18 | Sequence-number IV fallback for AES-128 | done | HLS spec (hls_downloader exposed bug) | Parser now records `EXT-X-MEDIA-SEQUENCE`, scheduler passes HLS media sequence to decrypt, and regressions cover omitted IV fallback. |
 | 19 | I-frame stream filtering | done | hls_downloader | Added parser regression proving `#EXT-X-I-FRAME-STREAM-INF` does not create variants. |
-| 20 | Live HLS retry telemetry | done | cat-catch, live-stream | Added `createLiveHlsTelemetry` tracker for no-new-segment retries, last sequence, total refreshes, and live/idle state. |
+| 20 | Live HLS retry telemetry | done | cat-catch, live-stream | Added `createLiveHlsTelemetry` tracker and live HLS progress-event snapshots for retry count, last sequence, total refreshes, and live/idle state. |
 
 ### HLS/DASH Parsing
 

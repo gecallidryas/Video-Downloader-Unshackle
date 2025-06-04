@@ -1,9 +1,9 @@
 # Reference Feature Parity Report
 
-**Date:** 2026-05-11  
-**Target extension:** Video Downloader Unshackle (`F:\Video-Downloader Unshackle`)  
-**Primary baseline:** `UnifiedVideoDownloader/`  
-**Additional reference:** `reference/live-stream-downloader/` (`chandler-stimson/live-stream-downloader`, `origin/master` at `2dad198`)  
+**Date:** 2026-05-11
+**Target extension:** Video Downloader Unshackle (`F:\Video-Downloader Unshackle`)
+**Primary baseline:** `UnifiedVideoDownloader/`
+**Additional reference:** `reference/live-stream-downloader/` (`chandler-stimson/live-stream-downloader`, `origin/master` at `2dad198`)
 **Purpose:** keep one growing comparison document for reference extensions, feature parity, and portable architecture ideas that can improve Unshackle without copying source wholesale.
 
 ---
@@ -53,7 +53,7 @@ Recommended direction: keep Unshackle as the typed all-in-one extension, use Uni
 | Streaming host plugins | 25-host registry plus safety tests | 25-host baseline | None | Unified remains the host/plugin parity baseline. |
 | HLS parsing | Present | Present | Present via `m3u8-parser` | Compare live-stream's timeline, media group, init-map, and quality handling against Unshackle parser tests. |
 | DASH parsing | Present | Present | Present via `mpd-parser` | Live-stream has basic MPD parser delegation, not a full typed planner. |
-| Direct media download | Present via `chrome.downloads`, native export, and tested direct range chunks | Present | Present through job window and File System Access | Range-capable direct downloads now use HEAD probing and scheduler-managed byte ranges. |
+| Direct media download | Present via `chrome.downloads`, native export, and tested direct range helper | Present | Present through job window and File System Access | Range-capable helper now uses HEAD probing and scheduler-managed byte ranges; default direct UI path still uses Chrome downloads. |
 | Segmented download engine | Present in core tests; production path currently favors native FFmpeg export | Present | Strong custom `MyGet` range/thread engine | Port ideas into `segment-scheduler`, not the JS class hierarchy. |
 | AES-128 clear-key HLS | Present | Present | Present | Keep clear-key only; never extend into DRM/key extraction. |
 | DRM/protected handling | Detects/protects in several paths; default setting needs review | Broad detection and mixed policy defaults | Mostly blocklist/compliance, not DRM-centric | Release posture should be safe-by-default. |
@@ -91,16 +91,16 @@ Status values:
 | Blob-generated M3U8 detection | partial/gap | broad MAIN-world scanner | present via `Blob` proxy when `mime-watch` enabled | Port only as opt-in diagnostic/advanced scanner; avoid always-on page-world monkeypatching. |
 | HLS master/media parsing | present | present | present | Extend tests with live-stream cases for media groups and timeline selection. |
 | HLS alternate audio/subtitle groups | present/partial | present | present in playlist flattening | Compare parser output with live-stream behavior; ensure UI can select groups reliably. |
-| HLS discontinuity/timeline handling | present | present | present with user timeline choice | Planner now groups discontinuity timelines and supports include-all, skip-ads, and ask-user policy values. |
+| HLS discontinuity/timeline handling | present | present | present with user timeline choice | Planner now groups discontinuity timelines and supports include-all/skip-ads policy behavior; UI-level user choice remains future repair UX. |
 | HLS init-map caching | present | present | present | Added a URI+byterange init segment cache wired into the scheduler with duplicate-fetch tests. |
 | HLS AES-128 clear-key decrypt | present | present | present | Keep clear-key-only boundary. |
 | SAMPLE-AES/DRM download | not-scope | risky/mixed | unsupported | Preserve block/warn behavior only. |
 | DASH MPD parsing | present | present | present | Keep Unshackle typed parser as canonical. |
 | DASH live/SegmentTimeline robustness | present/partial | present | parser library dependent | Use Unified as main baseline; live-stream adds little here. |
-| Direct media download | present | present | present | Keep Chrome downloads path; direct range chunks are now available for range-capable media. |
+| Direct media download | present | present | present | Keep Chrome downloads path; direct range helper is available for range-capable media integrations. |
 | File System Access direct writes | gap | not primary | present | Useful for long live streams and large raw downloads; design as optional browser-capability path. |
 | Range splitting of large single files | present | present | present | Added direct media range splitting plus `downloadDirectWithRanges` for range-capable large files. |
-| Broken-pipe recovery and ranged resume | present | present | strong | Scheduler now resumes partial fetches with `Range` headers, rejoins recovered bytes, and lowers effective host concurrency after repeated recoverable failures. |
+| Broken-pipe recovery and ranged resume | present | present | strong | Scheduler now resumes partial fetches only with validated retained bytes, rejoins recovered data, and lowers effective host concurrency after repeated recoverable failures. |
 | User URL replacement on failed segment | gap | not clear | present | Consider as advanced recovery UI for expired live URLs. |
 | Segment concurrency | present | present | present | Keep settings-driven scheduler; live-stream caps UI threads to 1-5. |
 | Per-host concurrency/bandwidth | present | present | gap | Unshackle/Unified are stronger. |
@@ -219,7 +219,7 @@ These are the highest-value enrichment items from the two references, ordered by
 | P0 | Production HLS/DASH path audit | Unified + current source | `entrypoints/background.ts`, `src/background/jobs/download-controller.ts` | Confirm whether native export is the intended default for segmented media; document fallback behavior. |
 | P1 | Broken-pipe/range recovery policy | live-stream `mget/plugins/error.js` | `src/core/download/segment-scheduler.ts`, HLS/DASH/direct runners | Implemented typed non-retry status handling, timeout tuning, and partial-range recovery in the scheduler; direct range downloads are tracked separately. |
 | P1 | Direct range downloader | live-stream `mget/mget.js` | `src/core/direct/*`, `src/core/download/*`, `src/core/storage/*` | Improves large direct files and live/archive downloads. |
-| P1 | Timeline/discontinuity handling | live-stream `index.js` | `src/core/hls/plan-hls-segments.ts`, `src/ui/media/*` | Useful for ad-separated streams and live recordings. |
+| P1 | Timeline/discontinuity handling | live-stream `index.js` | `src/core/hls/plan-hls-segments.ts`, `src/ui/media/*` | Planner grouping is implemented; UI-level timeline selection remains useful for ad-separated streams and live recordings. |
 | P1 | Init segment cache/dedupe | live-stream `index.js` + cache plugin | `src/core/download/segment-scheduler.ts`, `src/core/storage/*` | Avoid duplicate init fetches and writes. |
 | P2 | Selected-link extraction context menu | live-stream `context.js` | `src/background/context-menu/context-menu.ts`, runtime router | Good power-user feature with low implementation risk. |
 | P2 | Performance/player evidence scanners | live-stream `extract.js` | `src/content/dom/*`, `src/core/candidates/*` | Adds coverage for JWPlayer/VideoJS/SoundManager pages. |
@@ -575,7 +575,7 @@ The UI is split across specialized HTML pages: `popup.html` for detected resourc
 | P1 | Add manual HLS ingest modes | side panel/parser route | URL, text, file, raw TS list conversion, base URL override, and safe request profile. |
 | P1 | Add HLS segment repair controls | HLS job detail UI and tests | Segment selection, regex filtering, index/time ranges, discontinuity groups, retry failed, stop single fragment, and force partial export. |
 | P1 | Add HLS range expansion tests | HLS parser/planner fixtures | Cover cat-catch-style `${range:start-end,pad}` operator only if it is exposed as explicit manual input. |
-| P1 | Add live HLS retry telemetry | `src/core/hls/live-hls-telemetry.ts` | Added tracker for no-new-segment retries, last sequence, total refreshes, and live/idle state. |
+| P1 | Add live HLS retry telemetry | `src/core/hls/live-hls-telemetry.ts`, `src/core/hls/run-hls-job.ts` | Added tracker and live HLS progress-event snapshots for no-new-segment retries, last sequence, total refreshes, and live/idle state. |
 | P1 | Add DASH representation inspector | DASH parser UI | Show audio/video representation metadata and reuse HLS-style job runner for clear segment lists. |
 | P1 | Add settings import/export with secret redaction | settings schema | Export versioned JSON; redact Aria2 tokens, webhook secrets, MQTT passwords, and any future header profiles. |
 | P2 | Add copy/share template engine | row actions, settings | Safe tags for URL, title, filename, extension, size, referer/origin only when permitted; no cookie/auth variables by default. |
@@ -906,20 +906,20 @@ The entire tool is one shell script with no imports, modules, or configuration f
 | Breadth | Unshackle is vastly broader: browser extension with UI, multi-protocol support, typed candidate model, host/site plugins, queue/history, native helper, preview, settings, policy gates, and tests. hls_downloader handles only single-variant VOD HLS with TS segments. |
 | HLS pipeline | hls_downloader demonstrates the minimum viable HLS download pipeline in 127 lines. Unshackle's typed parser, segment planner, scheduler, and decrypt modules are all stronger. The reference validates that resolution selection, parallel download, AES-128 decrypt, and ffmpeg remux are the four essential HLS pipeline stages. |
 | Download robustness | Minimal error handling: a single retry pass, 30s timeout, no HTTP status classification, no broken-pipe recovery, no init-segment caching, no byterange or fMP4 support. live-stream-downloader and puemos remain the robustness references. |
-| AES-128 decrypt | Uses openssl for AES-128-CBC. Its random-IV fallback when no IV URI is present is a **bug** (HLS spec requires using the segment sequence number). Unshackle's Web Crypto path is correct; add a test verifying sequence-number IV fallback. |
+| AES-128 decrypt | Uses openssl for AES-128-CBC. Its random-IV fallback when no IV URI is present is a **bug** (HLS spec requires using the segment sequence number). Unshackle's Web Crypto path is covered by sequence-number fallback tests. |
 | Concurrency | The aria2c path with 16 connections and configurable parallelism (default 36) is aggressive but effective. Unshackle's settings-driven scheduler is architecturally better. |
 
 ### hls_downloader Portable Architecture Backlog Additions
 
 | Priority | Item | Target landing zone | Notes |
 |---:|---|---|---|
-| P1 | Add sequence-number IV fallback test | `src/core/hls/__tests__/iv-fallback.test.ts` | Added decrypt regression proving HLS omitted-IV fallback uses the media sequence number. |
+| P1 | Add sequence-number IV fallback test | `src/core/hls/__tests__/iv-fallback.test.ts`, `src/core/hls/__tests__/parse-hls-manifest.test.ts` | Parser records `EXT-X-MEDIA-SEQUENCE`, and decrypt regression proves omitted-IV fallback uses the HLS media sequence number. |
 | P1 | Add I-frame stream filtering test | `src/core/hls/__tests__/iframe-filtering.test.ts` | Added parser regression proving I-frame-only stream tags are ignored as variants. |
 | P2 | Add "save raw TS" export option | `src/core/export/*`, settings | hls_downloader's `-f` flag skips ffmpeg and saves raw `.ts`. Useful when native helper is unavailable. |
 | P2 | Add bulk retry pass after initial download | `src/core/download/segment-scheduler.ts` | Two-pass approach (download all, then retry all failures once) is a useful complement to per-segment retry. |
 | P2 | Add auto-highest quality selection policy | `src/core/hls/select-hls-variant.ts`, settings | Add configurable default quality policy (highest/lowest/ask). |
 | P2 | Add sidecar subtitle download option | `src/core/export/*`, UI | Users may prefer sidecar files over muxed subtitles. |
-| P1 | Add segment fetch timeout setting | `src/core/download/segment-scheduler.ts`, settings | Implemented as `segmentTimeoutMs` with a 30s default and settings schema v5. |
+| P1 | Add segment fetch timeout setting | `src/core/download/segment-scheduler.ts`, settings, HLS/DASH runners | Implemented as `segmentTimeoutMs` with a 30s default, settings schema v5, and controller-to-runner wiring. |
 | P3 | Add relative URL resolution fixtures for nested paths | `src/core/hls/__tests__/parse-hls-manifest.test.ts` | Add test cases for relative variant URLs, relative segment URLs, and mixed absolute/relative within the same manifest. |
 | P3 | Add aria2 external tool profile | integrations/settings | aria2c with `-x16 -s16 -j N` is a practical power-user integration. |
 

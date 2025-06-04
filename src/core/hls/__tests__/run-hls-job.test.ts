@@ -141,6 +141,78 @@ describe('HLS planning and execution', () => {
     spy.mockRestore();
   });
 
+  test('passes segmentTimeoutMs through to scheduleSegments', async () => {
+    const manifest = parseHlsManifest({
+      manifestUrl: 'https://cdn.example.com/hls/video/720p/prog.m3u8',
+      content: mediaPlaylist,
+    });
+    const spy = vi.spyOn(segmentScheduler, 'scheduleSegments').mockResolvedValue([
+      new Uint8Array([0]),
+      new Uint8Array([1]),
+      new Uint8Array([2]),
+      new Uint8Array([3]),
+    ]);
+
+    await runHlsJob({
+      job: buildJob(),
+      manifest,
+      fetchSegment: vi.fn(),
+      writeOutput: vi.fn().mockResolvedValue({
+        fileName: 'assembled-hls.mp4',
+        mimeType: 'video/mp4',
+      }),
+      segmentTimeoutMs: 12_000,
+    });
+
+    expect(spy).toHaveBeenCalledWith(
+      expect.objectContaining({ segmentTimeoutMs: 12_000 }),
+    );
+    spy.mockRestore();
+  });
+
+  test('adds live HLS telemetry to progress events', async () => {
+    const manifest = parseHlsManifest({
+      manifestUrl: 'https://cdn.example.com/hls/live.m3u8',
+      content: [
+        '#EXTM3U',
+        '#EXT-X-TARGETDURATION:6',
+        '#EXT-X-MEDIA-SEQUENCE:42',
+        '#EXTINF:6,',
+        'live-42.ts',
+      ].join('\n'),
+    });
+    const onProgress = vi.fn();
+    const spy = vi
+      .spyOn(segmentScheduler, 'scheduleSegments')
+      .mockImplementation(async (options) => {
+        options.onProgress?.({ downloaded: 0, failed: 0, total: 1 });
+        return [new Uint8Array([1])];
+      });
+
+    await runHlsJob({
+      job: buildJob(),
+      manifest,
+      fetchSegment: vi.fn(),
+      writeOutput: vi.fn().mockResolvedValue({
+        fileName: 'live.mp4',
+        mimeType: 'video/mp4',
+      }),
+      onProgress,
+    });
+
+    expect(onProgress).toHaveBeenCalledWith(
+      expect.objectContaining({
+        liveHlsTelemetry: {
+          noNewSegmentRetries: 0,
+          lastSequence: 42,
+          state: 'live',
+          totalRefreshes: 1,
+        },
+      }),
+    );
+    spy.mockRestore();
+  });
+
   test('defaults concurrency to 1 when not specified', async () => {
     const manifest = parseHlsManifest({
       manifestUrl: 'https://cdn.example.com/hls/video/720p/prog.m3u8',

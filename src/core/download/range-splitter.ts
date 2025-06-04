@@ -99,7 +99,7 @@ export async function downloadDirectWithRanges(
         signal: request.signal,
       });
 
-      if (!response.ok) {
+      if (response.status !== 206) {
         throw new SegmentFetchError(response.status, response.statusText);
       }
 

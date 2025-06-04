@@ -21,6 +21,7 @@ export interface DownloadControllerSettings {
   defaultOutputFormat?: DownloadSelection['outputKind'];
   maxConcurrentSegments?: number;
   maxConcurrentSegmentsPerHost?: number;
+  segmentTimeoutMs?: number;
 }
 
 export interface DownloadControllerStartOptions {
@@ -35,6 +36,7 @@ export type RunHlsControllerJob = (input: {
   allowProtected?: boolean;
   concurrency?: number;
   maxConcurrentPerHost?: number;
+  segmentTimeoutMs?: number;
 }) => Promise<JobOutput>;
 
 export type RunDashControllerJob = (input: {
@@ -43,6 +45,7 @@ export type RunDashControllerJob = (input: {
   allowProtected?: boolean;
   concurrency?: number;
   maxConcurrentPerHost?: number;
+  segmentTimeoutMs?: number;
 }) => Promise<JobOutput>;
 
 export type RunNativeExportControllerJob = (input: {
@@ -127,13 +130,14 @@ export function createDownloadController(options: DownloadControllerOptions) {
     (async (downloadId: number) => {
       await chrome.downloads.cancel(downloadId);
     });
+  let suppressProtectedDownloads = options.suppressProtectedDownloads;
 
   async function start(
     candidate: MediaCandidate,
     job: DownloadJob,
     startOptions: DownloadControllerStartOptions = {},
   ): Promise<JobOutput> {
-    const allowProtected = options.suppressProtectedDownloads === false;
+    const allowProtected = suppressProtectedDownloads === false;
 
     if (!allowProtected && isProtected(candidate)) {
       throw new Error('Protected media cannot be downloaded by the generic pipeline.');
@@ -183,6 +187,7 @@ export function createDownloadController(options: DownloadControllerOptions) {
     const concurrencyFields: {
       concurrency?: number;
       maxConcurrentPerHost?: number;
+      segmentTimeoutMs?: number;
     } = {};
 
     if (startOptions.settings?.maxConcurrentSegments !== undefined) {
@@ -191,6 +196,10 @@ export function createDownloadController(options: DownloadControllerOptions) {
 
     if (startOptions.settings?.maxConcurrentSegmentsPerHost !== undefined) {
       concurrencyFields.maxConcurrentPerHost = startOptions.settings.maxConcurrentSegmentsPerHost;
+    }
+
+    if (startOptions.settings?.segmentTimeoutMs !== undefined) {
+      concurrencyFields.segmentTimeoutMs = startOptions.settings.segmentTimeoutMs;
     }
 
     if (candidate.protocol === 'hls') {
@@ -280,10 +289,19 @@ export function createDownloadController(options: DownloadControllerOptions) {
     };
   }
 
+  function updateSettings(
+    patch: Pick<DownloadControllerOptions, 'suppressProtectedDownloads'>,
+  ): void {
+    if (patch.suppressProtectedDownloads !== undefined) {
+      suppressProtectedDownloads = patch.suppressProtectedDownloads;
+    }
+  }
+
   return {
     start,
     runManaged,
     abort,
+    updateSettings,
   };
 }
 

@@ -32,9 +32,13 @@ export function partialContentFromError(error: unknown): PartialContentError | u
 
   const partialData = (error as { partialData?: unknown }).partialData;
 
+  if (!(partialData instanceof Uint8Array) || partialData.byteLength !== partialBytes) {
+    return undefined;
+  }
+
   return {
     partialBytes,
-    partialData: partialData instanceof Uint8Array ? partialData : undefined,
+    partialData,
   };
 }
 

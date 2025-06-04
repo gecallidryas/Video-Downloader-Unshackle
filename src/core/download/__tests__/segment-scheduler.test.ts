@@ -188,6 +188,7 @@ describe('scheduleSegments', () => {
     const resultPromise = scheduleSegments({
       segments: [segment(0)],
       fetchSegment,
+      fetchAttempts: 1,
       segmentTimeoutMs: 100,
       signal: controller.signal,
     });
@@ -199,6 +200,37 @@ describe('scheduleSegments', () => {
     await rejection;
 
     controller.abort();
+    vi.useRealTimers();
+  });
+
+  test('retries timed out segment attempts', async () => {
+    vi.useFakeTimers();
+
+    const fetchSegment = vi
+      .fn()
+      .mockImplementationOnce(
+        async (_item: SegmentDescriptor, request) =>
+          new Promise<Uint8Array>((_resolve, reject) => {
+            request.signal?.addEventListener('abort', () => {
+              reject(request.signal.reason);
+            });
+          }),
+      )
+      .mockResolvedValueOnce(new Uint8Array([9]));
+
+    const resultPromise = scheduleSegments({
+      segments: [segment(0)],
+      fetchAttempts: 2,
+      fetchSegment,
+      segmentTimeoutMs: 100,
+    });
+
+    await vi.advanceTimersByTimeAsync(100);
+    await vi.runAllTimersAsync();
+
+    await expect(resultPromise).resolves.toEqual([new Uint8Array([9])]);
+    expect(fetchSegment).toHaveBeenCalledTimes(2);
+
     vi.useRealTimers();
   });
 });

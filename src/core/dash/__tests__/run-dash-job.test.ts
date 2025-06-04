@@ -170,6 +170,38 @@ describe('DASH planning and execution', () => {
     }
   });
 
+  test('passes segmentTimeoutMs through to scheduleSegments', async () => {
+    const manifest = parseMpd({
+      manifestUrl: 'https://cdn.example.com/dash/clear.mpd',
+      content: clearMpd,
+    });
+    const spy = vi.spyOn(segmentScheduler, 'scheduleSegments').mockResolvedValue([
+      new Uint8Array([0]),
+      new Uint8Array([1]),
+      new Uint8Array([2]),
+      new Uint8Array([3]),
+    ]);
+
+    try {
+      await runDashJob({
+        job: buildJob({ selection: { mode: 'custom', variantId: 'video-720' } }),
+        manifest,
+        fetchSegment: vi.fn(),
+        writeOutput: vi.fn().mockResolvedValue({
+          fileName: 'out.mp4',
+          mimeType: 'video/mp4',
+        }),
+        segmentTimeoutMs: 12_000,
+      });
+
+      expect(spy).toHaveBeenCalledWith(
+        expect.objectContaining({ segmentTimeoutMs: 12_000 }),
+      );
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
   test('defaults concurrency to 1 when not specified', async () => {
     const manifest = parseMpd({
       manifestUrl: 'https://cdn.example.com/dash/clear.mpd',

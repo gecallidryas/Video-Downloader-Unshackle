@@ -166,7 +166,7 @@ function composeSegmentSignal(
 ): { signal: AbortSignal; dispose: () => void } {
   const controller = new AbortController();
   const timeout = setTimeout(() => {
-    controller.abort(new DOMException('Segment fetch timed out.', 'AbortError'));
+    controller.abort(new DOMException('Segment fetch timed out.', 'TimeoutError'));
   }, timeoutMs);
 
   const abortFromParent = () => {
@@ -219,7 +219,7 @@ async function decryptIfNeeded(
     encrypted: data,
     key,
     iv: segment.encryption.iv,
-    mediaSequence: segment.index,
+    mediaSequence: segment.mediaSequence ?? segment.index,
     protection,
   });
 }
@@ -235,8 +235,8 @@ async function fetchSegmentWithRecovery(
   let resumeOffset = 0;
   const recoveredParts: Uint8Array[] = [];
 
-  const runFetch = () =>
-    retryWithBackoff(
+  const runFetch = async () => {
+    const data = await retryWithBackoff(
       attempts,
       async () => {
         const segmentSignal = composeSegmentSignal(options.signal, segmentTimeoutMs);
@@ -265,15 +265,17 @@ async function fetchSegmentWithRecovery(
       },
       options.signal,
     );
+    return recoveredParts.length > 0 ? joinParts([...recoveredParts, data]) : data;
+  };
   const data =
     segment.initSegment && options.initSegmentCache
       ? await options.initSegmentCache.getOrFetch(
           { uri: segment.url, byteRange: segment.byteRange },
           runFetch,
-        )
+      )
       : await runFetch();
 
-  return recoveredParts.length > 0 ? joinParts([...recoveredParts, data]) : data;
+  return data;
 }
 
 export async function scheduleSegments(

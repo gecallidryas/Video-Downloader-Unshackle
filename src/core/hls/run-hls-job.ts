@@ -8,6 +8,8 @@ import {
   scheduleSegments,
   type FetchScheduledSegment,
 } from '@/src/core/download/segment-scheduler';
+import type { SegmentProgressCallback } from '@/src/core/download/progress-events';
+import { createLiveHlsTelemetry } from './live-hls-telemetry';
 import { planHlsSegments } from './plan-hls-segments';
 import type { ParsedHlsManifest } from './parse-hls-manifest';
 
@@ -34,6 +36,8 @@ export interface RunHlsJobInput {
   allowProtected?: boolean;
   concurrency?: number;
   maxConcurrentPerHost?: number;
+  segmentTimeoutMs?: number;
+  onProgress?: SegmentProgressCallback;
 }
 
 export async function runHlsJob(input: RunHlsJobInput): Promise<JobOutput> {
@@ -49,13 +53,34 @@ export async function runHlsJob(input: RunHlsJobInput): Promise<JobOutput> {
     jobId: input.job.id,
     selection: input.job.selection,
   });
+  const liveTelemetry = input.manifest.isLive ? createLiveHlsTelemetry() : undefined;
+
+  if (liveTelemetry) {
+    const lastSequence = Math.max(
+      0,
+      ...input.manifest.segments.map((segment) => segment.mediaSequence ?? segment.index),
+    );
+    liveTelemetry.recordRefresh({
+      newSegments: input.manifest.segments.length,
+      lastSequence,
+    });
+  }
+
   const parts = await scheduleSegments({
     jobId: input.job.id,
     segments: plan.segments,
     concurrency: input.concurrency ?? 1,
     maxConcurrentPerHost: input.maxConcurrentPerHost,
+    segmentTimeoutMs: input.segmentTimeoutMs,
     signal: input.signal,
     fetchKey: input.fetchKey,
+    onProgress: input.onProgress
+      ? (event) =>
+          input.onProgress?.({
+            ...event,
+            ...(liveTelemetry ? { liveHlsTelemetry: liveTelemetry.snapshot() } : {}),
+          })
+      : undefined,
     fetchSegment: (segment) => input.fetchSegment(segment, plan),
   });
 

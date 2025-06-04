@@ -62,4 +62,28 @@ describe('downloadDirectWithRanges', () => {
     );
     expect(fetcher).toHaveBeenCalledTimes(4);
   });
+
+  test('rejects range responses that ignore the Range request', async () => {
+    const fetcher = vi.fn(async (_url: string, init?: RequestInit) => {
+      if (init?.method === 'HEAD') {
+        return new Response(null, {
+          status: 200,
+          headers: {
+            'Accept-Ranges': 'bytes',
+            'Content-Length': '5',
+          },
+        });
+      }
+
+      return new Response(new Uint8Array([1, 2, 3, 4, 5]), { status: 200 });
+    });
+
+    await expect(
+      downloadDirectWithRanges({
+        url: 'https://cdn.example.com/video.mp4',
+        chunkSizeBytes: 2,
+        fetch: fetcher,
+      }),
+    ).rejects.toMatchObject({ status: 200 });
+  });
 });

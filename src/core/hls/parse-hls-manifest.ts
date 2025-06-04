@@ -257,10 +257,14 @@ function parseMediaPlaylist(
   let currentEncryption: ParsedHlsSegment['encryption'];
   let targetDurationSec: number | undefined;
   let durationSec = 0;
+  let mediaSequenceBase = 0;
 
   for (const line of lines) {
     if (line.startsWith('#EXT-X-TARGETDURATION:')) {
       targetDurationSec = parseNumber(line.slice('#EXT-X-TARGETDURATION:'.length));
+    } else if (line.startsWith('#EXT-X-MEDIA-SEQUENCE:')) {
+      mediaSequenceBase =
+        parseNumber(line.slice('#EXT-X-MEDIA-SEQUENCE:'.length)) ?? mediaSequenceBase;
     } else if (line.startsWith('#EXT-X-MAP:')) {
       const attributes = parseAttributes(line.slice('#EXT-X-MAP:'.length));
       initSegmentUrl = resolveUrl(attributes.URI, manifestUrl);
@@ -293,6 +297,7 @@ function parseMediaPlaylist(
       const segment: ParsedHlsSegment = {
         id: `hls-segment-${index}`,
         index,
+        mediaSequence: mediaSequenceBase + index - 1,
         url: resolveUrl(line, manifestUrl) ?? line,
         durationSec: pendingDuration,
         byteRange: pendingByteRange,

@@ -54,4 +54,43 @@ describe('InitSegmentCache', () => {
 
     expect(fetchSegment).toHaveBeenCalledTimes(1);
   });
+
+  test('scheduler caches fully recovered init segment data', async () => {
+    vi.useFakeTimers();
+
+    const initSegment: SegmentDescriptor = {
+      id: 'init-0',
+      index: 0,
+      url: 'https://cdn.example.com/init.mp4',
+      initSegment: true,
+    };
+    const fetchSegment = vi
+      .fn()
+      .mockRejectedValueOnce(
+        Object.assign(new Error('broken pipe'), {
+          partialBytes: 2,
+          partialData: new Uint8Array([1, 2]),
+        }),
+      )
+      .mockResolvedValueOnce(new Uint8Array([3, 4]));
+
+    const resultPromise = scheduleSegments({
+      segments: [
+        initSegment,
+        { ...initSegment, id: 'init-1', index: 1 },
+      ],
+      fetchAttempts: 2,
+      fetchSegment,
+    });
+
+    await vi.runAllTimersAsync();
+
+    await expect(resultPromise).resolves.toEqual([
+      new Uint8Array([1, 2, 3, 4]),
+      new Uint8Array([1, 2, 3, 4]),
+    ]);
+    expect(fetchSegment).toHaveBeenCalledTimes(2);
+
+    vi.useRealTimers();
+  });
 });
