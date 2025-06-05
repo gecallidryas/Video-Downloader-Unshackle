@@ -109,6 +109,10 @@ async function defaultFetchSegment(
     throw new SegmentFetchError(response.status, response.statusText);
   }
 
+  if (request.headers.Range && response.status !== 206) {
+    throw new SegmentFetchError(response.status, response.statusText);
+  }
+
   return new Uint8Array(await response.arrayBuffer());
 }
 

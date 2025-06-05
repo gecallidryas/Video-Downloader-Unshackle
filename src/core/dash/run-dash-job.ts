@@ -4,13 +4,17 @@ import type {
   SegmentDescriptor,
   SegmentPlan,
 } from '@/video_downloader_types_skeleton';
-import { scheduleSegments } from '@/src/core/download/segment-scheduler';
+import {
+  scheduleSegments,
+  type FetchScheduledSegment,
+} from '@/src/core/download/segment-scheduler';
 import { planDashSegments } from './plan-dash-segments';
 import type { ParsedDashManifest } from './parse-mpd';
 
 export type FetchDashSegment = (
   segment: SegmentDescriptor,
   plan: SegmentPlan,
+  request: Parameters<FetchScheduledSegment>[1],
 ) => Promise<Uint8Array>;
 
 export type WriteDashOutput = (
@@ -46,7 +50,7 @@ export async function runDashJob(input: RunDashJobInput): Promise<JobOutput> {
     maxConcurrentPerHost: input.maxConcurrentPerHost,
     segmentTimeoutMs: input.segmentTimeoutMs,
     signal: input.signal,
-    fetchSegment: (segment) => input.fetchSegment(segment, plan),
+    fetchSegment: (segment, request) => input.fetchSegment(segment, plan, request),
   });
 
   return input.writeOutput(plan, parts);

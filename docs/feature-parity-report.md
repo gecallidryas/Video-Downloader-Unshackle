@@ -575,7 +575,7 @@ The UI is split across specialized HTML pages: `popup.html` for detected resourc
 | P1 | Add manual HLS ingest modes | side panel/parser route | URL, text, file, raw TS list conversion, base URL override, and safe request profile. |
 | P1 | Add HLS segment repair controls | HLS job detail UI and tests | Segment selection, regex filtering, index/time ranges, discontinuity groups, retry failed, stop single fragment, and force partial export. |
 | P1 | Add HLS range expansion tests | HLS parser/planner fixtures | Cover cat-catch-style `${range:start-end,pad}` operator only if it is exposed as explicit manual input. |
-| P1 | Add live HLS retry telemetry | `src/core/hls/live-hls-telemetry.ts`, `src/core/hls/run-hls-job.ts` | Added tracker and live HLS progress-event snapshots for no-new-segment retries, last sequence, total refreshes, and live/idle state. |
+| P1 | Add live HLS retry telemetry | `src/core/hls/live-hls-telemetry.ts`, `src/core/hls/run-hls-job.ts` | Added core tracker and live HLS progress-event snapshots; queue/UI surfacing remains future UX work. |
 | P1 | Add DASH representation inspector | DASH parser UI | Show audio/video representation metadata and reuse HLS-style job runner for clear segment lists. |
 | P1 | Add settings import/export with secret redaction | settings schema | Export versioned JSON; redact Aria2 tokens, webhook secrets, MQTT passwords, and any future header profiles. |
 | P2 | Add copy/share template engine | row actions, settings | Safe tags for URL, title, filename, extension, size, referer/origin only when permitted; no cookie/auth variables by default. |
@@ -919,7 +919,7 @@ The entire tool is one shell script with no imports, modules, or configuration f
 | P2 | Add bulk retry pass after initial download | `src/core/download/segment-scheduler.ts` | Two-pass approach (download all, then retry all failures once) is a useful complement to per-segment retry. |
 | P2 | Add auto-highest quality selection policy | `src/core/hls/select-hls-variant.ts`, settings | Add configurable default quality policy (highest/lowest/ask). |
 | P2 | Add sidecar subtitle download option | `src/core/export/*`, UI | Users may prefer sidecar files over muxed subtitles. |
-| P1 | Add segment fetch timeout setting | `src/core/download/segment-scheduler.ts`, settings, HLS/DASH runners | Implemented as `segmentTimeoutMs` with a 30s default, settings schema v5, and controller-to-runner wiring. |
+| P1 | Add segment fetch timeout setting | `src/core/download/segment-scheduler.ts`, settings, HLS/DASH runners | Implemented as `segmentTimeoutMs` with a 30s default, settings schema v5, scheduler enforcement, and controller-to-runner wiring when settings are supplied. |
 | P3 | Add relative URL resolution fixtures for nested paths | `src/core/hls/__tests__/parse-hls-manifest.test.ts` | Add test cases for relative variant URLs, relative segment URLs, and mixed absolute/relative within the same manifest. |
 | P3 | Add aria2 external tool profile | integrations/settings | aria2c with `-x16 -s16 -j N` is a practical power-user integration. |
 

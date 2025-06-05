@@ -170,6 +170,41 @@ describe('HLS planning and execution', () => {
     spy.mockRestore();
   });
 
+  test('passes scheduler request context to fetchSegment', async () => {
+    const manifest = parseHlsManifest({
+      manifestUrl: 'https://cdn.example.com/hls/video/720p/prog.m3u8',
+      content: [
+        '#EXTM3U',
+        '#EXT-X-MAP:URI="init.mp4",BYTERANGE="4@0"',
+        '#EXTINF:6,',
+        '#EXT-X-BYTERANGE:10@4',
+        'seg.m4s',
+        '#EXT-X-ENDLIST',
+      ].join('\n'),
+    });
+    const requests: Array<{ headers: Record<string, string>; signal?: AbortSignal }> = [];
+
+    await runHlsJob({
+      job: buildJob(),
+      manifest,
+      fetchSegment: vi.fn(async (_segment, _plan, request) => {
+        requests.push(request);
+        return new Uint8Array([1]);
+      }),
+      writeOutput: vi.fn().mockResolvedValue({
+        fileName: 'assembled-hls.mp4',
+        mimeType: 'video/mp4',
+      }),
+      segmentTimeoutMs: 12_000,
+    });
+
+    expect(requests).toEqual([
+      expect.objectContaining({ headers: { Range: 'bytes=0-3' } }),
+      expect.objectContaining({ headers: { Range: 'bytes=4-13' } }),
+    ]);
+    expect(requests[0]?.signal).toBeInstanceOf(AbortSignal);
+  });
+
   test('adds live HLS telemetry to progress events', async () => {
     const manifest = parseHlsManifest({
       manifestUrl: 'https://cdn.example.com/hls/live.m3u8',

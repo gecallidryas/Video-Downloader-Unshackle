@@ -33,10 +33,10 @@ Extracted from `feature-parity-report.md` across all 8 reference analyses. Every
 | 14 | Init segment cache/dedupe | done | live-stream, puemos | Added URI+byterange init segment cache and scheduler dedupe for duplicate init fetches. |
 | 15 | Do not retry HTTP status errors (403/404) | done | puemos, stream-detector | Added `SegmentFetchError`, non-retryable HTTP status classification, and scheduler no-retry coverage. |
 | 16 | Fetch retry backoff policy | done | puemos (100ms × 1.15x) | Extracted `computeBackoffDelay` with cap/jitter tests and scheduler coverage. |
-| 17 | Segment fetch timeout setting | done | hls_downloader (30s), live-stream | Added configurable `segmentTimeoutMs` defaulting to 30s, settings schema v5, and timeout tests. |
+| 17 | Segment fetch timeout setting | done | hls_downloader (30s), live-stream | Added `segmentTimeoutMs` defaulting to 30s, settings schema v5, scheduler timeout tests, and controller/runner propagation when settings are supplied. |
 | 18 | Sequence-number IV fallback for AES-128 | done | HLS spec (hls_downloader exposed bug) | Parser now records `EXT-X-MEDIA-SEQUENCE`, scheduler passes HLS media sequence to decrypt, and regressions cover omitted IV fallback. |
 | 19 | I-frame stream filtering | done | hls_downloader | Added parser regression proving `#EXT-X-I-FRAME-STREAM-INF` does not create variants. |
-| 20 | Live HLS retry telemetry | done | cat-catch, live-stream | Added `createLiveHlsTelemetry` tracker and live HLS progress-event snapshots for retry count, last sequence, total refreshes, and live/idle state. |
+| 20 | Live HLS retry telemetry | done | cat-catch, live-stream | Added core `createLiveHlsTelemetry` tracker and live HLS progress-event snapshots; full queue/UI surfacing remains future UX work. |
 
 ### HLS/DASH Parsing
 

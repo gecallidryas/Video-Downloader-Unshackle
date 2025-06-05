@@ -233,4 +233,25 @@ describe('scheduleSegments', () => {
 
     vi.useRealTimers();
   });
+
+  test('rejects default range fetches when the server ignores Range', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response(new Uint8Array([1, 2, 3]), { status: 200 })),
+    );
+
+    await expect(
+      scheduleSegments({
+        segments: [
+          {
+            ...segment(0),
+            byteRange: { start: 10, end: 12 },
+          },
+        ],
+        fetchAttempts: 1,
+      }),
+    ).rejects.toMatchObject({ status: 200 });
+
+    vi.unstubAllGlobals();
+  });
 });

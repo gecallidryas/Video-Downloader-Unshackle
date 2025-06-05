@@ -202,6 +202,33 @@ describe('DASH planning and execution', () => {
     }
   });
 
+  test('passes scheduler request context to fetchSegment', async () => {
+    const manifest = parseMpd({
+      manifestUrl: 'https://cdn.example.com/dash/clear.mpd',
+      content: clearMpd,
+    });
+    const requests: Array<{ headers: Record<string, string>; signal?: AbortSignal }> = [];
+
+    await runDashJob({
+      job: buildJob({ selection: { mode: 'custom', variantId: 'video-720' } }),
+      manifest,
+      fetchSegment: vi.fn(async (_segment, _plan, request) => {
+        requests.push(request);
+        return new Uint8Array([1]);
+      }),
+      writeOutput: vi.fn().mockResolvedValue({
+        fileName: 'out.mp4',
+        mimeType: 'video/mp4',
+      }),
+      segmentTimeoutMs: 12_000,
+    });
+
+    expect(requests).toHaveLength(4);
+    expect(requests.every((request) => request.signal instanceof AbortSignal)).toBe(
+      true,
+    );
+  });
+
   test('defaults concurrency to 1 when not specified', async () => {
     const manifest = parseMpd({
       manifestUrl: 'https://cdn.example.com/dash/clear.mpd',

@@ -16,6 +16,7 @@ import type { ParsedHlsManifest } from './parse-hls-manifest';
 export type FetchHlsSegment = (
   segment: SegmentDescriptor,
   plan: SegmentPlan,
+  request: Parameters<FetchScheduledSegment>[1],
 ) => Promise<Uint8Array>;
 
 export type WriteHlsOutput = (
@@ -81,7 +82,7 @@ export async function runHlsJob(input: RunHlsJobInput): Promise<JobOutput> {
             ...(liveTelemetry ? { liveHlsTelemetry: liveTelemetry.snapshot() } : {}),
           })
       : undefined,
-    fetchSegment: (segment) => input.fetchSegment(segment, plan),
+    fetchSegment: (segment, request) => input.fetchSegment(segment, plan, request),
   });
 
   return input.writeOutput(plan, parts);
