@@ -30,6 +30,7 @@ export interface BaseTrack {
   label?: string;
   default?: boolean;
   autoselect?: boolean;
+  characteristics?: string[];
 }
 
 export interface AudioTrack extends BaseTrack {
@@ -38,6 +39,7 @@ export interface AudioTrack extends BaseTrack {
   codec?: string;
   bitrate?: number;
   groupId?: string;
+  url?: string;
 }
 
 export interface SubtitleTrack extends BaseTrack {
@@ -45,6 +47,12 @@ export interface SubtitleTrack extends BaseTrack {
   format?: 'vtt' | 'ttml' | 'srt' | 'unknown';
   url?: string;
   groupId?: string;
+}
+
+export interface ClosedCaptionTrack extends BaseTrack {
+  kind: 'closed-caption';
+  groupId?: string;
+  instreamId?: string;
 }
 
 export interface MediaVariant {
@@ -59,6 +67,7 @@ export interface MediaVariant {
   codecs?: string[];
   audioGroupId?: string;
   subtitleGroupId?: string;
+  closedCaptionGroupId?: string;
   isDefault?: boolean;
 }
 
@@ -141,6 +150,7 @@ export interface NormalizedManifestBase {
   variants: MediaVariant[];
   audioTracks: AudioTrack[];
   subtitleTracks: SubtitleTrack[];
+  closedCaptions?: ClosedCaptionTrack[];
 }
 
 export interface HlsManifest extends NormalizedManifestBase {

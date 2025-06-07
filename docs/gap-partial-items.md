@@ -42,9 +42,9 @@ Extracted from `feature-parity-report.md` across all 8 reference analyses. Every
 
 | # | Item | Status | Stronger in | Action |
 |---|---|---|---|---|
-| 21 | HLS alternate audio/subtitle group metadata | present/partial | puemos (language, channels, characteristics, default, autoselect, group id) | High-value metadata parity check. |
-| 22 | Closed-caption group extraction | partial/gap | puemos | Add tests if not parsing CC groups. |
-| 23 | Manual parsing of extra media attributes | gap/partial | puemos | Useful supplement when `m3u8-parser` omits fields. |
+| 21 | HLS alternate audio/subtitle group metadata | done | puemos (language, channels, characteristics, default, autoselect, group id) | Parser now captures language, channels, characteristics, defaults, autoselect, group ids, and audio/subtitle URLs with tests. |
+| 22 | Closed-caption group extraction | done | puemos | Parser now emits `closedCaptions` entries with group id and `INSTREAM-ID`, covered by media-group tests. |
+| 23 | Manual parsing of extra media attributes | done | puemos | `EXT-X-MEDIA` attributes are parsed into typed audio, subtitle, and closed-caption metadata. |
 | 24 | EXT-X-MAP init segment insertion tests | present/partial | puemos | Add explicit byterange/map-change tests. |
 | 25 | Init map dedupe until URI/byterange changes | partial | puemos | Strong small robustness feature. |
 | 26 | Map byterange change causes reinsertion | partial | puemos | Port test case. |

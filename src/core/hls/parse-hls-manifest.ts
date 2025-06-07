@@ -1,5 +1,6 @@
 import type {
   AudioTrack,
+  ClosedCaptionTrack,
   HlsManifest,
   MediaVariant,
   ProtectionInfo,
@@ -76,6 +77,15 @@ function parseBoolean(value: string | undefined): boolean | undefined {
   return value.toUpperCase() === 'YES';
 }
 
+function parseCsv(value: string | undefined): string[] | undefined {
+  const items = value
+    ?.split(',')
+    .map((item) => item.trim())
+    .filter(Boolean);
+
+  return items && items.length > 0 ? items : undefined;
+}
+
 function parseNumber(value: string | undefined): number | undefined {
   if (value === undefined || value === '') {
     return undefined;
@@ -109,7 +119,7 @@ function slug(value: string): string {
 function parseMediaTag(
   attributes: HlsAttributeMap,
   manifestUrl: string,
-): AudioTrack | SubtitleTrack | undefined {
+): AudioTrack | SubtitleTrack | ClosedCaptionTrack | undefined {
   const type = attributes.TYPE?.toUpperCase();
   const groupId = attributes['GROUP-ID'];
   const name = attributes.NAME ?? 'Track';
@@ -118,6 +128,7 @@ function parseMediaTag(
     label: name,
     default: parseBoolean(attributes.DEFAULT),
     autoselect: parseBoolean(attributes.AUTOSELECT),
+    characteristics: parseCsv(attributes.CHARACTERISTICS),
     groupId,
   };
 
@@ -126,6 +137,8 @@ function parseMediaTag(
       ...base,
       id: `audio-${slug(groupId ?? 'audio')}-${slug(name)}`,
       kind: 'audio',
+      channels: attributes.CHANNELS,
+      url: resolveUrl(attributes.URI, manifestUrl),
     };
   }
 
@@ -139,6 +152,15 @@ function parseMediaTag(
       kind: 'subtitle',
       url: resolvedUrl,
       format: extension === 'vtt' ? 'vtt' : 'unknown',
+    };
+  }
+
+  if (type === 'CLOSED-CAPTIONS') {
+    return {
+      ...base,
+      id: `cc-${slug(groupId ?? 'cc')}-${slug(name)}`,
+      kind: 'closed-caption',
+      instreamId: attributes['INSTREAM-ID'],
     };
   }
 
@@ -183,10 +205,14 @@ function parseByteRange(
 function parseMasterPlaylist(
   lines: string[],
   manifestUrl: string,
-): Pick<ParsedHlsManifest, 'variants' | 'audioTracks' | 'subtitleTracks' | 'protection'> {
+): Pick<
+  ParsedHlsManifest,
+  'variants' | 'audioTracks' | 'subtitleTracks' | 'closedCaptions' | 'protection'
+> {
   const variants: MediaVariant[] = [];
   const audioTracks: AudioTrack[] = [];
   const subtitleTracks: SubtitleTrack[] = [];
+  const closedCaptions: ClosedCaptionTrack[] = [];
   let pendingVariantAttributes: HlsAttributeMap | undefined;
   let protection: ProtectionInfo = { kind: 'none' };
 
@@ -201,6 +227,8 @@ function parseMasterPlaylist(
         audioTracks.push(track);
       } else if (track?.kind === 'subtitle') {
         subtitleTracks.push(track);
+      } else if (track?.kind === 'closed-caption') {
+        closedCaptions.push(track);
       }
     } else if (line.startsWith('#EXT-X-STREAM-INF:')) {
       pendingVariantAttributes = parseAttributes(
@@ -225,13 +253,14 @@ function parseMasterPlaylist(
         codecs: pendingVariantAttributes.CODECS?.split(',').map((codec) => codec.trim()),
         audioGroupId: pendingVariantAttributes.AUDIO,
         subtitleGroupId: pendingVariantAttributes.SUBTITLES,
+        closedCaptionGroupId: pendingVariantAttributes['CLOSED-CAPTIONS'],
         isDefault: index === 1,
       });
       pendingVariantAttributes = undefined;
     }
   }
 
-  return { variants, audioTracks, subtitleTracks, protection };
+  return { variants, audioTracks, subtitleTracks, closedCaptions, protection };
 }
 
 function parseMediaPlaylist(
@@ -339,6 +368,7 @@ export function parseHlsManifest(input: ParseHlsManifestInput): ParsedHlsManifes
         variants: [],
         audioTracks: [],
         subtitleTracks: [],
+        closedCaptions: [],
         protection: { kind: 'none' } as ProtectionInfo,
       };
   const media = !isMaster
@@ -373,6 +403,7 @@ export function parseHlsManifest(input: ParseHlsManifestInput): ParsedHlsManifes
         ],
     audioTracks: master.audioTracks,
     subtitleTracks: master.subtitleTracks,
+    closedCaptions: master.closedCaptions,
     segments: media.segments,
     initSegmentUrl: media.initSegmentUrl,
     initSegmentByteRange: media.initSegmentByteRange,

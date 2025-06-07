@@ -90,7 +90,7 @@ Status values:
 | Player object extraction | partial/gap | broad scanner/plugins | present for JWPlayer, VideoJS, SoundManager | Add as optional `player-config` evidence source behind content-script capability. |
 | Blob-generated M3U8 detection | partial/gap | broad MAIN-world scanner | present via `Blob` proxy when `mime-watch` enabled | Port only as opt-in diagnostic/advanced scanner; avoid always-on page-world monkeypatching. |
 | HLS master/media parsing | present | present | present | Extend tests with live-stream cases for media groups and timeline selection. |
-| HLS alternate audio/subtitle groups | present/partial | present | present in playlist flattening | Compare parser output with live-stream behavior; ensure UI can select groups reliably. |
+| HLS alternate audio/subtitle groups | present | present | present in playlist flattening | Parser now preserves group ids, language, channels, characteristics, default/autoselect flags, URLs, and closed-caption metadata. |
 | HLS discontinuity/timeline handling | present | present | present with user timeline choice | Planner now groups discontinuity timelines and supports include-all/skip-ads policy behavior; UI-level user choice remains future repair UX. |
 | HLS init-map caching | present | present | present | Added a URI+byterange init segment cache wired into the scheduler with duplicate-fetch tests. |
 | HLS AES-128 clear-key decrypt | present | present | present | Keep clear-key-only boundary. |
@@ -318,10 +318,10 @@ Status meanings in this section:
 | Intake | Timestamps on playlist rows | `createdAt` display | present/partial | Keep in cards/history. |
 | Parsing | Master playlist parse | `M3u8Parser.parseMasterPlaylist` | present | Keep Unshackle parser as canonical. |
 | Parsing | Stream variant extraction | width, height, bitrate, fps, audio group | present | Ensure FPS and audio group retained. |
-| Parsing | Audio group extraction | language, name, channels, characteristics, default, autoselect, group id | present/partial | High-value metadata parity check. |
-| Parsing | Subtitle group extraction | language, name, characteristics, forced, default, autoselect, group id | present/partial | High-value subtitle metadata parity check. |
-| Parsing | Closed-caption group extraction | instream id and metadata | partial/gap | Add tests if Unshackle does not parse CC groups. |
-| Parsing | Manual parsing of extra media attributes from raw lines | attribute regex | gap/partial | Useful supplement when `m3u8-parser` omits fields. |
+| Parsing | Audio group extraction | language, name, channels, characteristics, default, autoselect, group id | present | Parser now preserves channels, characteristics, flags, group id, language, label, and URI. |
+| Parsing | Subtitle group extraction | language, name, characteristics, forced, default, autoselect, group id | present | Parser now preserves subtitle language, label, characteristics, flags, group id, URI, and format. |
+| Parsing | Closed-caption group extraction | instream id and metadata | present | `closedCaptions` now captures group id, language, label, `INSTREAM-ID`, flags, and characteristics. |
+| Parsing | Manual parsing of extra media attributes from raw lines | attribute regex | present | `EXT-X-MEDIA` raw attributes now feed typed audio, subtitle, and closed-caption metadata. |
 | Parsing | Level playlist parse | segments to fragments | present | Keep. |
 | Parsing | Absolute URL resolution | `buildAbsoluteURL` | present | Keep. |
 | Parsing | EXT-X-MAP init segment insertion | map fragment before media segment | present/partial | Add explicit byterange/map-change tests. |
