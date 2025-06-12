@@ -328,8 +328,8 @@ Status meanings in this section:
 | Parsing | Init map dedupe until URI/byterange changes | `currentMapUri`, `currentMapByteRange` | partial | Strong small robustness feature. |
 | Parsing | Map byterange change causes reinsert | parser test | partial | Port test case. |
 | Parsing | Key URI absolute resolution per segment | parser | present | Keep. |
-| Parsing | Session key/encryption inspection | `inspectLevelEncryption` | present/partial | Ensure session keys are considered. |
-| Parsing | IV normalization for string, Uint32Array, Uint8Array | `inspectLevelEncryption` | partial | Port tests; avoids false unsupported errors. |
+| Parsing | Session key/encryption inspection | `inspectLevelEncryption` | present | `classifyHlsProtection` now detects `#EXT-X-SESSION-KEY` and reuses the key classification path. |
+| Parsing | IV normalization for string, Uint32Array, Uint8Array | `inspectLevelEncryption` | present | Added tested `normalizeIV()` support for hex strings, numbers, `Uint8Array`, and `Uint32Array`. |
 | URL handling | Append master query params to level/fragment/key URLs | `appendQueryParams` | gap/partial | High-value for signed manifests. |
 | URL handling | Primary/fallback URI fetch | `fetchWithFallback` | partial | Useful for signed query propagation fallback. |
 | URL handling | Fallback for fragments without appended params | use-case tests | partial | Add to scheduler tests. |

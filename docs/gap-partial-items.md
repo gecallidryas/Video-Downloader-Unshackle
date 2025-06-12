@@ -48,8 +48,8 @@ Extracted from `feature-parity-report.md` across all 8 reference analyses. Every
 | 24 | EXT-X-MAP init segment insertion tests | present/partial | puemos | Add explicit byterange/map-change tests. |
 | 25 | Init map dedupe until URI/byterange changes | partial | puemos | Strong small robustness feature. |
 | 26 | Map byterange change causes reinsertion | partial | puemos | Port test case. |
-| 27 | Session key/encryption inspection | present/partial | puemos | Ensure session keys are considered. |
-| 28 | IV normalization for string/Uint32Array/Uint8Array | partial | puemos | Port tests; avoids false unsupported errors. |
+| 27 | Session key/encryption inspection | done | puemos | `classifyHlsProtection` now considers `#EXT-X-SESSION-KEY` when no media key is present, with tests. |
+| 28 | IV normalization for string/Uint32Array/Uint8Array | done | puemos | Added `normalizeIV()` for hex strings, numbers, `Uint8Array`, and `Uint32Array`, with tests. |
 | 29 | Signed-query propagation to level/fragment/key URLs | gap/partial | puemos (`appendQueryParams`) | High-value for signed manifests. |
 | 30 | Primary/fallback URI fetch | partial | puemos | Useful for signed query propagation fallback. |
 | 31 | DASH live/SegmentTimeline robustness | present/partial | Unified | Use Unified as main baseline. |
