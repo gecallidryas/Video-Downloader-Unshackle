@@ -6,7 +6,7 @@
  */
 
 export type MediaKind = 'video' | 'audio' | 'subtitle' | 'image';
-export type StreamProtocol = 'direct' | 'hls' | 'dash' | 'blob' | 'unknown';
+export type StreamProtocol = 'direct' | 'hls' | 'dash' | 'hds' | 'mss' | 'blob' | 'unknown';
 export type ProtectionKind = 'none' | 'aes-128' | 'sample-aes' | 'drm' | 'unknown';
 export type CandidateStatus = 'ready' | 'partial' | 'protected' | 'unsupported' | 'error';
 export type DetectionSource = 'dom' | 'network' | 'player-config' | 'blob-correlation' | 'user';

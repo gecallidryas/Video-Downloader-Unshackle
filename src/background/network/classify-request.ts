@@ -8,6 +8,8 @@ export type RequestCategory =
   | 'direct_media'
   | 'hls_manifest'
   | 'dash_manifest'
+  | 'hds_manifest'
+  | 'mss_manifest'
   | 'license'
   | 'subtitle'
   | 'segment'
@@ -52,6 +54,12 @@ const hlsMimeTypes = new Set([
 const dashMimeTypes = new Set([
   'application/dash+xml',
   'video/vnd.mpeg.dash.mpd',
+]);
+const hdsMimeTypes = new Set([
+  'application/f4m+xml',
+]);
+const mssMimeTypes = new Set([
+  'application/vnd.ms-sstr+xml',
 ]);
 const videoMimePrefix = 'video/';
 const audioMimePrefix = 'audio/';
@@ -143,6 +151,15 @@ function isAdaptiveComponentUrl(url: string): boolean {
   }
 }
 
+function isMssManifestPath(url: string): boolean {
+  try {
+    const pathname = new URL(url).pathname.toLowerCase();
+    return /\.ism\/manifest/i.test(pathname);
+  } catch {
+    return /\.ism\/manifest/i.test(url.toLowerCase());
+  }
+}
+
 function isLicenseRequest(url: string): boolean {
   return licenseUrlPatterns.some((pattern) => pattern.test(url));
 }
@@ -218,6 +235,14 @@ export function classifyRequest(request: RequestLike): RequestClassification {
     if (isLicenseRequest(request.url)) {
       extraNotes = getDrmSystemsFromUrl(request.url).map((system) => `drm:${system}`);
     }
+  } else if (extension === 'f4m' || (mimeType && hdsMimeTypes.has(mimeType))) {
+    category = 'hds_manifest';
+    protocol = 'hds';
+    mediaKind = 'video';
+  } else if (isMssManifestPath(request.url) || (mimeType && mssMimeTypes.has(mimeType))) {
+    category = 'mss_manifest';
+    protocol = 'mss';
+    mediaKind = 'video';
   } else if (isLicenseRequest(request.url)) {
     category = 'license';
     extraNotes = [

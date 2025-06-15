@@ -53,7 +53,7 @@ Extracted from `feature-parity-report.md` across all 8 reference analyses. Every
 | 29 | Signed-query propagation to level/fragment/key URLs | gap/partial | puemos (`appendQueryParams`) | High-value for signed manifests. |
 | 30 | Primary/fallback URI fetch | partial | puemos | Useful for signed query propagation fallback. |
 | 31 | DASH live/SegmentTimeline robustness | present/partial | Unified | Use Unified as main baseline. |
-| 32 | HDS/MSS detection states | gap | stream-detector | Classify and expose, even if full download support is initially `partial`. |
+| 32 | HDS/MSS detection states | done | stream-detector | Network classifier now emits `hds_manifest`/`mss_manifest` with `hds`/`mss` protocol metadata and tests. |
 | 33 | Passive subtitle candidates | partial | stream-detector | Detect VTT/SRT/TTML/DFXP and associate with nearby streams. |
 | 34 | DASH representation inspector | gap | cat-catch | Show audio/video representation metadata and reuse HLS-style job runner. |
 | 35 | HLS segment repair controls | gap | cat-catch | Segment selection, regex filtering, index/time ranges, discontinuity groups, retry failed, stop single, force partial export. |
