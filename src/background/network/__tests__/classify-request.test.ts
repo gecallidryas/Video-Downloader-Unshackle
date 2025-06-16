@@ -36,7 +36,7 @@ describe('classifyRequest', () => {
     expect(
       classifyRequest({ url: 'https://cdn.example.com/captions.en.vtt' }),
     ).toMatchObject({
-      category: 'subtitle',
+      category: 'subtitle_vtt',
       protocol: 'direct',
       mediaKind: 'subtitle',
     });

@@ -12,6 +12,10 @@ export type RequestCategory =
   | 'mss_manifest'
   | 'license'
   | 'subtitle'
+  | 'subtitle_vtt'
+  | 'subtitle_srt'
+  | 'subtitle_ttml'
+  | 'subtitle_dfxp'
   | 'segment'
   | 'ignored'
   | 'unknown';
@@ -68,6 +72,18 @@ const subtitleMimeTypes = new Set([
   'application/x-subrip',
   'application/ttml+xml',
   'application/ttaf+xml',
+]);
+const subtitleCategoryByExtension = new Map<string, RequestCategory>([
+  ['vtt', 'subtitle_vtt'],
+  ['srt', 'subtitle_srt'],
+  ['ttml', 'subtitle_ttml'],
+  ['dfxp', 'subtitle_dfxp'],
+]);
+const subtitleCategoryByMimeType = new Map<string, RequestCategory>([
+  ['text/vtt', 'subtitle_vtt'],
+  ['application/x-subrip', 'subtitle_srt'],
+  ['application/ttml+xml', 'subtitle_ttml'],
+  ['application/ttaf+xml', 'subtitle_dfxp'],
 ]);
 
 const videoExtensions = new Set(['mp4', 'm4v', 'webm', 'mkv', 'mov']);
@@ -253,7 +269,10 @@ export function classifyRequest(request: RequestLike): RequestClassification {
     (extension && subtitleExtensions.has(extension)) ||
     (mimeType && subtitleMimeTypes.has(mimeType))
   ) {
-    category = 'subtitle';
+    category =
+      (extension ? subtitleCategoryByExtension.get(extension) : undefined) ??
+      (mimeType ? subtitleCategoryByMimeType.get(mimeType) : undefined) ??
+      'subtitle';
     protocol = 'direct';
     mediaKind = 'subtitle';
   } else if (
