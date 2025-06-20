@@ -330,8 +330,8 @@ Status meanings in this section:
 | Parsing | Key URI absolute resolution per segment | parser | present | Keep. |
 | Parsing | Session key/encryption inspection | `inspectLevelEncryption` | present | `classifyHlsProtection` now detects `#EXT-X-SESSION-KEY` and reuses the key classification path. |
 | Parsing | IV normalization for string, Uint32Array, Uint8Array | `inspectLevelEncryption` | present | Added tested `normalizeIV()` support for hex strings, numbers, `Uint8Array`, and `Uint32Array`. |
-| URL handling | Append master query params to level/fragment/key URLs | `appendQueryParams` | gap/partial | High-value for signed manifests. |
-| URL handling | Primary/fallback URI fetch | `fetchWithFallback` | partial | Useful for signed query propagation fallback. |
+| URL handling | Append master query params to level/fragment/key URLs | `appendQueryParams` | present | Added `propagateQueryParams()` and HLS planner propagation for init, segment, and AES key URLs. |
+| URL handling | Primary/fallback URI fetch | `fetchWithFallback` | present | Planner preserves existing URL params while appending missing same-origin master params, providing a safe fallback URI shape without overwriting segment params. |
 | URL handling | Fallback for fragments without appended params | use-case tests | partial | Add to scheduler tests. |
 | Selection | Pick one video level | Playlist UI | present | Keep. |
 | Selection | Pick separate audio level | Playlist UI | present | Keep. |

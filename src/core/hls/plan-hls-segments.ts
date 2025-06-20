@@ -2,6 +2,7 @@ import type { DownloadSelection, SegmentPlan } from '@/video_downloader_types_sk
 import { filterSegmentsByTrim } from '../download/filter-segments-by-trim';
 import type { ParsedHlsManifest } from './parse-hls-manifest';
 import { selectHlsVariant } from './select-hls-variant';
+import { propagateQueryParams } from './signed-query';
 
 export type DiscontinuityPolicy = 'include-all' | 'skip-ads' | 'ask-user';
 
@@ -77,7 +78,7 @@ function buildSegmentsWithInitMaps(
         planned.push({
           id: `hls-init-${initMapCount}`,
           index: 0,
-          url: initSegmentUrl,
+          url: propagateQueryParams(initSegmentUrl, manifest.sourceUrl),
           initSegment: true,
           byteRange: initSegmentByteRange,
           trackType: 'video',
@@ -87,7 +88,20 @@ function buildSegmentsWithInitMaps(
       }
     }
 
-    planned.push(segment);
+    planned.push({
+      ...segment,
+      url: propagateQueryParams(segment.url, manifest.sourceUrl),
+      encryption:
+        segment.encryption?.keyUri
+          ? {
+              ...segment.encryption,
+              keyUri: propagateQueryParams(
+                segment.encryption.keyUri,
+                manifest.sourceUrl,
+              ),
+            }
+          : segment.encryption,
+    });
   }
 
   return planned;

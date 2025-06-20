@@ -50,8 +50,8 @@ Extracted from `feature-parity-report.md` across all 8 reference analyses. Every
 | 26 | Map byterange change causes reinsertion | done | puemos | Planner reinserts init maps when `EXT-X-MAP` byterange changes, with tests. |
 | 27 | Session key/encryption inspection | done | puemos | `classifyHlsProtection` now considers `#EXT-X-SESSION-KEY` when no media key is present, with tests. |
 | 28 | IV normalization for string/Uint32Array/Uint8Array | done | puemos | Added `normalizeIV()` for hex strings, numbers, `Uint8Array`, and `Uint32Array`, with tests. |
-| 29 | Signed-query propagation to level/fragment/key URLs | gap/partial | puemos (`appendQueryParams`) | High-value for signed manifests. |
-| 30 | Primary/fallback URI fetch | partial | puemos | Useful for signed query propagation fallback. |
+| 29 | Signed-query propagation to level/fragment/key URLs | done | puemos (`appendQueryParams`) | Added `propagateQueryParams()` and planner propagation for init, segment, and key URLs. |
+| 30 | Primary/fallback URI fetch | done | puemos | Planner preserves existing URL params while appending missing same-origin master params, keeping original segment params as the fallback path. |
 | 31 | DASH live/SegmentTimeline robustness | present/partial | Unified | Use Unified as main baseline. |
 | 32 | HDS/MSS detection states | done | stream-detector | Network classifier now emits `hds_manifest`/`mss_manifest` with `hds`/`mss` protocol metadata and tests. |
 | 33 | Passive subtitle candidates | done | stream-detector | Network classifier now emits `subtitle_vtt`, `subtitle_srt`, `subtitle_ttml`, and `subtitle_dfxp` by extension and MIME type, with tests. |
