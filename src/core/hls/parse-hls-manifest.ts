@@ -23,6 +23,8 @@ export interface ParsedHlsManifest extends HlsManifest {
 
 export interface ParsedHlsSegment extends SegmentDescriptor {
   discontinuity?: boolean;
+  initSegmentUrl?: string;
+  initSegmentByteRange?: { start: number; end: number };
 }
 
 type HlsAttributeMap = Record<string, string>;
@@ -331,6 +333,8 @@ function parseMediaPlaylist(
         durationSec: pendingDuration,
         byteRange: pendingByteRange,
         discontinuity: pendingDiscontinuity || undefined,
+        initSegmentUrl,
+        initSegmentByteRange,
         encryption: currentEncryption,
       };
 

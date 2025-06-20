@@ -50,6 +50,49 @@ function applyDiscontinuityPolicy(
   return longest?.segments ?? segments;
 }
 
+function initMapKey(
+  url: string,
+  byteRange: { start: number; end: number } | undefined,
+): string {
+  return `${url}|${byteRange?.start ?? ''}-${byteRange?.end ?? ''}`;
+}
+
+function buildSegmentsWithInitMaps(
+  segments: ParsedHlsManifest['segments'],
+  manifest: ParsedHlsManifest,
+): SegmentPlan['segments'] {
+  const planned: SegmentPlan['segments'] = [];
+  let lastInitMapKey: string | undefined;
+  let initMapCount = 0;
+
+  for (const segment of segments) {
+    const initSegmentUrl = segment.initSegmentUrl ?? manifest.initSegmentUrl;
+    const initSegmentByteRange =
+      segment.initSegmentByteRange ?? manifest.initSegmentByteRange;
+
+    if (initSegmentUrl) {
+      const key = initMapKey(initSegmentUrl, initSegmentByteRange);
+
+      if (key !== lastInitMapKey) {
+        planned.push({
+          id: `hls-init-${initMapCount}`,
+          index: 0,
+          url: initSegmentUrl,
+          initSegment: true,
+          byteRange: initSegmentByteRange,
+          trackType: 'video',
+        });
+        lastInitMapKey = key;
+        initMapCount += 1;
+      }
+    }
+
+    planned.push(segment);
+  }
+
+  return planned;
+}
+
 export function planHlsSegments(
   manifest: ParsedHlsManifest,
   options: PlanHlsSegmentsOptions,
@@ -67,19 +110,6 @@ export function planHlsSegments(
     throw new Error('HLS segment planning requires a media playlist.');
   }
 
-  const initSegment = manifest.initSegmentUrl
-    ? [
-        {
-          id: 'hls-init-0',
-          index: 0,
-          url: manifest.initSegmentUrl,
-          initSegment: true,
-          byteRange: manifest.initSegmentByteRange,
-          trackType: 'video' as const,
-        },
-      ]
-    : [];
-
   const mediaSegments = applyDiscontinuityPolicy(
     manifest.segments,
     options.discontinuityPolicy ?? 'include-all',
@@ -93,7 +123,7 @@ export function planHlsSegments(
     selectedAudioTrackIds: options.selection?.audioTrackIds ?? [],
     selectedSubtitleTrackIds: options.selection?.subtitleTrackIds ?? [],
     segments: filterSegmentsByTrim(
-      [...initSegment, ...mediaSegments],
+      buildSegmentsWithInitMaps(mediaSegments, manifest),
       options.selection?.trim,
     ),
   };

@@ -45,9 +45,9 @@ Extracted from `feature-parity-report.md` across all 8 reference analyses. Every
 | 21 | HLS alternate audio/subtitle group metadata | done | puemos (language, channels, characteristics, default, autoselect, group id) | Parser now captures language, channels, characteristics, defaults, autoselect, group ids, and audio/subtitle URLs with tests. |
 | 22 | Closed-caption group extraction | done | puemos | Parser now emits `closedCaptions` entries with group id and `INSTREAM-ID`, covered by media-group tests. |
 | 23 | Manual parsing of extra media attributes | done | puemos | `EXT-X-MEDIA` attributes are parsed into typed audio, subtitle, and closed-caption metadata. |
-| 24 | EXT-X-MAP init segment insertion tests | present/partial | puemos | Add explicit byterange/map-change tests. |
-| 25 | Init map dedupe until URI/byterange changes | partial | puemos | Strong small robustness feature. |
-| 26 | Map byterange change causes reinsertion | partial | puemos | Port test case. |
+| 24 | EXT-X-MAP init segment insertion tests | done | puemos | Added explicit init map planner tests for insertion and dedupe. |
+| 25 | Init map dedupe until URI/byterange changes | done | puemos | Planner now emits init maps only when URI or byterange changes. |
+| 26 | Map byterange change causes reinsertion | done | puemos | Planner reinserts init maps when `EXT-X-MAP` byterange changes, with tests. |
 | 27 | Session key/encryption inspection | done | puemos | `classifyHlsProtection` now considers `#EXT-X-SESSION-KEY` when no media key is present, with tests. |
 | 28 | IV normalization for string/Uint32Array/Uint8Array | done | puemos | Added `normalizeIV()` for hex strings, numbers, `Uint8Array`, and `Uint32Array`, with tests. |
 | 29 | Signed-query propagation to level/fragment/key URLs | gap/partial | puemos (`appendQueryParams`) | High-value for signed manifests. |
@@ -58,7 +58,7 @@ Extracted from `feature-parity-report.md` across all 8 reference analyses. Every
 | 34 | DASH representation inspector | gap | cat-catch | Show audio/video representation metadata and reuse HLS-style job runner. |
 | 35 | HLS segment repair controls | gap | cat-catch | Segment selection, regex filtering, index/time ranges, discontinuity groups, retry failed, stop single, force partial export. |
 | 36 | HLS range expansion tests | gap | cat-catch | Cover `${range:start-end,pad}` operator if exposed as explicit manual input. |
-| 37 | EXT-X-BYTERANGE fixture coverage | partial | cat-catch, puemos | Ensure parser/downloader covers byterange media and init maps. |
+| 37 | EXT-X-BYTERANGE fixture coverage | done | cat-catch, puemos | Added media byterange offset-tracking fixture plus init-map byterange change coverage. |
 
 ### Detection & Capture
 
