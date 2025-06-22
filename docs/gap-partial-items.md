@@ -52,10 +52,10 @@ Extracted from `feature-parity-report.md` across all 8 reference analyses. Every
 | 28 | IV normalization for string/Uint32Array/Uint8Array | done | puemos | Added `normalizeIV()` for hex strings, numbers, `Uint8Array`, and `Uint32Array`, with tests. |
 | 29 | Signed-query propagation to level/fragment/key URLs | done | puemos (`appendQueryParams`) | Added `propagateQueryParams()` and planner propagation for init, segment, and key URLs. |
 | 30 | Primary/fallback URI fetch | done | puemos | Planner preserves existing URL params while appending missing same-origin master params, keeping original segment params as the fallback path. |
-| 31 | DASH live/SegmentTimeline robustness | present/partial | Unified | Use Unified as main baseline. |
+| 31 | DASH live/SegmentTimeline robustness | done | Unified | DASH parser/inspector cover dynamic MPDs and `SegmentTimeline` expansion with tests. |
 | 32 | HDS/MSS detection states | done | stream-detector | Network classifier now emits `hds_manifest`/`mss_manifest` with `hds`/`mss` protocol metadata and tests. |
 | 33 | Passive subtitle candidates | done | stream-detector | Network classifier now emits `subtitle_vtt`, `subtitle_srt`, `subtitle_ttml`, and `subtitle_dfxp` by extension and MIME type, with tests. |
-| 34 | DASH representation inspector | gap | cat-catch | Show audio/video representation metadata and reuse HLS-style job runner. |
+| 34 | DASH representation inspector | done | cat-catch | Added `inspectDashRepresentations()` for video/audio representation metadata and timeline inspection. |
 | 35 | HLS segment repair controls | gap | cat-catch | Segment selection, regex filtering, index/time ranges, discontinuity groups, retry failed, stop single, force partial export. |
 | 36 | HLS range expansion tests | gap | cat-catch | Cover `${range:start-end,pad}` operator if exposed as explicit manual input. |
 | 37 | EXT-X-BYTERANGE fixture coverage | done | cat-catch, puemos | Added media byterange offset-tracking fixture plus init-map byterange change coverage. |
