@@ -13,6 +13,7 @@ export default defineConfig({
       '**/.output/**',
       'e2e/**',
       'UnifiedVideoDownloader/**',
+      'reference/**',
     ],
   },
 });

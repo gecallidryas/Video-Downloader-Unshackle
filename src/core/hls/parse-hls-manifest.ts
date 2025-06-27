@@ -240,6 +240,13 @@ function parseMasterPlaylist(
       protection = protectionFromKeyTag(
         parseAttributes(line.slice('#EXT-X-KEY:'.length)),
       );
+    } else if (line.startsWith('#EXT-X-SESSION-KEY:')) {
+      const sessionProtection = protectionFromKeyTag(
+        parseAttributes(line.slice('#EXT-X-SESSION-KEY:'.length)),
+      );
+      if (protection.kind === 'none') {
+        protection = sessionProtection;
+      }
     } else if (!line.startsWith('#') && pendingVariantAttributes) {
       const { width, height } = parseResolution(pendingVariantAttributes.RESOLUTION);
       const index = variants.length + 1;

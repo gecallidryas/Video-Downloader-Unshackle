@@ -1,8 +1,10 @@
 import { describe, expect, test } from 'vitest';
 import { runDetectorPlugins } from '@/src/core/plugins/plugin-runner';
 import { createCanvaDetector } from '../canva';
+import { createOkruDetector } from '../okru';
 import { createTwitchDetector } from '../twitch';
 import { createVimeoDetector } from '../vimeo';
+import { createVkDetector } from '../vk';
 
 function htmlDocument(markup: string): Document {
   const documentRef = document.implementation.createHTMLDocument('fixture');
@@ -114,6 +116,137 @@ describe('low-risk site detectors', () => {
         'manifest-url:https://player.vimeo.com/dash/manifest.mpd',
       ]),
     );
+  });
+
+  test('ports VK player URL quality extraction from script tags', async () => {
+    const documentRef = htmlDocument(`
+      <script>
+        var playerParams = {
+          "url1080": "https:\\/\\/vkvd.example\\/video\\/1080.mp4",
+          "url720": "https:\\/\\/vkvd.example\\/video\\/720.mp4",
+          "url480": "https:\\/\\/vkvd.example\\/video\\/480.mp4"
+        };
+      </script>
+    `);
+
+    const result = await runDetectorPlugins([createVkDetector()], {
+      url: new URL('https://vk.com/video-123_456'),
+      document: documentRef,
+      pageTitle: 'VK Test Video',
+      now: () => 400,
+    });
+
+    expect(result.errors).toEqual([]);
+    expect(result.evidence).toHaveLength(3);
+    expect(result.evidence.map((item) => item.url)).toEqual([
+      'https://vkvd.example/video/1080.mp4',
+      'https://vkvd.example/video/720.mp4',
+      'https://vkvd.example/video/480.mp4',
+    ]);
+    expect(result.evidence[0]?.notes).toEqual(
+      expect.arrayContaining([
+        'plugin:vk',
+        'source:vk-player-params',
+        'protocol:direct',
+        'quality:1080p',
+        'title:VK Test Video',
+      ]),
+    );
+  });
+
+  test('VK detector returns empty evidence when no URL patterns match', async () => {
+    const documentRef = htmlDocument('<div>No video here</div>');
+
+    const result = await runDetectorPlugins([createVkDetector()], {
+      url: new URL('https://vk.com/video-123_456'),
+      document: documentRef,
+      now: () => 401,
+    });
+
+    expect(result.evidence).toEqual([]);
+    expect(result.errors).toEqual([]);
+  });
+
+  test('ports OK.ru metadata-based video extraction from script tags', async () => {
+    const metadata = JSON.stringify({
+      videos: [
+        { url: 'https://vd.example/okru/720.mp4' },
+        { url: 'https://vd.example/okru/480.mp4' },
+      ],
+    }).replace(/"/g, '\\"');
+
+    const documentRef = htmlDocument(`
+      <script>
+        var flashvars = { "metadata": "${metadata}" };
+      </script>
+    `);
+
+    const result = await runDetectorPlugins([createOkruDetector()], {
+      url: new URL('https://ok.ru/video/12345'),
+      document: documentRef,
+      pageTitle: 'OK.ru Test Video',
+      now: () => 500,
+    });
+
+    expect(result.errors).toEqual([]);
+    expect(result.evidence).toHaveLength(2);
+    expect(result.evidence[0]).toMatchObject({
+      url: 'https://vd.example/okru/720.mp4',
+    });
+    expect(result.evidence[0]?.notes).toEqual(
+      expect.arrayContaining([
+        'plugin:okru',
+        'source:okru-metadata',
+        'protocol:direct',
+        'title:OK.ru Test Video',
+      ]),
+    );
+  });
+
+  test('ports OK.ru data-options attribute extraction', async () => {
+    const metadata = JSON.stringify({
+      videos: [{ url: 'https://vd.example/okru/hd.mp4' }],
+    });
+    const options = JSON.stringify({
+      flashvars: { metadata },
+    });
+
+    const documentRef = htmlDocument(
+      `<div data-options='${options.replace(/'/g, '&#39;')}'></div>`,
+    );
+
+    const result = await runDetectorPlugins([createOkruDetector()], {
+      url: new URL('https://ok.ru/video/67890'),
+      document: documentRef,
+      pageTitle: 'OK.ru Options Video',
+      now: () => 501,
+    });
+
+    expect(result.errors).toEqual([]);
+    expect(result.evidence).toHaveLength(1);
+    expect(result.evidence[0]).toMatchObject({
+      url: 'https://vd.example/okru/hd.mp4',
+    });
+    expect(result.evidence[0]?.notes).toEqual(
+      expect.arrayContaining([
+        'plugin:okru',
+        'source:okru-data-options',
+        'protocol:direct',
+      ]),
+    );
+  });
+
+  test('OK.ru detector returns empty evidence when no patterns match', async () => {
+    const documentRef = htmlDocument('<div>No video here</div>');
+
+    const result = await runDetectorPlugins([createOkruDetector()], {
+      url: new URL('https://ok.ru/video/12345'),
+      document: documentRef,
+      now: () => 502,
+    });
+
+    expect(result.evidence).toEqual([]);
+    expect(result.errors).toEqual([]);
   });
 
   test('ports Twitch clip meta stream discovery without live-stream bypass', async () => {

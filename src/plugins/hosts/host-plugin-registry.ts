@@ -23,6 +23,8 @@ import {
   extractLuluvdo,
   extractVoe,
   extractDoodstream,
+  extractUserload,
+  extractVidlox,
   type HostExtractor,
 } from './generic-embed-host';
 
@@ -32,6 +34,8 @@ const safeDomExtractors: Record<string, HostExtractor> = {
   vidoza: extractVidoza,
   yourupload: extractYourUpload,
   vidmoly: extractVidmoly,
+  userload: extractUserload,
+  vidlox: extractVidlox,
 };
 
 const configOnlyExtractors: Record<string, HostExtractor> = {

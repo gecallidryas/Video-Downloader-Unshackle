@@ -75,6 +75,8 @@ export function selectSegmentsForRepair(
   return selected;
 }
 
+const MAX_RANGE_EXPANSION = 10_000;
+
 export function expandSegmentRangeTemplate(template: string): string[] {
   const match = /\$\{range:(\d+)-(\d+)(?:,(\d+))?\}/.exec(template);
 
@@ -85,6 +87,14 @@ export function expandSegmentRangeTemplate(template: string): string[] {
   const start = Number(match[1]);
   const end = Number(match[2]);
   const pad = Number(match[3] ?? 0);
+  const count = Math.abs(end - start) + 1;
+
+  if (count > MAX_RANGE_EXPANSION) {
+    throw new Error(
+      `Range expansion would generate ${count} URLs (max ${MAX_RANGE_EXPANSION})`,
+    );
+  }
+
   const urls: string[] = [];
   const step = start <= end ? 1 : -1;
 

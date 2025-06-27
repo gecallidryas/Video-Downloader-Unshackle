@@ -1,31 +1,22 @@
 import type { ProtectionInfo } from '@/video_downloader_types_skeleton';
+import { normalizeIV, type HlsIvInput } from './classify-hls-protection';
 
 export interface DecryptAes128SegmentInput {
   encrypted: Uint8Array;
   key: Uint8Array;
-  iv?: string;
+  iv?: HlsIvInput;
   mediaSequence: number;
   protection: ProtectionInfo;
 }
 
-function parseHexIv(value: string): Uint8Array {
-  const hex = value.replace(/^0x/i, '');
-  const bytes = new Uint8Array(16);
-
-  for (let index = 0; index < bytes.length; index += 1) {
-    const byte = Number.parseInt(hex.slice(index * 2, index * 2 + 2), 16);
-    bytes[index] = Number.isFinite(byte) ? byte : 0;
-  }
-
-  return bytes;
-}
-
 export function deriveHlsAes128Iv(
-  explicitIv: string | undefined,
+  explicitIv: HlsIvInput,
   mediaSequence: number,
 ): Uint8Array {
-  if (explicitIv) {
-    return parseHexIv(explicitIv);
+  const normalized = normalizeIV(explicitIv);
+
+  if (normalized) {
+    return normalized;
   }
 
   const iv = new Uint8Array(16);

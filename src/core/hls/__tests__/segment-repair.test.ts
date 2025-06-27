@@ -71,4 +71,16 @@ describe('HLS range expansion', () => {
       'https://cdn.example/seg-009.ts',
     ]);
   });
+
+  test('returns template unchanged when no range operator present', () => {
+    expect(expandSegmentRangeTemplate('https://cdn.example/seg-1.ts')).toEqual([
+      'https://cdn.example/seg-1.ts',
+    ]);
+  });
+
+  test('rejects ranges exceeding safety limit', () => {
+    expect(() =>
+      expandSegmentRangeTemplate('https://cdn.example/seg-${range:0-99999,1}.ts'),
+    ).toThrow(/max 10000/);
+  });
 });

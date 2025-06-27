@@ -165,17 +165,17 @@ The following features were classified as `policy-only` during the initial migra
 | 42 | Luluvdo | Domain recognition and unsupported/restricted messaging only. | ✅ Authorized — implement packer unpacking extraction. |
 | 57 | Header Preservation | Safe referer/origin-style context only. | ✅ Authorized — implement cookie/authorization capture and credential replay. |
 
-## Deferred Features (Not Part of Access-Control Authorization)
+## Formerly Deferred Features (Now Implemented)
 
-These source features remain deferred for reasons unrelated to access-control authorization.
+These features were previously deferred but have been implemented as of 2026-05-11:
 
-| Feature ID | Source feature | Target behavior | Reason |
+| Feature ID | Source feature | Implementation | Notes |
 |---|---|---|---|
-| 16 | VK (vk.com) | No production detector registration beyond future extension points. | Missing fixture and policy review — not included in the 13 authorized features. |
-| 17 | OK.ru | No production detector registration beyond future extension points. | Missing fixture and policy review — not included in the 13 authorized features. |
-| 21 | iQIYI Untrusted | Main-world untrusted bridge not yet ported. | Covered by Feature 8 authorization — can be ported as part of iQIYI implementation. |
-| 36 | Userload | Domain-only/deferred host behavior. | Can be triaged and ported alongside the other host plugins. |
-| 38 | Vidlox | Domain-only/deferred host behavior. | Can be triaged and ported alongside the other host plugins. |
+| 16 | VK (vk.com) | DOM-only script tag parser (`src/plugins/sites/vk.ts`). | No MAIN-world injection needed — reads playerParams URL patterns from script tag text. |
+| 17 | OK.ru | DOM-only metadata parser (`src/plugins/sites/okru.ts`). | No MAIN-world injection needed — reads metadata, data-options, and st.video from DOM. |
+| 21 | iQIYI Untrusted | Hardened MAIN-world bridge (`entrypoints/iqiyi-main.ts` + `relayMainWorldMessages`). | Uses `window.postMessage` relay, not raw untrusted injection. |
+| 36 | Userload | Safe-DOM videolink extractor (`extractUserload` in `generic-embed-host.ts`). | Reads `var videolink` from page HTML. |
+| 38 | Vidlox | Safe-DOM sources array extractor (`extractVidlox` in `generic-embed-host.ts`). | Reads `sources: ["url"]` from page HTML. |
 
 ## Deferred Plan Artifacts and Follow-Up Documentation
 

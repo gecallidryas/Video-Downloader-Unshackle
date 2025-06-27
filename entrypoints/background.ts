@@ -142,7 +142,10 @@ export function initializeBackgroundShell() {
   void settingsStore.load().then((settings) => {
     // Apply settings that require the store to be fully loaded first.
     headerContext.updateOptions({
-      captureCredentialHeaders: settings.captureCredentialHeaders,
+      captureCredentialHeaders: settings.advancedMode && settings.captureCredentialHeaders,
+    });
+    downloadController.updateSettings({
+      suppressProtectedDownloads: settings.suppressProtectedDownloads,
     });
     notificationManager.applySettings(settings);
     return contextMenuManager.register();

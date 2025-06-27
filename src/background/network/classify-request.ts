@@ -86,10 +86,10 @@ const subtitleCategoryByMimeType = new Map<string, RequestCategory>([
   ['application/ttaf+xml', 'subtitle_dfxp'],
 ]);
 
-const videoExtensions = new Set(['mp4', 'm4v', 'webm', 'mkv', 'mov']);
-const audioExtensions = new Set(['mp3', 'm4a', 'aac', 'flac', 'ogg', 'opus', 'wav']);
+const videoExtensions = new Set(['mp4', 'm4v', 'webm', 'mkv', 'mov', 'ogv', 'flv']);
+const audioExtensions = new Set(['mp3', 'm4a', 'aac', 'flac', 'ogg', 'opus', 'wav', 'oga', 'weba']);
 const subtitleExtensions = new Set(['vtt', 'srt', 'ttml', 'dfxp']);
-const segmentExtensions = new Set(['m4s', 'cmfv', 'cmfa', 'm2ts', 'ts']);
+const segmentExtensions = new Set(['m4s', 'cmfv', 'cmfa', 'm2ts', 'm2t', 'ts']);
 const segmentMimeTypes = new Set(['video/mp2t']);
 const licenseUrlPatterns = [
   /widevine/i,

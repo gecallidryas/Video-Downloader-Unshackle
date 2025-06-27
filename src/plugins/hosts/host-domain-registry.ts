@@ -14,7 +14,7 @@ export const HOST_DOMAIN_REGISTRY: HostDomainRegistryEntry[] = [
   {
     id: 'doodstream',
     name: 'Doodstream',
-    triage: 'policy-only',
+    triage: 'config-only',
     domains: [
       'doodstream.com',
       'dood.pm',
@@ -41,13 +41,13 @@ export const HOST_DOMAIN_REGISTRY: HostDomainRegistryEntry[] = [
   {
     id: 'voe',
     name: 'Voe',
-    triage: 'policy-only',
+    triage: 'config-only',
     domains: ['voe.sx', 'voe-unblock.com', 'voeunblk.com', 'watchers.to'],
   },
   {
     id: 'filemoon',
     name: 'Filemoon',
-    triage: 'policy-only',
+    triage: 'config-only',
     domains: [
       'filemoon.sx',
       'filemoon.to',
@@ -81,7 +81,7 @@ export const HOST_DOMAIN_REGISTRY: HostDomainRegistryEntry[] = [
   {
     id: 'mp4upload',
     name: 'Mp4Upload',
-    triage: 'policy-only',
+    triage: 'config-only',
     domains: ['mp4upload.com', 'www.mp4upload.com'],
   },
   {
@@ -102,7 +102,7 @@ export const HOST_DOMAIN_REGISTRY: HostDomainRegistryEntry[] = [
   {
     id: 'mixdrop',
     name: 'Mixdrop',
-    triage: 'policy-only',
+    triage: 'config-only',
     domains: [
       'mixdrop.co',
       'mixdrop.to',
@@ -115,13 +115,13 @@ export const HOST_DOMAIN_REGISTRY: HostDomainRegistryEntry[] = [
   {
     id: 'upstream',
     name: 'Upstream',
-    triage: 'policy-only',
+    triage: 'config-only',
     domains: ['upstream.to', 'upstream.pm', 'upstreamcdn.co'],
   },
   {
     id: 'kwik',
     name: 'Kwik',
-    triage: 'policy-only',
+    triage: 'config-only',
     domains: ['kwik.cx', 'kwik.si'],
   },
   {
@@ -139,7 +139,7 @@ export const HOST_DOMAIN_REGISTRY: HostDomainRegistryEntry[] = [
   {
     id: 'supervideo',
     name: 'Supervideo',
-    triage: 'policy-only',
+    triage: 'config-only',
     domains: ['supervideo.tv', 'supervideo.cc'],
   },
   {
@@ -169,19 +169,19 @@ export const HOST_DOMAIN_REGISTRY: HostDomainRegistryEntry[] = [
   {
     id: 'dropload',
     name: 'Dropload',
-    triage: 'policy-only',
+    triage: 'config-only',
     domains: ['dropload.io', 'dropload.to'],
   },
   {
     id: 'loadx',
     name: 'Loadx',
-    triage: 'policy-only',
+    triage: 'config-only',
     domains: ['loadx.ws', 'loadx.to'],
   },
   {
     id: 'luluvdo',
     name: 'Luluvdo',
-    triage: 'policy-only',
+    triage: 'config-only',
     domains: ['luluvdo.com', 'lulu.st'],
   },
   {
