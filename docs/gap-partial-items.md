@@ -116,11 +116,11 @@ Extracted from `feature-parity-report.md` across all 8 reference analyses. Every
 
 | # | Item | Status | Stronger in | Action |
 |---|---|---|---|---|
-| 75 | Settings import/export with secret redaction | partial | cat-catch, stream-detector | Versioned JSON; redact tokens, secrets, header profiles. |
-| 76 | Copy/share template engine | partial | cat-catch | Safe tags for URL, title, filename; no cookie/auth variables by default. |
-| 77 | Regex classification rules | partial | cat-catch | Advanced regex-rule editor with typed validation. |
-| 78 | Privacy statement | partial | puemos (`PRIVACY.md`) | Add explicit privacy posture to docs. |
-| 79 | Owner exclusion process docs | partial/docs | live-stream, cat-catch, stream-detector, puemos | Public opt-out documentation. |
+| 75 | Settings import/export with secret redaction | ~~partial~~ done | cat-catch, stream-detector | Added versioned JSON settings I/O with schema validation and internal-field redaction. |
+| 76 | Copy/share template engine | ~~partial~~ done | cat-catch | Added safe template variables with advanced-mode gating for cookie/auth/referer/origin values. |
+| 77 | Regex classification rules | ~~partial~~ done | cat-catch | Added standalone ordered regex classifier with construction-time validation. |
+| 78 | Privacy statement | ~~partial~~ done | puemos (`PRIVACY.md`) | Added explicit local-processing, credential, storage, and permissions privacy docs. |
+| 79 | Owner exclusion process docs | ~~partial/docs~~ done | live-stream, cat-catch, stream-detector, puemos | Added public domain exclusion request and blocklist process docs. |
 
 ---
 
