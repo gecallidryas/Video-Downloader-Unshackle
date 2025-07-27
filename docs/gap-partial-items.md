@@ -79,14 +79,14 @@ Extracted from `feature-parity-report.md` across all 8 reference analyses. Every
 
 | # | Item | Status | Stronger in | Action |
 |---|---|---|---|---|
-| 48 | Typed host-plugin contracts for site extraction | partial | ViewTube (behavior examples) | Inputs: tab URL/page metadata/fetched JSON. Outputs: candidates, variants, subtitles, thumbnails, policy, failure reasons. |
-| 49 | Provider fixture harness | partial | ViewTube | Required before porting ViewTube-style extractors. |
-| 50 | Quality/container normalization (low/standard/high/full/quad/ultra, MP4/WebM/M3U8) | partial | ViewTube | Normalize names across host plugins. |
-| 51 | DASH audio/video pairing preferences | partial | ViewTube | Use native/helper mux, but borrow "Video With Audio" UX language. |
-| 52 | Per-provider defaults (quality, container, subtitles, behavior) | partial | ViewTube | Add to settings. |
-| 53 | Clearer extraction failure reasons | partial | ViewTube | Missing player, missing content, no videos, protected, unsupported host, region/auth required. |
-| 54 | Bilibili site-detector plugin | gap | FastestBilibiliDownloader | Only if in product scope. BVid/aid/upid patterns, public API, FLV/MP4 handling. |
-| 55 | FLV as recognized direct media type | gap | FastestBilibiliDownloader | Low-cost detection; conversion uses existing native helper. |
+| 48 | Typed host-plugin contracts for site extraction | done | ViewTube (behavior examples) | Added `HostPluginContract` with typed input/output candidates, subtitles, thumbnails, failure reasons, and output validation. |
+| 49 | Provider fixture harness | done | ViewTube | Added `loadFixture()` plus a Vimeo standard-video fixture and contract regression test harness. |
+| 50 | Quality/container normalization (low/standard/high/full/quad/ultra, MP4/WebM/M3U8) | done | ViewTube | Added tested quality label and MIME container normalization helpers for host plugins. |
+| 51 | DASH audio/video pairing preferences | improved | ViewTube | Added typed per-provider `dashPairing` preference with `video-with-audio`, video-only, audio-only, and auto modes. |
+| 52 | Per-provider defaults (quality, container, subtitles, behavior) | done | ViewTube | Added schema v6 `providerDefaults` for provider quality, container, subtitle, and DASH pairing preferences. |
+| 53 | Clearer extraction failure reasons | done | ViewTube | Added typed extraction failure reasons and user-facing descriptions for missing player, no videos, protected, region-blocked, auth-required, and unsupported host. |
+| 54 | Bilibili site-detector plugin | gap | FastestBilibiliDownloader | Deferred: optional in Phase 4 and needs product/API scope confirmation before adding Bilibili-specific extraction. |
+| 55 | FLV as recognized direct media type | done | FastestBilibiliDownloader | `classify-request.ts` already recognizes `.flv` as direct video media; classifier coverage confirmed. |
 
 ### Storage & Export
 

@@ -657,9 +657,9 @@ The player layer is shared: helper functions create elements, sanitize titles, f
 | Player replacement | Removes/hides native player nodes and inserts a custom panel/player into the page (`createMyPlayer`, site blocks, `blockVideos`). | review | cat-catch mostly overlays tools; ViewTube fully replaces players. | Keep Unshackle extension UI separate; use replacement only as optional page-assist mode. |
 | Direct playback | Supports HTML5 video, object/embed plugin modes, tab-open, and custom protocol/external player modes (`playMyVideo`). | partial | cat-catch also has custom player/invoke paths. | Prefer native extension preview and external helper handoff; avoid legacy plugin modes. |
 | Direct download link | Save button creates a direct link for the selected stream and uses sanitized title/definition/extension naming (`saveMyVideo`). | present | Simpler than stream-detector command generation. | Keep direct download as core. Borrow title+quality naming tests. |
-| Quality selection | Builds menus by definitions and containers, selects preferred definition/container, and groups HLS/DASH/audio/video entries (`createMyPlayer`, `selectMyVideo`). | partial | Similar concepts appear in puemos and cat-catch. | Add consistent quality grouping across host plugins and passive detections. |
+| Quality selection | Builds menus by definitions and containers, selects preferred definition/container, and groups HLS/DASH/audio/video entries (`createMyPlayer`, `selectMyVideo`). | improved | Similar concepts appear in puemos and cat-catch. | Added tested host quality/container normalization helpers and provider defaults for preferred quality/container. |
 | HLS detection | Adds "Multi Definition M3U8" and individual M3U8 variants from YouTube HLS, Dailymotion HLS, Yle manifests, and other site data. | present | stream-detector catches HLS passively; ViewTube extracts from site APIs. | Combine passive HLS detection with host extractors that label variants and thumbnails. |
-| DASH handling | Represents DASH as video-only/audio-only plus synthetic "Video With Audio"; supports HTML5 dual-element sync and VLC/embed sync (`playDASHwithHTML5`, `playDASHwithVLC`). | partial | Unshackle native helper can mux better; ViewTube has useful UI language. | Keep DASH as core download scope; use native/helper mux rather than dual media element sync. |
+| DASH handling | Represents DASH as video-only/audio-only plus synthetic "Video With Audio"; supports HTML5 dual-element sync and VLC/embed sync (`playDASHwithHTML5`, `playDASHwithVLC`). | improved | Unshackle native helper can mux better; ViewTube has useful UI language. | Added typed per-provider DASH pairing preferences while keeping native/helper mux as the intended export path. |
 | Audio selection | Chooses high/medium bitrate WebM/MP4 audio for DASH playback. | partial | Similar to puemos audio group selection but less formal. | Add audio representation preference and fallback tests. |
 | Subtitle track playback | Adds `<track>` when subtitles are available and includes subtitle URL in protocol handoff (`playMyVideo`). | partial | puemos is stronger for subtitle metadata; stream-detector detects subtitles passively. | Keep subtitles as first-class candidate tracks. |
 | YouTube player API fetch | Calls `/youtubei/v1/player`, tries multiple clients (ANDROID_VR, ANDROID, WEB_EMBEDDED, IOS, WEB_SAFARI, TV), and extracts streamingData. | review | More site-specific than all other references. | Use only policy-safe host extraction; avoid hidden bypass behavior and document limitations. |
@@ -674,9 +674,9 @@ The player layer is shared: helper functions create elements, sanitize titles, f
 | Yle/Kaltura | Calls Yle/Kaltura APIs, maps flavor assets, HLS manifest URL, and subtitles. | partial | Good model for API-backed public broadcaster plugins. | Add API-backed provider plugins only with fixture capture and region/protection handling. |
 | Facebook | Scans page videos and watch links, fetches page content with Accept header, parses media JSON. | review | High fragility and privacy risk. | Avoid invasive social-site scraping unless explicitly scoped and policy-reviewed. |
 | External protocol | Supports `viewtube:` and player-specific protocols such as VLC/Pot/Intent for external playback (`Protocol/`, `playMyVideo`). | partial | cat-catch has local invoke/custom protocol. | Integrate via explicit external-helper profiles, never automatic protocol navigation. |
-| Options | Stores per-site options for embed type, media type, definition, container, autoplay, subtitles, widesize/fullsize, DASH, DVL, and open page link (`setMyOptions`, `getMyOptions`). | partial | stream-detector has cleaner extension settings; ViewTube has useful per-site defaults. | Add per-provider default quality/container preferences in Unshackle settings. |
+| Options | Stores per-site options for embed type, media type, definition, container, autoplay, subtitles, widesize/fullsize, DASH, DVL, and open page link (`setMyOptions`, `getMyOptions`). | improved | stream-detector has cleaner extension settings; ViewTube has useful per-site defaults. | Added schema v6 `providerDefaults` for quality, container, subtitles, and DASH pairing. |
 | UI resize modes | Widesize/fullsize modes recalculate player dimensions and sidebar offsets. | not-scope | UI idea is page-player-specific. | Do not prioritize unless page-assist mode is added. |
-| Error messages | User-facing messages distinguish missing player, missing content, missing videos, missing thumbnail, embedded fallback, and blocked/protected cases. | partial | Useful operational detail across references. | Add clearer candidate failure reasons in host plugins and job detail UI. |
+| Error messages | User-facing messages distinguish missing player, missing content, missing videos, missing thumbnail, embedded fallback, and blocked/protected cases. | improved | Useful operational detail across references. | Added typed host extraction failure reasons with user-facing descriptions for missing player, no videos, protected, region/auth, and unsupported-host cases. |
 | Local caching | Caches fetched content in an in-memory `sources` map keyed by URL/data/headers. | partial | Less durable than Unshackle queue/history. | Keep request memoization inside provider runs; do not persist sensitive fetched content. |
 | Storage | Uses browser localStorage-style script options with site-prefixed keys. | present | Unshackle settings are stronger. | Borrow per-site preference shape, not storage implementation. |
 | Request model | Uses synchronous XHR and sometimes custom headers or credentials (`getMyContent`). | review | Less maintainable than typed async fetch. | Use async fetch with timeouts, cancellation, and header policy gates. |
@@ -701,12 +701,12 @@ The player layer is shared: helper functions create elements, sanitize titles, f
 | Priority | Item | Target landing zone | Notes |
 |---:|---|---|---|
 | P0 | Make stream detection/downloading a stated core capability | product docs, provider policy | Avoid framing stream detection as auxiliary. The main extension should detect, queue, download, and export safe streams. |
-| P1 | Add typed host-plugin contracts for site extraction | `src/core/providers/*` | Inputs: tab URL/page metadata/fetched JSON. Outputs: candidates, variants, subtitles, thumbnails, policy status, failure reasons. |
-| P1 | Add provider fixture harness | provider tests | Required before porting ViewTube-style regex/API extractors. |
-| P1 | Add quality/container normalization | candidate model/UI | Normalize names such as low/standard/high/full/quad/ultra, MP4/WebM/M3U8/DASH, audio-only/video-only. |
-| P1 | Add DASH audio/video pairing preferences | DASH planner/UI | Use native/helper mux, but borrow "Video With Audio" UX language. |
-| P1 | Add per-provider defaults | settings | Preferred quality, container, subtitles, preview/download behavior per host. |
-| P2 | Add clearer extraction failure reasons | provider result model | Missing player, missing content, no videos, protected content, unsupported host, region/auth required. |
+| P1 | Add typed host-plugin contracts for site extraction | `src/plugins/hosts/host-plugin-contract.ts` | Done: added typed tab URL/page metadata/fetched JSON input and candidates/subtitles/thumbnails/failure-reason output with validation. |
+| P1 | Add provider fixture harness | `src/plugins/hosts/__fixtures__/` | Done: added `loadFixture()` and a Vimeo fixture-backed contract test for provider regression coverage. |
+| P1 | Add quality/container normalization | `src/plugins/hosts/quality-normalization.ts` | Done: normalizes low/standard/high/full/quad/ultra quality labels and MP4/WebM/M3U8/DASH containers. |
+| P1 | Add DASH audio/video pairing preferences | `src/background/settings/settings-store.ts` | Improved: added typed provider `dashPairing` defaults for auto, video-with-audio, video-only, and audio-only selection. |
+| P1 | Add per-provider defaults | `src/background/settings/settings-store.ts` | Done: schema v6 stores quality, container, subtitles, and DASH pairing preferences per provider. |
+| P2 | Add clearer extraction failure reasons | `src/plugins/hosts/extraction-failure.ts` | Done: typed failure reasons now map to user-facing descriptions and are available to host plugin contracts. |
 | P2 | Add safe external-player profiles | integrations | Explicit user-configured VLC/mpv/PotPlayer/helper handoff without automatic page protocol navigation. |
 | P2 | Add title+quality filename tests | naming module | Include sanitized title, author/source, selected quality, and extension. |
 
@@ -1046,7 +1046,7 @@ The project is a Go 1.12 module with six packages organized around a crawler-sty
 | Area | Feature | Unshackle status | Existing reference comparison | Portable action |
 |---|---|---|---|---|
 | Platform | Go 1.12 CLI application with Docker support | not-scope | All other references are browser extensions or userscripts | Do not port platform. |
-| Site scope | Bilibili.com only: video by aid, by BVid, bulk by uploader mid | gap | No Bilibili site detector in Unshackle | Consider Bilibili site-detector plugin if policy allows. |
+| Site scope | Bilibili.com only: video by aid, by BVid, bulk by uploader mid | gap | No Bilibili site detector in Unshackle | Deferred in Phase 4: optional plugin needs product/API scope confirmation before implementation. |
 | URL parsing | Regex detection of `BV\w+`, `av\d+`, `space.bilibili.com/\d+` | partial | Unshackle has site detectors that parse tab URLs | Add Bilibili URL patterns if Bilibili support is planned. |
 | BVid-to-aid conversion | Hardcoded lookup table with XOR/addition cipher | gap | No equivalent in other references | Port only if Bilibili detector is added. |
 | Bilibili API integration | Uses `api.bilibili.com` endpoints with signed parameters | gap | No Bilibili API usage in other references | Useful as provider plugin reference if scoped. |
@@ -1074,8 +1074,8 @@ The project is a Go 1.12 module with six packages organized around a crawler-sty
 
 | Priority | Item | Target landing zone | Notes |
 |---:|---|---|---|
-| P3 | Consider Bilibili site-detector plugin | `src/plugins/sites/bilibili.ts`, site detector tests | Only if Bilibili is in product scope. Would need BVid/aid/upid URL patterns, Bilibili API fetch, playback URL resolution, quality selection, FLV/MP4 handling. Use public documented APIs only. |
-| P3 | Add FLV as recognized direct media type | candidate classifier, supported format list | Bilibili and some Asian video sites still serve FLV. Detection is low cost; conversion uses existing native helper. |
+| P3 | Consider Bilibili site-detector plugin | `src/plugins/sites/bilibili.ts`, site detector tests | Deferred in Phase 4 because it is optional and should be scoped against public documented APIs before landing. |
+| P3 | Add FLV as recognized direct media type | `src/background/network/classify-request.ts` | Done: `.flv` is recognized as direct video media and covered by classifier tests. |
 | P3 | Add redirect-header-preservation test | fetch utility tests | Ensure Referer and other safe headers survive HTTP redirects. FastestBilibiliDownloader's `CheckRedirect` is a reminder this can be lost. |
 
 ### Things Not To Copy Literally / Risks
