@@ -1,0 +1,33 @@
+{
+  "input": {
+    "tabUrl": "https://player.vimeo.com/video/1234",
+    "pageTitle": "Vimeo Config Clip",
+    "pageMetadata": {
+      "og:title": "Vimeo Config Clip"
+    },
+    "fetchedData": {
+      "files": {
+        "progressive": [
+          {
+            "url": "https://player.vimeo.com/progressive/720.mp4",
+            "quality": "720p",
+            "height": 720,
+            "mime": "video/mp4"
+          }
+        ]
+      }
+    }
+  },
+  "expectedOutput": {
+    "candidates": [
+      {
+        "url": "https://player.vimeo.com/progressive/720.mp4",
+        "quality": "high",
+        "container": "mp4",
+        "height": 720
+      }
+    ],
+    "subtitles": [],
+    "thumbnails": []
+  }
+}

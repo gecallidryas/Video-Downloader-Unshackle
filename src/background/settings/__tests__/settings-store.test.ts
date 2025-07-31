@@ -21,6 +21,7 @@ describe('background settings store', () => {
       maxBandwidthPerHostKBps: 0,
       preferredQuality: 'highest',
       defaultOutputFormat: 'auto',
+      providerDefaults: {},
       saveAsPrompt: true,
       preferredAudioLanguage: 'en',
       downloadSubtitles: false,
@@ -35,7 +36,7 @@ describe('background settings store', () => {
       suppressProtectedDownloads: true,
       captureCredentialHeaders: false,
       advancedMode: false,
-      _schemaVersion: 5,
+      _schemaVersion: 6,
     });
   });
 
@@ -64,18 +65,45 @@ describe('background settings store', () => {
     const store = createSettingsStore({ storage });
 
     await store.set('maxConcurrentDownloads', 4);
-    await store.setMany({ preferredQuality: '720p', enableContextMenu: false });
+    await store.setMany({
+      preferredQuality: '720p',
+      enableContextMenu: false,
+      providerDefaults: {
+        vimeo: {
+          quality: '720p',
+          container: 'mp4',
+          subtitles: true,
+          dashPairing: 'video-with-audio',
+        },
+      },
+    });
 
     expect(store.get('maxConcurrentDownloads')).toBe(4);
     expect(store.getAll()).toMatchObject({
       preferredQuality: '720p',
       enableContextMenu: false,
+      providerDefaults: {
+        vimeo: {
+          quality: '720p',
+          container: 'mp4',
+          subtitles: true,
+          dashPairing: 'video-with-audio',
+        },
+      },
     });
     expect(storage.set).toHaveBeenLastCalledWith({
       [SETTINGS_STORAGE_KEY]: expect.objectContaining({
         maxConcurrentDownloads: 4,
         preferredQuality: '720p',
         enableContextMenu: false,
+        providerDefaults: {
+          vimeo: {
+            quality: '720p',
+            container: 'mp4',
+            subtitles: true,
+            dashPairing: 'video-with-audio',
+          },
+        },
       }),
     });
 

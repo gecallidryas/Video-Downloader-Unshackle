@@ -17,6 +17,12 @@ export type ThemeName =
   | 'system';
 export type PreferredQuality = 'highest' | 'best' | 'smallest' | 'ask' | '1080p' | '720p' | '480p' | '360p';
 export type OutputFormat = 'auto' | 'mp4' | 'mkv' | 'mp3' | 'webm';
+export type ProviderContainerPreference = 'auto' | 'mp4' | 'webm' | 'm3u8' | 'mpd';
+export type ProviderDashPairingPreference =
+  | 'auto'
+  | 'video-with-audio'
+  | 'video-only'
+  | 'audio-only';
 export type RemoteConfigSecurityMode = 'strict' | 'warn' | 'disabled';
 export type PreviewMode = 'none' | 'image' | 'video';
 export type PreviewFormat = 'webm' | 'mp4' | 'gif';
@@ -26,6 +32,13 @@ export type DefaultDownloadAction =
   | 'download_audio'
   | 'copy'
   | 'record_live';
+
+export interface ProviderDefaultSettings {
+  quality: PreferredQuality;
+  container: ProviderContainerPreference;
+  subtitles: boolean;
+  dashPairing: ProviderDashPairingPreference;
+}
 
 export interface UnifiedSettings {
   theme: ThemeName;
@@ -39,6 +52,7 @@ export interface UnifiedSettings {
   maxBandwidthPerHostKBps: number;
   preferredQuality: PreferredQuality;
   defaultOutputFormat: OutputFormat;
+  providerDefaults: Record<string, ProviderDefaultSettings>;
   saveAsPrompt: boolean;
   preferredAudioLanguage: string;
   downloadSubtitles: boolean;
@@ -73,6 +87,7 @@ export const DEFAULT_SETTINGS: UnifiedSettings = {
   maxBandwidthPerHostKBps: 0,
   preferredQuality: 'highest',
   defaultOutputFormat: 'auto',
+  providerDefaults: {},
   saveAsPrompt: true,
   preferredAudioLanguage: 'en',
   downloadSubtitles: false,
@@ -92,7 +107,7 @@ export const DEFAULT_SETTINGS: UnifiedSettings = {
   suppressProtectedDownloads: true,
   captureCredentialHeaders: false,
   advancedMode: false,
-  _schemaVersion: 5,
+  _schemaVersion: 6,
 };
 
 export interface SettingsStorageAdapter {
@@ -115,9 +130,56 @@ export interface SettingsStore {
 function cloneSettings(settings: UnifiedSettings): UnifiedSettings {
   return {
     ...settings,
+    providerDefaults: Object.fromEntries(
+      Object.entries(settings.providerDefaults).map(([providerId, defaults]) => [
+        providerId,
+        { ...defaults },
+      ]),
+    ),
     namingSiteRules: { ...settings.namingSiteRules },
     defaultActionPerHost: { ...settings.defaultActionPerHost },
   };
+}
+
+function normalizeProviderDefaults(
+  value: unknown,
+): Record<string, ProviderDefaultSettings> {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    return {};
+  }
+
+  const result: Record<string, ProviderDefaultSettings> = {};
+
+  for (const [providerId, defaults] of Object.entries(value)) {
+    if (typeof defaults !== 'object' || defaults === null || Array.isArray(defaults)) {
+      continue;
+    }
+
+    const item = defaults as Partial<ProviderDefaultSettings>;
+    result[providerId] = {
+      quality: ['highest', 'best', 'smallest', 'ask', '1080p', '720p', '480p', '360p'].includes(
+        String(item.quality),
+      )
+        ? (item.quality as PreferredQuality)
+        : DEFAULT_SETTINGS.preferredQuality,
+      container: ['auto', 'mp4', 'webm', 'm3u8', 'mpd'].includes(
+        String(item.container),
+      )
+        ? (item.container as ProviderContainerPreference)
+        : 'auto',
+      subtitles: Boolean(item.subtitles),
+      dashPairing: [
+        'auto',
+        'video-with-audio',
+        'video-only',
+        'audio-only',
+      ].includes(String(item.dashPairing))
+        ? (item.dashPairing as ProviderDashPairingPreference)
+        : 'auto',
+    };
+  }
+
+  return result;
 }
 
 function normalizeSettings(value: unknown): UnifiedSettings {
@@ -129,6 +191,7 @@ function normalizeSettings(value: unknown): UnifiedSettings {
   return {
     ...DEFAULT_SETTINGS,
     ...incoming,
+    providerDefaults: normalizeProviderDefaults(incoming.providerDefaults),
     namingSiteRules: { ...(incoming.namingSiteRules ?? {}) },
     defaultActionPerHost: { ...(incoming.defaultActionPerHost ?? {}) },
     remoteConfigSecurityMode: ['strict', 'warn', 'disabled'].includes(
