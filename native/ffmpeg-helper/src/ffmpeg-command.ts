@@ -203,10 +203,13 @@ function isHelperOwnedLocalPath(value: string): boolean {
     return false;
   }
 
-  const normalized = path.normalize(value);
+  const normalized = value.includes('\\') ? path.win32.normalize(value) : path.normalize(value);
   const parts = normalized.split(/[\\/]+/);
 
-  return path.isAbsolute(normalized) && parts.includes(HELPER_DIR_NAME);
+  return (
+    (path.isAbsolute(normalized) || path.win32.isAbsolute(normalized)) &&
+    parts.includes(HELPER_DIR_NAME)
+  );
 }
 
 function assertNonNegativeFinite(value: number, label: string): void {
