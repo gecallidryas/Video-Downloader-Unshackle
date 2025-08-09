@@ -1,4 +1,5 @@
 import { defineBackground } from 'wxt/utils/define-background';
+import type { MediaCandidate } from '@/video_downloader_types_skeleton';
 import { createCandidateRegistry } from '@/src/background/candidates/candidate-registry';
 import { createContextMenuManager } from '@/src/background/context-menu/context-menu';
 import { createDownloadController } from '@/src/background/jobs/download-controller';
@@ -126,16 +127,20 @@ export function initializeBackgroundShell() {
     action: chrome.action,
   });
   const notificationManager = createNotificationManager(chrome.runtime);
+  const ingestContextCandidate = (candidate: MediaCandidate) => {
+    candidateRegistry.set(candidate.tabId, [
+      ...candidateRegistry.get(candidate.tabId),
+      candidate,
+    ]);
+  };
   const contextMenuManager = createContextMenuManager({
     getSettings: () => ({ enableContextMenu: settingsStore.get('enableContextMenu') }),
     startDownload: (candidate) => {
-      candidateRegistry.set(candidate.tabId, [
-        ...candidateRegistry.get(candidate.tabId),
-        candidate,
-      ]);
+      ingestContextCandidate(candidate);
       downloadQueue.enqueue(candidate, { mode: 'best' });
       void downloadQueue.drain();
     },
+    ingestCandidate: ingestContextCandidate,
   });
 
   chrome.sidePanel.setPanelBehavior(getSidePanelBehavior());

@@ -85,7 +85,7 @@ Status values:
 | Action badge count | present | present | present | Keep; live-stream's compact count formatting is useful polish. |
 | Clear detected list on navigation/action | present | present | present | Keep; expose clear action consistently in side panel/context menu. |
 | Context menu: download link/media | present | present | present | Keep. |
-| Context menu: extract selected links | partial/gap | present in broad UI flows | present | Port as a typed manual-ingest command; useful for power users and hard-to-detect pages. |
+| Context menu: extract selected links | present | present in broad UI flows | present | Added typed selected-link extraction through the context menu and content-script helper. |
 | Performance resource extraction | partial/gap | broad scan paths | present | Add safe extractor that reads `performance.getEntriesByType('resource')` for media-like URLs. |
 | Player object extraction | partial/gap | broad scanner/plugins | present for JWPlayer, VideoJS, SoundManager | Add as optional `player-config` evidence source behind content-script capability. |
 | Blob-generated M3U8 detection | partial/gap | broad MAIN-world scanner | present via `Blob` proxy when `mime-watch` enabled | Port only as opt-in diagnostic/advanced scanner; avoid always-on page-world monkeypatching. |
@@ -308,7 +308,7 @@ Status meanings in this section:
 | Detection | Deduplicate by playlist URL | store playlist map | present | Keep fingerprint-based dedupe. |
 | Detection | Attach source tab URL/title | `tabs.get(details.tabId)` | present | Keep for naming and display. |
 | Detection | Toolbar icon updates only after playlist parses ready | listener store subscription | partial | Useful: avoid badge/icon success before parse succeeds. |
-| Intake | Manual direct playlist URL entry inside Sniffer | `SnifferController.addDirectPlaylist` | present/partial | Unshackle can add manual URL ingest if not already in UI. |
+| Intake | Manual direct playlist URL entry inside Sniffer | `SnifferController.addDirectPlaylist` | present | Unshackle now accepts manual HLS URL strings from context selection/link flows and creates side-panel candidates. |
 | Intake | Direct module files still exist but router no longer exposes Direct tab | `src/popup/src/modules/Direct/*`, router types | not-scope | Treat as legacy/dead code in reference, not a feature to port. |
 | Intake | Copy all playlist URLs | Sniffer controller/view | partial | Add side-panel bulk copy if absent. |
 | Intake | Copy individual playlist URL | Sniffer playlist row | present/partial | Good small UX affordance. |
@@ -459,7 +459,7 @@ Status meanings in this section:
 | P1 | Add subtitle/CC metadata and MKV mux verification | HLS parser, native export, UI track picker | Include language/name/default/autoselect/forced/instream-id fields. |
 | P1 | Add storage quota diagnostics | `src/core/storage/*`, side panel settings/history | Show used, available, quota, subtitles bytes, near-quota warnings. |
 | P2 | Add persistent per-candidate audio/subtitle preferences | panel state/settings | Useful when users revisit candidates. |
-| P2 | Add manual HLS URL ingest to side panel | runtime router, side panel | puemos' Direct-in-Sniffer flow is simple and useful. |
+| P2 | Add manual HLS URL ingest to side panel | runtime router, side panel | Done for URL-string ingest through context selection/link flows; richer parser modes can build on the same candidate path. |
 | P2 | Add HLS preview fallback using hls.js | preview service/UI | Useful when native helper is absent or direct preview is enough. |
 | P2 | Add storage cleanup confirmation and job cancellation policy | job/storage modules | Explicitly cancel active jobs before destructive cleanup. |
 | P3 | Add release tester guide and coverage badge | docs/release | Borrow the shape from `FOR-DEAR-TESTERS.md` and coverage scripts. |
@@ -528,7 +528,7 @@ The UI is split across specialized HTML pages: `popup.html` for detected resourc
 | Direct downloader | `downloader.html`/`js/downloader.js` handles direct URL jobs, custom filename/referer/headers, progress, stop/retry, open folder, and task handoff from popup/localStorage. | partial | live-stream-downloader remains stronger for range-splitting; cat-catch has broader manual inputs. | Add a typed direct-job window/panel with manual URL ingest and per-job retry controls. |
 | StreamSaver | Direct and HLS downloaders can stream to disk via StreamSaver and remote MITM pages for large files (`js/downloader.js`, `js/m3u8.js`, `lib/StreamSaver.js`). | partial | live-stream-downloader uses File System Access more directly; puemos uses IndexedDB/Blob paths. | Prefer native helper or File System Access; do not depend on remote StreamSaver pages by default. |
 | Direct retry fallback | Direct downloader retries HTTP failures with `Range: bytes=0-` and then extra sec-fetch headers (`js/downloader.js`). | review | live-stream-downloader has cleaner broken-pipe/range recovery. | Add range fallback tests; avoid spoofing browser fetch headers unless justified and disclosed. |
-| HLS manual ingest | `m3u8.html` accepts URL, raw manifest text, file input, raw TS URL lists, base URL overrides, `${range:start-end,pad}` expansion, and custom request headers (`js/m3u8.js`). | partial | Added core `${range:start-end,pad}` expansion helper; full manual ingest UI remains future work. | Add manual HLS ingest with file/text/URL modes, base URL, and safe referer profile. |
+| HLS manual ingest | `m3u8.html` accepts URL, raw manifest text, file input, raw TS URL lists, base URL overrides, `${range:start-end,pad}` expansion, and custom request headers (`js/m3u8.js`). | partial | Added core `${range:start-end,pad}` expansion helper and URL-string HLS candidate ingest; file/text/raw-list UI remains future work. | Add richer manual HLS ingest modes, base URL, and safe referer profile. |
 | HLS variant selection | Uses hls.js to parse levels, default to max bandwidth, list audio/subtitle tracks, and open selected variants (`js/m3u8.js`). | present | puemos has cleaner typed tests for audio/subtitle compatibility. | Keep Unshackle parser; add cat-catch UI affordances for variant inspection. |
 | HLS fragment inventory | Tracks URL, sequence, duration, discontinuity, byteRange, initSegment, encrypted state, selected state, and estimated size (`js/m3u8.js`). | present | live-stream-downloader and puemos both overlap; cat-catch exposes more of it to users. | Surface segment inventory only in advanced mode; keep tests for byte ranges and init maps. |
 | Segment selection | Users can select/deselect arbitrary fragments, regex-filter segments, invert selection, pick index/time ranges, and choose discontinuity groups (`js/m3u8.js`, changelog 2.6.8). | present/partial | Core repair selector now supports failed indexes, index/time ranges, regex filters, and combined filters; UI controls remain future work. | Wire advanced segment selection into repair/partial capture workflows. |

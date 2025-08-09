@@ -64,7 +64,7 @@ Extracted from `feature-parity-report.md` across all 8 reference analyses. Every
 
 | # | Item | Status | Stronger in | Action |
 |---|---|---|---|---|
-| 38 | Context menu: extract selected links | partial/gap | live-stream, Unified, cat-catch | Port as typed manual-ingest command. |
+| 38 | Context menu: extract selected links | done | live-stream, Unified, cat-catch | Added selected-link context menu extraction via content script and typed candidate ingest. |
 | 39 | Performance resource extraction | partial/gap | live-stream | Add safe `performance.getEntriesByType('resource')` extractor. |
 | 40 | Player object extraction (JWPlayer, VideoJS, SoundManager) | partial/gap | live-stream | Add as optional `player-config` evidence source. |
 | 41 | Blob-generated M3U8 detection | partial/gap | live-stream | Port only as opt-in diagnostic scanner. |
@@ -73,7 +73,7 @@ Extracted from `feature-parity-report.md` across all 8 reference analyses. Every
 | 44 | Custom extension rules | partial | stream-detector, cat-catch | Add typed custom extension rules with validation. |
 | 45 | Custom content-type rules | partial | stream-detector | Add custom content-type capture rules. |
 | 46 | Blacklist and minimum-size guards | partial | stream-detector | Critical for auto-download and noisy pages. |
-| 47 | Manual HLS URL ingest to side panel | partial | puemos (Direct-in-Sniffer), cat-catch (richest manual parser) | URL, text, file, raw TS list, base URL override, safe request profile. |
+| 47 | Manual HLS URL ingest to side panel | done | puemos (Direct-in-Sniffer), cat-catch (richest manual parser) | Added URL-string HLS ingest command that creates side-panel candidates; richer file/raw-list modes remain future UI polish. |
 
 ### Site / Host Plugins
 
