@@ -48,7 +48,7 @@ Recommended direction: keep Unshackle as the typed all-in-one extension, use Uni
 | Main UI | Side panel, popup, history surface | Side panel style app | Popup job window | Keep side panel as primary; borrow job-window detail where useful. |
 | Candidate model | Typed `MediaCandidate`, registry, evidence merge | Broad video manager normalization | URL-entry list in page storage/job window | Unshackle's typed candidate layer is the right canonical model. |
 | Passive network capture | Present via request journal/header context | Present and broad | Present for media/XHR extensions/content types | Add live-stream's media/subtitle MIME watch toggle as an optional diagnostic mode. |
-| DOM/player scanning | Present in `src/content/dom/*` and plugins | Broad embed scanner, site detectors | Performance resource scan, jwplayer/videojs/soundmanager scan | Live-stream's player/performance extraction is portable and low-risk if typed. |
+| DOM/player scanning | Present in `src/content/dom/*` and plugins; advanced diagnostics now include performance-resource and JWPlayer/VideoJS/SoundManager extractors | Broad embed scanner, site detectors | Performance resource scan, jwplayer/videojs/soundmanager scan | Keep advanced extractors opt-in so default content scanning remains conservative. |
 | Site detectors | YouTube, Vimeo, Facebook, Instagram, VK, OK.ru, Canva, Twitch, iQIYI, base | Same/broader baseline | None beyond generic player extraction | Unified is the breadth reference; live-stream is not a site-detector reference. |
 | Streaming host plugins | 25-host registry plus safety tests | 25-host baseline | None | Unified remains the host/plugin parity baseline. |
 | HLS parsing | Present | Present | Present via `m3u8-parser` | Compare live-stream's timeline, media group, init-map, and quality handling against Unshackle parser tests. |
@@ -86,8 +86,8 @@ Status values:
 | Clear detected list on navigation/action | present | present | present | Keep; expose clear action consistently in side panel/context menu. |
 | Context menu: download link/media | present | present | present | Keep. |
 | Context menu: extract selected links | present | present in broad UI flows | present | Added typed selected-link extraction through the context menu and content-script helper. |
-| Performance resource extraction | partial/gap | broad scan paths | present | Add safe extractor that reads `performance.getEntriesByType('resource')` for media-like URLs. |
-| Player object extraction | partial/gap | broad scanner/plugins | present for JWPlayer, VideoJS, SoundManager | Add as optional `player-config` evidence source behind content-script capability. |
+| Performance resource extraction | present | broad scan paths | present | Added safe advanced-mode resource timing extractor for media-like URLs. |
+| Player object extraction | present | broad scanner/plugins | present for JWPlayer, VideoJS, SoundManager | Added advanced-mode JWPlayer, VideoJS, and SoundManager source extractor. |
 | Blob-generated M3U8 detection | partial/gap | broad MAIN-world scanner | present via `Blob` proxy when `mime-watch` enabled | Port only as opt-in diagnostic/advanced scanner; avoid always-on page-world monkeypatching. |
 | HLS master/media parsing | present | present | present | Extend tests with live-stream cases for media groups and timeline selection. |
 | HLS alternate audio/subtitle groups | present | present | present in playlist flattening | Parser now preserves group ids, language, channels, characteristics, default/autoselect flags, URLs, and closed-caption metadata. |
@@ -222,7 +222,7 @@ These are the highest-value enrichment items from the two references, ordered by
 | P1 | Timeline/discontinuity handling | live-stream `index.js` | `src/core/hls/plan-hls-segments.ts`, `src/ui/media/*` | Planner grouping is implemented; UI-level timeline selection remains useful for ad-separated streams and live recordings. |
 | P1 | Init segment cache/dedupe | live-stream `index.js` + cache plugin | `src/core/download/segment-scheduler.ts`, `src/core/storage/*` | Avoid duplicate init fetches and writes. |
 | P2 | Selected-link extraction context menu | live-stream `context.js` | `src/background/context-menu/context-menu.ts`, runtime router | Good power-user feature with low implementation risk. |
-| P2 | Performance/player evidence scanners | live-stream `extract.js` | `src/content/dom/*`, `src/core/candidates/*` | Adds coverage for JWPlayer/VideoJS/SoundManager pages. |
+| P2 | Performance/player evidence scanners | live-stream `extract.js` | `src/content/dom/*`, `src/core/candidates/*` | Done as advanced-mode-gated extractors; candidate ingestion wiring can stay opt-in. |
 | P2 | Opt-in blob manifest scanner | live-stream blob detector | dedicated content script/advanced setting | Must be opt-in because it patches page-world `Blob`. |
 | P2 | Progressive preview diagnostics | live-stream MP4Box/MSE plugins | `src/core/preview/*`, `src/ui/preview/*` | Native preview may be enough; use for advanced streaming diagnostics. |
 | P2 | Direct-to-disk/browser raw save mode | live-stream File System Access path | `src/core/export/*`, UI settings | Useful fallback when native helper is absent. |
