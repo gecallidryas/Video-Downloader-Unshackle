@@ -88,7 +88,7 @@ Status values:
 | Context menu: extract selected links | present | present in broad UI flows | present | Added typed selected-link extraction through the context menu and content-script helper. |
 | Performance resource extraction | present | broad scan paths | present | Added safe advanced-mode resource timing extractor for media-like URLs. |
 | Player object extraction | present | broad scanner/plugins | present for JWPlayer, VideoJS, SoundManager | Added advanced-mode JWPlayer, VideoJS, and SoundManager source extractor. |
-| Blob-generated M3U8 detection | partial/gap | broad MAIN-world scanner | present via `Blob` proxy when `mime-watch` enabled | Port only as opt-in diagnostic/advanced scanner; avoid always-on page-world monkeypatching. |
+| Blob-generated M3U8 detection | present | broad MAIN-world scanner | present via `Blob` proxy when `mime-watch` enabled | Added advanced-mode diagnostic scanner for blob media elements with HLS/DASH MIME hints, without always-on page-world monkeypatching. |
 | HLS master/media parsing | present | present | present | Extend tests with live-stream cases for media groups and timeline selection. |
 | HLS alternate audio/subtitle groups | present | present | present in playlist flattening | Parser now preserves group ids, language, channels, characteristics, default/autoselect flags, URLs, and closed-caption metadata. |
 | HLS discontinuity/timeline handling | present | present | present with user timeline choice | Planner now groups discontinuity timelines and supports include-all/skip-ads policy behavior; UI-level user choice remains future repair UX. |
@@ -223,7 +223,7 @@ These are the highest-value enrichment items from the two references, ordered by
 | P1 | Init segment cache/dedupe | live-stream `index.js` + cache plugin | `src/core/download/segment-scheduler.ts`, `src/core/storage/*` | Avoid duplicate init fetches and writes. |
 | P2 | Selected-link extraction context menu | live-stream `context.js` | `src/background/context-menu/context-menu.ts`, runtime router | Good power-user feature with low implementation risk. |
 | P2 | Performance/player evidence scanners | live-stream `extract.js` | `src/content/dom/*`, `src/core/candidates/*` | Done as advanced-mode-gated extractors; candidate ingestion wiring can stay opt-in. |
-| P2 | Opt-in blob manifest scanner | live-stream blob detector | dedicated content script/advanced setting | Must be opt-in because it patches page-world `Blob`. |
+| P2 | Opt-in blob manifest scanner | live-stream blob detector | dedicated content script/advanced setting | Done as an advanced-mode DOM diagnostic for blob HLS/DASH MIME hints; deeper Blob proxying remains out of default scope. |
 | P2 | Progressive preview diagnostics | live-stream MP4Box/MSE plugins | `src/core/preview/*`, `src/ui/preview/*` | Native preview may be enough; use for advanced streaming diagnostics. |
 | P2 | Direct-to-disk/browser raw save mode | live-stream File System Access path | `src/core/export/*`, UI settings | Useful fallback when native helper is absent. |
 | P3 | Owner exclusion process | live-stream README/blocklist | `docs/provider-policy.md`, release docs | Helps product credibility and abuse response. |

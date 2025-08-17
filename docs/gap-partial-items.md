@@ -67,7 +67,7 @@ Extracted from `feature-parity-report.md` across all 8 reference analyses. Every
 | 38 | Context menu: extract selected links | done | live-stream, Unified, cat-catch | Added selected-link context menu extraction via content script and typed candidate ingest. |
 | 39 | Performance resource extraction | done | live-stream | Added advanced-mode-gated `performance.getEntriesByType('resource')` media URL extractor. |
 | 40 | Player object extraction (JWPlayer, VideoJS, SoundManager) | done | live-stream | Added advanced-mode-gated JWPlayer, VideoJS, and SoundManager source extractor. |
-| 41 | Blob-generated M3U8 detection | partial/gap | live-stream | Port only as opt-in diagnostic scanner. |
+| 41 | Blob-generated M3U8 detection | done | live-stream | Added advanced-mode diagnostic scanner for blob media elements with HLS/DASH MIME hints. |
 | 42 | Advanced capture-rule editor (extension/MIME/regex/size predicates) | partial | cat-catch | User-editable with validation, import/export, reset. |
 | 43 | Size expression filters (comparison, ranges, B/KB/MB/GB) | gap | cat-catch | Add typed min/max/equals size predicates. |
 | 44 | Custom extension rules | partial | stream-detector, cat-catch | Add typed custom extension rules with validation. |
