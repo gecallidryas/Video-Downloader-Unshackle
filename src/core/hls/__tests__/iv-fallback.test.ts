@@ -2,9 +2,9 @@ import { describe, expect, test } from 'vitest';
 import { decryptAes128Segment } from '../decrypt-aes128-segment';
 
 async function encryptAesCbc(
-  plaintext: Uint8Array,
-  key: Uint8Array,
-  iv: Uint8Array,
+  plaintext: Uint8Array<ArrayBuffer>,
+  key: Uint8Array<ArrayBuffer>,
+  iv: Uint8Array<ArrayBuffer>,
 ): Promise<Uint8Array> {
   const cryptoKey = await crypto.subtle.importKey(
     'raw',

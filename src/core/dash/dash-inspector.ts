@@ -74,7 +74,11 @@ function getSegmentTemplate(
 function parseSegmentTimeline(
   template: Element | undefined,
 ): DashTimelineEntry[] | undefined {
-  const timeline = template ? firstChildByTag(template, 'SegmentTimeline') : undefined;
+  if (!template) {
+    return undefined;
+  }
+
+  const timeline = firstChildByTag(template, 'SegmentTimeline');
 
   if (!timeline) {
     return undefined;
