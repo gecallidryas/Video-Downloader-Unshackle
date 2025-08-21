@@ -35,6 +35,11 @@ describe('background settings store', () => {
       remoteConfigSecurityMode: 'strict',
       suppressProtectedDownloads: true,
       captureCredentialHeaders: false,
+      captureRuleCustomExtensions: [],
+      captureRuleCustomContentTypes: [],
+      captureRuleUrlBlacklist: [],
+      captureRuleMinSizeBytes: 0,
+      captureRuleSizePredicate: '',
       advancedMode: false,
       _schemaVersion: 6,
     });

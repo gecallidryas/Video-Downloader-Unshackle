@@ -71,6 +71,11 @@ export interface UnifiedSettings {
   previewFormat: PreviewFormat;
   suppressProtectedDownloads: boolean;
   captureCredentialHeaders: boolean;
+  captureRuleCustomExtensions: string[];
+  captureRuleCustomContentTypes: string[];
+  captureRuleUrlBlacklist: string[];
+  captureRuleMinSizeBytes: number;
+  captureRuleSizePredicate: string;
   advancedMode: boolean;
   _schemaVersion: number;
 }
@@ -106,6 +111,11 @@ export const DEFAULT_SETTINGS: UnifiedSettings = {
   previewFormat: 'webm',
   suppressProtectedDownloads: true,
   captureCredentialHeaders: false,
+  captureRuleCustomExtensions: [],
+  captureRuleCustomContentTypes: [],
+  captureRuleUrlBlacklist: [],
+  captureRuleMinSizeBytes: 0,
+  captureRuleSizePredicate: '',
   advancedMode: false,
   _schemaVersion: 6,
 };
@@ -138,6 +148,9 @@ function cloneSettings(settings: UnifiedSettings): UnifiedSettings {
     ),
     namingSiteRules: { ...settings.namingSiteRules },
     defaultActionPerHost: { ...settings.defaultActionPerHost },
+    captureRuleCustomExtensions: [...settings.captureRuleCustomExtensions],
+    captureRuleCustomContentTypes: [...settings.captureRuleCustomContentTypes],
+    captureRuleUrlBlacklist: [...settings.captureRuleUrlBlacklist],
   };
 }
 
@@ -194,6 +207,24 @@ function normalizeSettings(value: unknown): UnifiedSettings {
     providerDefaults: normalizeProviderDefaults(incoming.providerDefaults),
     namingSiteRules: { ...(incoming.namingSiteRules ?? {}) },
     defaultActionPerHost: { ...(incoming.defaultActionPerHost ?? {}) },
+    captureRuleCustomExtensions: Array.isArray(incoming.captureRuleCustomExtensions)
+      ? incoming.captureRuleCustomExtensions.filter((value): value is string => typeof value === 'string')
+      : DEFAULT_SETTINGS.captureRuleCustomExtensions,
+    captureRuleCustomContentTypes: Array.isArray(incoming.captureRuleCustomContentTypes)
+      ? incoming.captureRuleCustomContentTypes.filter((value): value is string => typeof value === 'string')
+      : DEFAULT_SETTINGS.captureRuleCustomContentTypes,
+    captureRuleUrlBlacklist: Array.isArray(incoming.captureRuleUrlBlacklist)
+      ? incoming.captureRuleUrlBlacklist.filter((value): value is string => typeof value === 'string')
+      : DEFAULT_SETTINGS.captureRuleUrlBlacklist,
+    captureRuleMinSizeBytes:
+      Number.isInteger(incoming.captureRuleMinSizeBytes) &&
+      Number(incoming.captureRuleMinSizeBytes) >= 0
+        ? Number(incoming.captureRuleMinSizeBytes)
+        : DEFAULT_SETTINGS.captureRuleMinSizeBytes,
+    captureRuleSizePredicate:
+      typeof incoming.captureRuleSizePredicate === 'string'
+        ? incoming.captureRuleSizePredicate
+        : DEFAULT_SETTINGS.captureRuleSizePredicate,
     remoteConfigSecurityMode: ['strict', 'warn', 'disabled'].includes(
       String(incoming.remoteConfigSecurityMode),
     )
