@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { PopupApp } from '../PopupApp';
 import { useSettingsStore } from '@/src/state/useSettingsStore';
@@ -19,6 +19,11 @@ beforeEach(() => {
     namingTemplate: '{title}_{quality}_{date}_{time}',
     previewMode: 'image',
     previewFormat: 'webm',
+    captureRuleCustomExtensions: [],
+    captureRuleCustomContentTypes: [],
+    captureRuleUrlBlacklist: [],
+    captureRuleMinSizeBytes: 0,
+    captureRuleSizePredicate: '',
   });
 });
 
@@ -92,4 +97,55 @@ test('theme selection persists to the settings store and document token hook', a
 
   expect(useSettingsStore.getState().theme).toBe('ocean');
   expect(document.documentElement).toHaveAttribute('data-theme', 'ocean');
+});
+
+test('edits, exports, imports, and resets capture rules', async () => {
+  const user = userEvent.setup();
+  render(<PopupApp />);
+
+  await user.type(screen.getByRole('textbox', { name: /custom extensions/i }), '.vob\n.flv');
+  await user.type(screen.getByRole('textbox', { name: /custom content types/i }), 'application/octet-stream');
+  await user.type(screen.getByRole('textbox', { name: /url blacklist/i }), '*analytics*');
+  await user.clear(screen.getByRole('spinbutton', { name: /minimum size bytes/i }));
+  await user.type(screen.getByRole('spinbutton', { name: /minimum size bytes/i }), '1024');
+  await user.type(screen.getByRole('textbox', { name: /size predicate/i }), '1KB-5MB');
+
+  expect(useSettingsStore.getState()).toMatchObject({
+    captureRuleCustomExtensions: ['.vob', '.flv'],
+    captureRuleCustomContentTypes: ['application/octet-stream'],
+    captureRuleUrlBlacklist: ['*analytics*'],
+    captureRuleMinSizeBytes: 1024,
+    captureRuleSizePredicate: '1KB-5MB',
+  });
+
+  await user.click(screen.getByRole('button', { name: /export capture rules/i }));
+  expect(screen.getByRole('textbox', { name: /capture rules json/i })).toHaveValue();
+  expect(screen.getByRole<HTMLTextAreaElement>('textbox', { name: /capture rules json/i }).value).toContain('"customExtensions"');
+
+  fireEvent.change(screen.getByRole('textbox', { name: /capture rules json/i }), {
+    target: { value: JSON.stringify({ customExtensions: ['.avi'], minSizeBytes: 4096 }) },
+  });
+  await user.click(screen.getByRole('button', { name: /import capture rules/i }));
+  expect(useSettingsStore.getState()).toMatchObject({
+    captureRuleCustomExtensions: ['.avi'],
+    captureRuleMinSizeBytes: 4096,
+  });
+
+  await user.click(screen.getByRole('button', { name: /reset capture rules/i }));
+  expect(useSettingsStore.getState()).toMatchObject({
+    captureRuleCustomExtensions: [],
+    captureRuleCustomContentTypes: [],
+    captureRuleUrlBlacklist: [],
+    captureRuleMinSizeBytes: 0,
+    captureRuleSizePredicate: '',
+  });
+});
+
+test('shows validation errors for invalid capture rules', async () => {
+  const user = userEvent.setup();
+  render(<PopupApp />);
+
+  await user.type(screen.getByRole('textbox', { name: /custom extensions/i }), 'webm');
+
+  expect(screen.getByText(/invalid extension/i)).toBeInTheDocument();
 });

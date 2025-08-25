@@ -27,6 +27,13 @@ export class RuntimeClientError extends Error {
 
 export interface RuntimeClient {
   getCandidates(tabId: number): Promise<MediaCandidate[]>;
+  ingestManualHls(input: {
+    tabId: number;
+    pageUrl: string;
+    pageTitle?: string;
+    input: string;
+    baseUrl?: string;
+  }): Promise<MediaCandidate[]>;
   getQueueStats(): Promise<QueueStats>;
   requestHostAccess(origin: string): Promise<{ granted: boolean; origin: string }>;
   getDebugEvidence(candidateId: string): Promise<DetectionEvidence[]>;
@@ -59,6 +66,29 @@ export function createRuntimeClient(
       }
 
       if (response.type !== 'GET_CANDIDATES_RESULT') {
+        throw new RuntimeClientError(
+          `Unexpected runtime response: ${response.type}`,
+          'UNEXPECTED_RESPONSE',
+        );
+      }
+
+      return response.payload.candidates;
+    },
+
+    async ingestManualHls(input) {
+      const response = await transport(
+        createRuntimeRequest('INGEST_MANUAL_HLS', input),
+      );
+
+      if (isRuntimeErrorResponse(response)) {
+        throw new RuntimeClientError(
+          response.payload.message,
+          response.payload.code,
+          response.payload.detail,
+        );
+      }
+
+      if (response.type !== 'INGEST_MANUAL_HLS_RESULT') {
         throw new RuntimeClientError(
           `Unexpected runtime response: ${response.type}`,
           'UNEXPECTED_RESPONSE',

@@ -1,11 +1,23 @@
 import { useState } from 'react';
 import { createNativeFfmpegClient, NativeFfmpegClientError } from '@/src/native/native-ffmpeg-client';
+import { createCaptureRuleEngine } from '@/src/core/capture-rules/capture-rule-engine';
 import { useSettingsStore } from '@/src/state/useSettingsStore';
 import {
   NativeHelperStatus,
   type NativeHelperUiStatus,
 } from '@/src/ui/feedback/NativeHelperStatus';
 import './PopupApp.css';
+
+function linesToList(value: string): string[] {
+  return value
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+}
+
+function listToLines(value: string[]): string {
+  return value.join('\n');
+}
 
 function SettingsContent() {
   const [nativeHelperStatus, setNativeHelperStatus] =
@@ -38,6 +50,27 @@ function SettingsContent() {
   const setPreviewFormat = useSettingsStore((s) => s.setPreviewFormat);
   const enableContextMenu = useSettingsStore((s) => s.enableContextMenu);
   const toggleContextMenu = useSettingsStore((s) => s.toggleContextMenu);
+  const captureRuleCustomExtensions = useSettingsStore((s) => s.captureRuleCustomExtensions);
+  const captureRuleCustomContentTypes = useSettingsStore((s) => s.captureRuleCustomContentTypes);
+  const captureRuleUrlBlacklist = useSettingsStore((s) => s.captureRuleUrlBlacklist);
+  const captureRuleMinSizeBytes = useSettingsStore((s) => s.captureRuleMinSizeBytes);
+  const captureRuleSizePredicate = useSettingsStore((s) => s.captureRuleSizePredicate);
+  const setCaptureRules = useSettingsStore((s) => s.setCaptureRules);
+  const resetCaptureRules = useSettingsStore((s) => s.resetCaptureRules);
+  const [captureRulesJson, setCaptureRulesJson] = useState('');
+  const [captureRulesError, setCaptureRulesError] = useState<string | null>(null);
+  const [customExtensionsDraft, setCustomExtensionsDraft] = useState(
+    listToLines(captureRuleCustomExtensions),
+  );
+  const [customContentTypesDraft, setCustomContentTypesDraft] = useState(
+    listToLines(captureRuleCustomContentTypes),
+  );
+  const [urlBlacklistDraft, setUrlBlacklistDraft] = useState(
+    listToLines(captureRuleUrlBlacklist),
+  );
+  const [sizePredicateDraft, setSizePredicateDraft] = useState(
+    captureRuleSizePredicate,
+  );
 
   async function checkNativeHelper() {
     try {
@@ -49,6 +82,90 @@ function SettingsContent() {
           ? 'ffmpeg-missing'
           : 'missing',
       );
+    }
+  }
+
+  function updateCaptureRules(next: {
+    customExtensions?: string[];
+    customContentTypes?: string[];
+    urlBlacklist?: string[];
+    minSizeBytes?: number;
+    sizePredicate?: string;
+  }) {
+    const merged = {
+      customExtensions: next.customExtensions ?? captureRuleCustomExtensions,
+      customContentTypes: next.customContentTypes ?? captureRuleCustomContentTypes,
+      blacklist: next.urlBlacklist ?? captureRuleUrlBlacklist,
+      minSizeBytes: next.minSizeBytes ?? captureRuleMinSizeBytes,
+      sizePredicate: next.sizePredicate ?? captureRuleSizePredicate,
+    };
+
+    try {
+      createCaptureRuleEngine(merged);
+      setCaptureRules(next);
+      setCaptureRulesError(null);
+    } catch (error) {
+      setCaptureRulesError(error instanceof Error ? error.message : 'Invalid capture rule');
+    }
+  }
+
+  function exportCaptureRules() {
+    setCaptureRulesJson(
+      JSON.stringify(
+        {
+          customExtensions: captureRuleCustomExtensions,
+          customContentTypes: captureRuleCustomContentTypes,
+          urlBlacklist: captureRuleUrlBlacklist,
+          minSizeBytes: captureRuleMinSizeBytes,
+          sizePredicate: captureRuleSizePredicate,
+        },
+        null,
+        2,
+      ),
+    );
+    setCaptureRulesError(null);
+  }
+
+  function importCaptureRules() {
+    try {
+      const parsed = JSON.parse(captureRulesJson) as {
+        customExtensions?: unknown;
+        customContentTypes?: unknown;
+        urlBlacklist?: unknown;
+        minSizeBytes?: unknown;
+        sizePredicate?: unknown;
+      };
+      const rules = {
+        customExtensions: Array.isArray(parsed.customExtensions)
+          ? parsed.customExtensions.filter((value): value is string => typeof value === 'string')
+          : [],
+        customContentTypes: Array.isArray(parsed.customContentTypes)
+          ? parsed.customContentTypes.filter((value): value is string => typeof value === 'string')
+          : [],
+        urlBlacklist: Array.isArray(parsed.urlBlacklist)
+          ? parsed.urlBlacklist.filter((value): value is string => typeof value === 'string')
+          : [],
+        minSizeBytes:
+          typeof parsed.minSizeBytes === 'number' ? parsed.minSizeBytes : 0,
+        sizePredicate:
+          typeof parsed.sizePredicate === 'string' ? parsed.sizePredicate : '',
+      };
+
+      createCaptureRuleEngine({
+        customExtensions: rules.customExtensions,
+        customContentTypes: rules.customContentTypes,
+        blacklist: rules.urlBlacklist,
+        minSizeBytes: rules.minSizeBytes,
+        sizePredicate: rules.sizePredicate,
+      });
+      setCaptureRules(rules);
+      setCustomExtensionsDraft(listToLines(rules.customExtensions));
+      setCustomContentTypesDraft(listToLines(rules.customContentTypes));
+      setUrlBlacklistDraft(listToLines(rules.urlBlacklist));
+      setSizePredicateDraft(rules.sizePredicate);
+      setCaptureRulesError(null);
+    } catch (error) {
+      setCaptureRulesError(error instanceof Error ? error.message : 'Invalid capture rules JSON');
     }
   }
 
@@ -260,6 +377,109 @@ function SettingsContent() {
           className="popup__toggle"
         />
       </label>
+
+      <section className="capture-rules">
+        <span className="popup__label">Capture rules</span>
+        <label className="popup__row popup__row--stack">
+          <span className="popup__label">Custom extensions</span>
+          <textarea
+            aria-label="Custom extensions"
+            value={customExtensionsDraft}
+            onChange={(event) => {
+              setCustomExtensionsDraft(event.target.value);
+              updateCaptureRules({ customExtensions: linesToList(event.target.value) });
+            }}
+            className="popup__textarea"
+            rows={2}
+          />
+        </label>
+        <label className="popup__row popup__row--stack">
+          <span className="popup__label">Custom content types</span>
+          <textarea
+            aria-label="Custom content types"
+            value={customContentTypesDraft}
+            onChange={(event) => {
+              setCustomContentTypesDraft(event.target.value);
+              updateCaptureRules({ customContentTypes: linesToList(event.target.value) });
+            }}
+            className="popup__textarea"
+            rows={2}
+          />
+        </label>
+        <label className="popup__row popup__row--stack">
+          <span className="popup__label">URL blacklist</span>
+          <textarea
+            aria-label="URL blacklist"
+            value={urlBlacklistDraft}
+            onChange={(event) => {
+              setUrlBlacklistDraft(event.target.value);
+              updateCaptureRules({ urlBlacklist: linesToList(event.target.value) });
+            }}
+            className="popup__textarea"
+            rows={2}
+          />
+        </label>
+        <label className="popup__row popup__row--stack">
+          <span className="popup__label">Minimum size bytes</span>
+          <input
+            aria-label="Minimum size bytes"
+            type="number"
+            min={0}
+            value={captureRuleMinSizeBytes}
+            onChange={(event) =>
+              updateCaptureRules({ minSizeBytes: Number(event.target.value) })
+            }
+            className="popup__input"
+          />
+        </label>
+        <label className="popup__row popup__row--stack">
+          <span className="popup__label">Size predicate</span>
+          <input
+            aria-label="Size predicate"
+            value={sizePredicateDraft}
+            onChange={(event) => {
+              setSizePredicateDraft(event.target.value);
+              updateCaptureRules({ sizePredicate: event.target.value });
+            }}
+            className="popup__input"
+          />
+        </label>
+        <label className="popup__row popup__row--stack">
+          <span className="popup__label">Capture rules JSON</span>
+          <textarea
+            aria-label="Capture rules JSON"
+            value={captureRulesJson}
+            onChange={(event) => setCaptureRulesJson(event.target.value)}
+            className="popup__textarea"
+            rows={3}
+          />
+        </label>
+        {captureRulesError ? (
+          <p className="capture-rules__error">{captureRulesError}</p>
+        ) : null}
+        <div className="capture-rules__actions">
+          <button type="button" onClick={exportCaptureRules} className="capture-rules__button">
+            Export capture rules
+          </button>
+          <button type="button" onClick={importCaptureRules} className="capture-rules__button">
+            Import capture rules
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              resetCaptureRules();
+              setCustomExtensionsDraft('');
+              setCustomContentTypesDraft('');
+              setUrlBlacklistDraft('');
+              setSizePredicateDraft('');
+              setCaptureRulesError(null);
+            }}
+            className="capture-rules__button"
+          >
+            Reset capture rules
+          </button>
+        </div>
+      </section>
     </>
   );
 }

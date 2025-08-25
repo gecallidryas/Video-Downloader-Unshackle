@@ -27,6 +27,7 @@ import {
   type DirectDownloadFile,
 } from '@/src/core/direct/start-direct-download';
 import { parseHlsManifest } from '@/src/core/hls/parse-hls-manifest';
+import { createManualHlsIngestEvidence } from '@/src/core/hls/manual-hls-ingest';
 import type { CandidateEvidence } from '@/src/core/candidates/classify-candidate';
 
 export interface DrmDetectionRecord {
@@ -80,6 +81,7 @@ type RoutedRuntimeRequest = Extract<
   {
     type:
       | 'INGEST_CONTENT_EVIDENCE'
+      | 'INGEST_MANUAL_HLS'
       | 'INGEST_IQIYI_CONFIG'
       | 'DRM_DETECTED'
       | 'GET_CANDIDATES'
@@ -94,6 +96,7 @@ type RoutedRuntimeRequest = Extract<
 
 const handledRequestTypes = new Set<RoutedRuntimeRequest['type']>([
   'INGEST_CONTENT_EVIDENCE',
+  'INGEST_MANUAL_HLS',
   'INGEST_IQIYI_CONFIG',
   'DRM_DETECTED',
   'GET_CANDIDATES',
@@ -441,6 +444,37 @@ export function createRuntimeRouter(
           return createRuntimeResponse(
             'INGEST_CONTENT_EVIDENCE_RESULT',
             { candidates },
+            request.requestId,
+          );
+        }
+
+        case 'INGEST_MANUAL_HLS': {
+          const { tabId, pageUrl, pageTitle, input, baseUrl } = request.payload;
+          const evidence = createManualHlsIngestEvidence({
+            input,
+            baseUrl,
+            pageUrl,
+            pageTitle,
+          }) as CandidateEvidence[];
+          const existing = dependencies.candidateRegistry.get(tabId);
+          const ingested = dependencies.candidateRegistry.setFromEvidence({
+            tabId,
+            pageUrl,
+            pageTitle,
+            evidence,
+          });
+          const hydrated = await Promise.all(
+            ingested.map((candidate) =>
+              hydrateManifestCandidate(candidate, dependencies.fetchManifest),
+            ),
+          );
+          const merged = dedupeCandidates([...existing, ...hydrated]);
+
+          dependencies.candidateRegistry.set(tabId, merged);
+
+          return createRuntimeResponse(
+            'INGEST_MANUAL_HLS_RESULT',
+            { candidates: merged },
             request.requestId,
           );
         }

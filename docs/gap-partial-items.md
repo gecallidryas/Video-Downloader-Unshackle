@@ -68,12 +68,12 @@ Extracted from `feature-parity-report.md` across all 8 reference analyses. Every
 | 39 | Performance resource extraction | done | live-stream | Added advanced-mode-gated `performance.getEntriesByType('resource')` media URL extractor. |
 | 40 | Player object extraction (JWPlayer, VideoJS, SoundManager) | done | live-stream | Added advanced-mode-gated JWPlayer, VideoJS, and SoundManager source extractor. |
 | 41 | Blob-generated M3U8 detection | done | live-stream | Added advanced-mode diagnostic scanner for blob media elements with HLS/DASH MIME hints. |
-| 42 | Advanced capture-rule editor (extension/MIME/regex/size predicates) | done | cat-catch | Added typed capture-rule engine/settings primitives with validation; full visual editor can build on this layer. |
+| 42 | Advanced capture-rule editor (extension/MIME/regex/size predicates) | done | cat-catch | Added typed capture-rule engine plus settings editor with validation, import/export, and reset. |
 | 43 | Size expression filters (comparison, ranges, B/KB/MB/GB) | done | cat-catch | Added validated binary-unit size predicate parser for comparisons and ranges. |
 | 44 | Custom extension rules | done | stream-detector, cat-catch | Added validated custom extension capture rules. |
 | 45 | Custom content-type rules | done | stream-detector | Added validated custom content-type capture rules. |
 | 46 | Blacklist and minimum-size guards | done | stream-detector | Added glob URL blacklist and minimum-size guards in capture-rule engine/settings. |
-| 47 | Manual HLS URL ingest to side panel | done | puemos (Direct-in-Sniffer), cat-catch (richest manual parser) | Added URL-string HLS ingest command that creates side-panel candidates; richer file/raw-list modes remain future UI polish. |
+| 47 | Manual HLS URL ingest to side panel | done | puemos (Direct-in-Sniffer), cat-catch (richest manual parser) | Added side-panel ingest for URLs, raw manifest text, file-loaded text, raw TS lists, and base URL resolution. |
 
 ### Site / Host Plugins
 

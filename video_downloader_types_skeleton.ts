@@ -380,6 +380,7 @@ export interface MessageEnvelope<TType extends string, TPayload> {
 export type RuntimeRequest =
   | MessageEnvelope<'SCAN_ACTIVE_TAB', { tabId: number }>
   | MessageEnvelope<'INGEST_CONTENT_EVIDENCE', { pageUrl: string; pageTitle?: string; evidence: DetectionEvidence[]; pageContext?: PageContext }>
+  | MessageEnvelope<'INGEST_MANUAL_HLS', { tabId: number; pageUrl: string; pageTitle?: string; input: string; baseUrl?: string }>
   | MessageEnvelope<'INGEST_IQIYI_CONFIG', { pageUrl: string; title: string; m3u8Urls: string[] }>
   | MessageEnvelope<'DRM_DETECTED', { drmName: string; trigger: string; url: string }>
   | MessageEnvelope<'GET_CANDIDATES', { tabId: number }>
@@ -399,6 +400,7 @@ export type RuntimeRequest =
 export type RuntimeResponse =
   | MessageEnvelope<'SCAN_ACTIVE_TAB_RESULT', { candidates: MediaCandidate[] }>
   | MessageEnvelope<'INGEST_CONTENT_EVIDENCE_RESULT', { candidates: MediaCandidate[] }>
+  | MessageEnvelope<'INGEST_MANUAL_HLS_RESULT', { candidates: MediaCandidate[] }>
   | MessageEnvelope<'INGEST_IQIYI_CONFIG_RESULT', { candidates: MediaCandidate[] }>
   | MessageEnvelope<'DRM_DETECTED_RESULT', { ok: boolean }>
   | MessageEnvelope<'GET_CANDIDATES_RESULT', { candidates: MediaCandidate[] }>

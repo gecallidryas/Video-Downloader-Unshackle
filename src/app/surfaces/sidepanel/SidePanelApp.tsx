@@ -39,6 +39,7 @@ function DetectionView({ activeTabId, runtimeClient }: DetectionViewProps) {
   const getDownloadSelection = usePanelStore((s) => s.getDownloadSelection);
   const upsertQueueJob = usePanelStore((s) => s.upsertQueueJob);
   const downloadItem = usePanelStore((s) => s.downloadItem);
+  const setCandidates = usePanelStore((s) => s.setCandidates);
   const setErrorMessage = usePanelStore((s) => s.setErrorMessage);
   const fileCount = mediaItems.length;
   const fileLabel = `${fileCount} ${fileCount === 1 ? 'File' : 'Files'}`;
@@ -46,6 +47,8 @@ function DetectionView({ activeTabId, runtimeClient }: DetectionViewProps) {
   const [previewCandidateId, setPreviewCandidateId] = useState<string | null>(null);
   const [previewAssets, setPreviewAssets] = useState<Record<string, GeneratedAssetResult>>({});
   const [previewLoadingIds, setPreviewLoadingIds] = useState<Set<string>>(new Set());
+  const [manualHlsInput, setManualHlsInput] = useState('');
+  const [manualHlsBaseUrl, setManualHlsBaseUrl] = useState('');
 
   const candidateById = useMemo(
     () => new Map(candidates.map((candidate) => [candidate.id, candidate])),
@@ -157,6 +160,33 @@ function DetectionView({ activeTabId, runtimeClient }: DetectionViewProps) {
     }
   }
 
+  async function ingestManualHls() {
+    if (!runtimeClient || activeTabId === undefined) {
+      return;
+    }
+
+    try {
+      const ingested = await runtimeClient.ingestManualHls({
+        tabId: activeTabId,
+        pageUrl: '',
+        input: manualHlsInput,
+        ...(manualHlsBaseUrl.trim() ? { baseUrl: manualHlsBaseUrl.trim() } : {}),
+      });
+      setCandidates(ingested);
+      setManualHlsInput('');
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : 'Unable to ingest HLS input');
+    }
+  }
+
+  async function loadManualHlsFile(file: File | undefined) {
+    if (!file) {
+      return;
+    }
+
+    setManualHlsInput(await file.text());
+  }
+
   const previewCandidate = previewCandidateId ? candidateById.get(previewCandidateId) : undefined;
   const previewMedia = previewCandidateId ? mediaItems.find((item) => item.id === previewCandidateId) : undefined;
   const previewSourceUrl =
@@ -170,6 +200,49 @@ function DetectionView({ activeTabId, runtimeClient }: DetectionViewProps) {
         <span className="heading-caps">Detected Media</span>
         <span className="side-panel__badge label-xs">{fileLabel}</span>
       </div>
+      <form
+        className="manual-hls"
+        onSubmit={(event) => {
+          event.preventDefault();
+          void ingestManualHls();
+        }}
+      >
+        <label className="manual-hls__field">
+          <span className="label-xs">Manual HLS input</span>
+          <textarea
+            aria-label="Manual HLS input"
+            value={manualHlsInput}
+            onChange={(event) => setManualHlsInput(event.target.value)}
+            className="manual-hls__textarea"
+            rows={3}
+          />
+        </label>
+        <label className="manual-hls__field">
+          <span className="label-xs">Base URL</span>
+          <input
+            aria-label="Base URL"
+            value={manualHlsBaseUrl}
+            onChange={(event) => setManualHlsBaseUrl(event.target.value)}
+            className="manual-hls__input"
+          />
+        </label>
+        <div className="manual-hls__actions">
+          <input
+            aria-label="Manual HLS file"
+            type="file"
+            accept=".m3u8,.m3u,.txt,text/plain,application/vnd.apple.mpegurl"
+            onChange={(event) => void loadManualHlsFile(event.currentTarget.files?.[0])}
+            className="manual-hls__file"
+          />
+          <button
+            type="submit"
+            className="manual-hls__button"
+            disabled={!manualHlsInput.trim()}
+          >
+            Ingest HLS
+          </button>
+        </div>
+      </form>
       {showResults ? (
         <div className="side-panel__list">
           <ProtectedWarning items={mediaItems} />
