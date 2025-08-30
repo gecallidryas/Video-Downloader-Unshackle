@@ -118,7 +118,7 @@ Extracted from `feature-parity-report.md` across all 8 reference analyses. Every
 |---|---|---|---|---|
 | 75 | Settings import/export with secret redaction | ~~partial~~ done | cat-catch, stream-detector | Added versioned JSON settings I/O with schema validation and internal-field redaction. |
 | 76 | Copy/share template engine | ~~partial~~ done | cat-catch | Added safe template variables with advanced-mode gating for cookie/auth/referer/origin values. |
-| 77 | Regex classification rules | ~~partial~~ done | cat-catch | Added standalone ordered regex classifier with construction-time validation. |
+| 77 | Regex classification rules | ~~partial~~ done | cat-catch | Added ordered regex classifier with construction-time validation and capture-rule engine integration. |
 | 78 | Privacy statement | ~~partial~~ done | puemos (`PRIVACY.md`) | Added explicit local-processing, credential, storage, and permissions privacy docs. |
 | 79 | Owner exclusion process docs | ~~partial/docs~~ done | live-stream, cat-catch, stream-detector, puemos | Added public domain exclusion request and blocklist process docs. |
 

@@ -45,6 +45,25 @@ describe('createCaptureRuleEngine', () => {
     expect(rules.shouldCapture({ url: 'https://cdn.example/app.js', contentType: 'application/javascript' })).toBe(false);
   });
 
+  test('captures URLs matched by ordered regex classification rules', () => {
+    const rules = createCaptureRuleEngine({
+      regexRules: [
+        { pattern: 'manifest\\.json$', category: 'media_manifest' },
+        { pattern: 'segment-\\d+\\.bin$', category: 'media_segment' },
+      ],
+    });
+
+    expect(rules.shouldCapture({ url: 'https://cdn.example/manifest.json' })).toBe(true);
+    expect(rules.shouldCapture({ url: 'https://cdn.example/segment-10.bin' })).toBe(true);
+    expect(rules.shouldCapture({ url: 'https://cdn.example/app.json' })).toBe(false);
+  });
+
+  test('validates regex classification rules on creation', () => {
+    expect(() => createCaptureRuleEngine({
+      regexRules: [{ pattern: '[invalid(', category: 'bad' }],
+    })).toThrow(/Invalid regex/);
+  });
+
   test('throws when rules are invalid', () => {
     expect(() => createCaptureRuleEngine({ customExtensions: ['webm'] })).toThrow(/Invalid extension/);
     expect(() => createCaptureRuleEngine({ customContentTypes: ['video'] })).toThrow(/Invalid content type/);

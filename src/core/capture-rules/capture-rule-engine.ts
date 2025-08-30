@@ -1,3 +1,7 @@
+import {
+  createRegexClassifier,
+  type RegexRule,
+} from './regex-classifier';
 import { parseSizePredicate, type SizePredicate } from './size-predicate';
 
 export interface CaptureRuleEngineOptions {
@@ -6,6 +10,7 @@ export interface CaptureRuleEngineOptions {
   blacklist?: string[];
   minSizeBytes?: number;
   sizePredicate?: string;
+  regexRules?: RegexRule[];
 }
 
 export interface CaptureRuleInput {
@@ -139,6 +144,7 @@ export function createCaptureRuleEngine(
   const blacklist = (options.blacklist ?? []).map(globToRegExp);
   const minSizeBytes = validateMinimumSize(options.minSizeBytes);
   const sizePredicate = buildSizePredicate(options.sizePredicate);
+  const regexClassifier = createRegexClassifier(options.regexRules ?? []);
 
   function matchesContentType(contentType: string | undefined): boolean {
     const normalized = normalizeContentType(contentType);
@@ -179,7 +185,11 @@ export function createCaptureRuleEngine(
         }
       }
 
-      return matchesExtension(input.url) || matchesContentType(input.contentType);
+      return (
+        regexClassifier.classify(input.url) !== undefined ||
+        matchesExtension(input.url) ||
+        matchesContentType(input.contentType)
+      );
     },
   };
 }
