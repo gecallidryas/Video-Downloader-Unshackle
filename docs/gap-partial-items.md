@@ -51,7 +51,7 @@ Extracted from `feature-parity-report.md` across all 8 reference analyses. Every
 | 27 | Session key/encryption inspection | done | puemos | `classifyHlsProtection` now considers `#EXT-X-SESSION-KEY` when no media key is present, with tests. |
 | 28 | IV normalization for string/Uint32Array/Uint8Array | done | puemos | Added `normalizeIV()` for hex strings, numbers, `Uint8Array`, and `Uint32Array`, with tests. |
 | 29 | Signed-query propagation to level/fragment/key URLs | done | puemos (`appendQueryParams`) | Added `propagateQueryParams()` and planner propagation for init, segment, and key URLs. |
-| 30 | Primary/fallback URI fetch | done | puemos | Planner preserves existing URL params while appending missing same-origin master params, keeping original segment params as the fallback path. |
+| 30 | Primary/fallback URI fetch | done | puemos | Planner preserves original init/segment/key URLs as fallbacks while appending missing same-origin master params; scheduler tries fallback URLs when signed primaries fail. |
 | 31 | DASH live/SegmentTimeline robustness | done | Unified | DASH parser/inspector cover dynamic MPDs and `SegmentTimeline` expansion with tests. |
 | 32 | HDS/MSS detection states | done | stream-detector | Network classifier now emits `hds_manifest`/`mss_manifest` with `hds`/`mss` protocol metadata and tests. |
 | 33 | Passive subtitle candidates | done | stream-detector | Network classifier now emits `subtitle_vtt`, `subtitle_srt`, `subtitle_ttml`, and `subtitle_dfxp` by extension and MIME type, with tests. |
@@ -135,16 +135,16 @@ Extracted from `feature-parity-report.md` across all 8 reference analyses. Every
 | 82 | Periodic auto-retry for errored segments | partial | m3u8-downloader | Configurable auto-retry with backoff and max-attempt limits. |
 | 83 | Preview grid advanced mode | partial | cat-catch | Lazy probes, duration sorting, failed-preview cleanup, duplicate filename cleanup, batch ops. |
 | 84 | Popup job details modal/panel | partial | live-stream, Unified | Job-details for advanced diagnostics. |
-| 85 | Progressive preview while downloading | partial | live-stream (MP4Box/MSE), Unified | Optional enrichment. |
-| 86 | Codec sniff via MP4Box | partial | live-stream, Unified | Preview compatibility diagnostics. |
-| 87 | hls.js preview when native HLS unsupported | gap/partial | puemos | Side-panel preview without native helper. |
-| 88 | Preview reload button | gap/partial | puemos | Small UX improvement. |
-| 89 | Preview duration callback | gap/partial | puemos | Useful if estimates depend on preview. |
+| 85 | Progressive preview while downloading | done | live-stream (MP4Box/MSE), Unified | `PreviewModal` accepts `downloadedRanges` + `liveSegmentSource` props and renders a green/gray progress strip over the scrub area; MSE byte-pumping wires through `run-hls-job.ts` orchestrator. |
+| 86 | Codec sniff via MP4Box | done | live-stream, Unified | `src/core/preview/codec-sniff.ts` parses MP4 `ftyp`/`moov` brand tokens + TS sync bytes (avc1, hvc1, vp09, av01, mp4a, Opus, ...); `CodecBadge` renders detected codec with warning style when `canPlayType` rejects it. |
+| 87 | hls.js preview when native HLS unsupported | done | puemos | `usePreviewPlayer` hook checks `canPlayType('application/vnd.apple.mpegurl')` and lazy `import('hls.js')` only when needed; degrades gracefully if peer is absent. |
+| 88 | Preview reload button | done | puemos | Refresh icon button in `PreviewModal` header bumps `key` to destroy and recreate the player. |
+| 89 | Preview duration callback | done | puemos | `PreviewModal` fires `onDurationResolved(durationSec)` on `loadedmetadata`. |
 | 90 | Copy all playlist URLs (bulk copy) | partial | puemos | Side-panel bulk copy. |
 | 91 | Copy buttons for video/audio/subtitle URLs | partial | puemos | Diagnostic/power-user feature. |
 | 92 | Copy filename button | gap/partial | puemos | Small affordance. |
 | 93 | Hover card for long filename | gap/partial | puemos | UI polish. |
-| 94 | Storage footer in downloads | gap/partial | puemos | Constant visibility. |
+| 94 | Storage footer in downloads | partial (component ready) | puemos | `StorageFooter` shared component built with progressbar, level coloring (ok/moderate/high/critical), and percent text; wiring to downloads tab lands in Phase 5 Task 14. |
 | 95 | Router tab persisted in localStorage | gap/partial | puemos | Side panel benefits from persisted active tab. |
 | 96 | Metadata badges for FPS, channels, default, autoselect | present/partial | puemos | Ensure all visible. |
 | 97 | Filter downloads by filename | present/partial | puemos | Add if absent. |
@@ -162,30 +162,30 @@ Extracted from `feature-parity-report.md` across all 8 reference analyses. Every
 
 | # | Item | Status | Stronger in | Action |
 |---|---|---|---|---|
-| 107 | Batch timeline/download jobs | partial | live-stream, Unified | Batch directory save for timeline splits. |
-| 108 | User URL replacement on failed segment | gap | live-stream | Advanced recovery for expired live URLs. |
+| 107 | Batch timeline/download jobs | ~~partial~~ done | live-stream, Unified | `splitTimelineIntoBatchJobs` splits discontinuity groups into numbered output names with tests. |
+| 108 | User URL replacement on failed segment | ~~gap~~ done | live-stream | Added `computeUrlReplacement`/`applyUrlReplacement` pure helpers with tests for prefix swap and signed-query refresh. |
 | 109 | Bulk retry pass after initial download | partial | hls_downloader | Two-pass approach (download all, then retry all failures once). |
-| 110 | Auto-highest quality selection policy | partial | hls_downloader | Configurable default: highest/lowest/ask. |
-| 111 | Automatic container decision (MP4 unless subtitles → MKV) | partial | puemos | Useful automatic choice. |
-| 112 | Subtitle text storage before mux/save | partial | puemos | Reliability pattern for MV3/offscreen. |
-| 113 | Video-only preserves all streams (`-map 0 -c copy`) | partial | puemos | Useful when video includes embedded audio. |
-| 114 | `-shortest` for muxed outputs | partial | puemos | Guard against mismatched audio/video duration. |
-| 115 | Subtitle mux to MKV with WebVTT verification | partial | puemos | Verify mux output. |
-| 116 | Cancel dispatches actual fetch abort, not just state stop | partial | puemos | Ensure real fetch cancellation exists. |
-| 117 | Re-save completed job if link still valid | partial | puemos | Useful recovery path. |
-| 118 | Safe auto-download for direct/unprotected candidates | partial | cat-catch | With min-size/blacklist/visible enabled state. |
-| 119 | Browser-specific download header support modeling | partial | stream-detector | Firefox can pass Referer; Chrome cannot in same way. |
+| 110 | Auto-highest quality selection policy | ~~partial~~ done | hls_downloader | Added `defaultQualityPolicy` setting (schema v7) and `selectHlsVariant` qualityPolicy option with tests. |
+| 111 | Automatic container decision (MP4 unless subtitles → MKV) | ~~partial~~ done | puemos | Added `resolveOutputContainer` with auto MKV-when-subtitles and override pass-through tests. |
+| 112 | Subtitle text storage before mux/save | ~~partial~~ done | puemos | Added `SubtitleStore` contract with in-memory adapter, byte estimation, and per-job listing/deletion. |
+| 113 | Video-only preserves all streams (`-map 0 -c copy`) | ~~partial~~ done | puemos | `buildMuxArgs` emits `-map 0 -c copy` for single inputs preserving embedded audio. |
+| 114 | `-shortest` for muxed outputs | ~~partial~~ done | puemos | `buildMuxArgs` appends `-shortest` whenever multiple inputs are muxed. |
+| 115 | Subtitle mux to MKV with WebVTT verification | ~~partial~~ done | puemos | Added `verifySubtitleTrack` reading ffprobe streams to confirm embedded subtitle codec; emits sidecar fallback. |
+| 116 | Cancel dispatches actual fetch abort, not just state stop | ~~partial~~ done | puemos | DownloadController threads a per-job AbortController through manifest fetch and runHls/runDash; abort() aborts the live signal. |
+| 117 | Re-save completed job if link still valid | partial (backend) | puemos | URL replacement helper exists; full re-save pipeline lands with UI overflow menu in Phase 2 Task 6. |
+| 118 | Safe auto-download for direct/unprotected candidates | ~~partial~~ done | cat-catch | Added `isAutoDownloadEligible` requiring advancedMode + direct media + size/blacklist gates; settings `autoDownloadEnabled`, `autoDownloadMinSize`, `autoDownloadBlacklist` (schema v8). |
+| 119 | Browser-specific download header support modeling | ~~partial~~ done | stream-detector | Added `detectBrowser` + `supportsRefererInDownload` so generated commands can adapt referer flag per browser. |
 
 ### Naming & Filenames
 
 | # | Item | Status | Stronger in | Action |
 |---|---|---|---|---|
-| 120 | Filename from content-disposition tests | present/partial | live-stream | Add tests for fallback rules. |
-| 121 | NFC Unicode normalization in filenames | partial | puemos | Add tests for non-ASCII titles. |
-| 122 | Subtitle filename with language/name fallback | partial | puemos | Good subtitle UX detail. |
-| 123 | Ignore empty link gracefully | gap/partial | puemos | Small robustness test. |
+| 120 | Filename from content-disposition tests | ~~present/partial~~ done | live-stream | `parseContentDispositionFilename` handles quoted, unquoted, RFC 5987 `filename*`, and malformed inputs with tests. |
+| 121 | NFC Unicode normalization in filenames | ~~partial~~ done | puemos | `normalizeFilenameUnicode` applies NFC; `resolveRichFilename` returns NFC output covered by tests. |
+| 122 | Subtitle filename with language/name fallback | ~~partial~~ done | puemos | Added `deriveSubtitleFilename` with language→trackName→und fallback and filename sanitization. |
+| 123 | Ignore empty link gracefully | ~~gap/partial~~ done | puemos | `isEmptyLink` returns true for empty, whitespace, `#`, and `javascript:void(...)`. |
 | 124 | Output naming preview for stream jobs | gap | stream-detector | Preview filename before download. |
-| 125 | Title+quality filename tests | partial | ViewTube | Include sanitized title, author, quality, extension. |
+| 125 | Title+quality filename tests | ~~partial~~ done | ViewTube | `resolveRichFilename` composes `{author} - {title} - {quality}.{ext}`, sanitizes, trims to 200 chars, and falls back through pageTitle/URL/`download`. |
 
 ### Integrations
 

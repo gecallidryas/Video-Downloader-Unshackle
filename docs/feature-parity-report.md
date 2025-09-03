@@ -109,8 +109,8 @@ Status values:
 | Filename from content-disposition/MIME | present/partial | present | present | Add tests for live-stream's filename fallback rules. |
 | Smart naming templates | present | present | partial | Unified remains baseline. |
 | Online filename resolution | gap/partial | unknown | present setting | Consider only if privacy reviewed; avoid network lookups solely for names unless user initiated. |
-| Progressive preview while downloading | partial | present | present with MP4Box/MSE | Optional enrichment; native previews may already cover common path. |
-| Codec sniff via MP4Box | partial | present | present | Useful for preview compatibility diagnostics. |
+| Progressive preview while downloading | present (PreviewModal `downloadedRanges` + `liveSegmentSource`) | present | present with MP4Box/MSE | Optional enrichment; native previews may already cover common path. |
+| Codec sniff via MP4Box | present (`src/core/preview/codec-sniff.ts` + `CodecBadge`) | present | present | Useful for preview compatibility diagnostics. |
 | Queue controls | present | present | gap | Unshackle stronger. |
 | History retention/retry/delete | present | present | gap | Unshackle stronger. |
 | Notifications | present | present | minimal badge/title | Unshackle/Unified stronger. |
@@ -330,9 +330,9 @@ Status meanings in this section:
 | Parsing | Key URI absolute resolution per segment | parser | present | Keep. |
 | Parsing | Session key/encryption inspection | `inspectLevelEncryption` | present | `classifyHlsProtection` now detects `#EXT-X-SESSION-KEY` and reuses the key classification path. |
 | Parsing | IV normalization for string, Uint32Array, Uint8Array | `inspectLevelEncryption` | present | Added tested `normalizeIV()` support for hex strings, numbers, `Uint8Array`, and `Uint32Array`. |
-| URL handling | Append master query params to level/fragment/key URLs | `appendQueryParams` | present | Added `propagateQueryParams()` and HLS planner propagation for init, segment, and AES key URLs. |
+| URL handling | Append master query params to level/fragment/key URLs | `appendQueryParams` | present | Added `propagateQueryParams()` and HLS planner propagation for init, segment, and AES key URLs, with original URLs retained as scheduler fallbacks. |
 | URL handling | Primary/fallback URI fetch | `fetchWithFallback` | present | Planner preserves existing URL params while appending missing same-origin master params, providing a safe fallback URI shape without overwriting segment params. |
-| URL handling | Fallback for fragments without appended params | use-case tests | partial | Add to scheduler tests. |
+| URL handling | Fallback for fragments without appended params | use-case tests | present | Scheduler now tries original fallback URLs when signed primary segment URLs fail, with regression coverage. |
 | Selection | Pick one video level | Playlist UI | present | Keep. |
 | Selection | Pick separate audio level | Playlist UI | present | Keep. |
 | Selection | Pick optional subtitle/CC track | Playlist UI | present | Keep. |
@@ -348,15 +348,15 @@ Status meanings in this section:
 | Selection | Estimated output size from bitrate and duration | Playlist module | partial | Useful for pre-download storage warnings. |
 | Duration | Fetch level playlist durations from `EXTINF` | `fetchLevelDurationEpic` | partial/gap | Useful for estimate and duration display. |
 | Duration | Concurrent duration fetch limit of 4 | epic mergeMap concurrency | gap | Good small bounded-work pattern. |
-| Preview | HLS preview in popup with native HLS fallback | `PlaylistPreview` | present/partial | Unshackle preview path is different; hls.js preview is useful fallback. |
-| Preview | hls.js preview when native HLS unsupported | `Hls.isSupported()` | gap/partial | Consider for side-panel preview without native helper. |
-| Preview | Preview reload button | `PlaylistPreview` | gap/partial | Small UX improvement. |
-| Preview | Preview duration callback from metadata or LEVEL_LOADED | `onDuration` | gap/partial | Useful if estimates depend on preview. |
+| Preview | HLS preview in popup with native HLS fallback | `PlaylistPreview` | present (`usePreviewPlayer` lazy hls.js fallback) | Unshackle preview path is different; hls.js preview is useful fallback. |
+| Preview | hls.js preview when native HLS unsupported | `Hls.isSupported()` | present (lazy `import('hls.js')` peer) | Consider for side-panel preview without native helper. |
+| Preview | Preview reload button | `PlaylistPreview` | present (reload icon in PreviewModal header) | Small UX improvement. |
+| Preview | Preview duration callback from metadata or LEVEL_LOADED | `onDuration` | present (`onDurationResolved` on PreviewModal) | Useful if estimates depend on preview. |
 | Preview | Teardown destroys hls.js and clears video src | `PlaylistPreview` cleanup | present/partial | Good frontend cleanup pattern. |
 | Download | Job creation fetches video/audio/subtitle data concurrently | `addDownloadJobEpic` | present/partial | Keep but review memory/latency. |
 | Download | Random UUID with fallback job id | `crypto.randomUUID` fallback | present | Keep. |
-| Download | Generates MP4 unless subtitles selected, then MKV | add job epic | partial | Useful automatic container decision. |
-| Download | Stores subtitle text before mux/save | `storeSubtitleTextFactory`, save epic restorage | partial | Good reliability pattern for MV3/offscreen. |
+| Download | Generates MP4 unless subtitles selected, then MKV | add job epic | done | `resolveOutputContainer` picks MKV when subtitles included, MP4 otherwise; explicit overrides honored. |
+| Download | Stores subtitle text before mux/save | `storeSubtitleTextFactory`, save epic restorage | done | `SubtitleStore` in-memory adapter with byte estimation and per-job listing/deletion lets subtitles survive failed mux. |
 | Download | Download job queue action after job creation | jobs slice and queue epic | present | Keep. |
 | Download | Active download limit, 0 means unlimited | config and queue epic | partial | Unshackle has max concurrent; consider explicit unlimited semantics. |
 | Download | Oldest queued job starts first | queue sort by `createdAt` | present/partial | Keep deterministic scheduling. |
@@ -401,7 +401,7 @@ Status meanings in this section:
 | Export | Mux video+audio TS to MP4 with stream copy | `ffmpeg-muxer.ts` | present via native | Keep native helper; compare args. |
 | Export | Video-only preserves all streams | `-map 0 -c copy` | partial | Useful when video stream includes embedded audio. |
 | Export | Audio-only AAC output path | `-c:a aac -b:a 192k` | present/partial | Useful fallback. |
-| Export | Subtitle mux to MKV with WebVTT | output `.mkv`, `video/x-matroska` | partial | Unshackle has subtitle track pickers; verify mux output. |
+| Export | Subtitle mux to MKV with WebVTT | output `.mkv`, `video/x-matroska` | done | `buildMuxArgs` emits `-c:s copy` into MKV; `verifySubtitleTrack` confirms embedded codec from ffprobe streams (falls back to sidecar). |
 | Export | `-shortest` for muxed outputs | ffmpeg args | partial | Good guard against mismatched audio/video duration. |
 | Export | Best-effort ffmpeg temp cleanup | `finally deleteFile` | present/partial | Keep. |
 | Export | MV3 offscreen object URL creation | `offscreen.ts` | present | Unshackle offscreen is already comparable. |
