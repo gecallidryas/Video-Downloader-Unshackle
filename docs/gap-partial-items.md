@@ -133,7 +133,7 @@ Extracted from `feature-parity-report.md` across all 8 reference analyses. Every
 | 80 | Per-segment status visualization in HLS job detail | partial | m3u8-downloader (colored grid), cat-catch | Gray/green/red with click-to-retry. |
 | 81 | Segment range selection for HLS jobs | partial | m3u8-downloader, cat-catch (richer) | Start/end segment picker for partial download. |
 | 82 | Periodic auto-retry for errored segments | partial | m3u8-downloader | Configurable auto-retry with backoff and max-attempt limits. |
-| 83 | Preview grid advanced mode | partial | cat-catch | Lazy probes, duration sorting, failed-preview cleanup, duplicate filename cleanup, batch ops. |
+| 83 | Preview grid advanced mode | done | cat-catch | `PreviewGrid` advanced-mode component with IntersectionObserver lazy thumbnails, sort (detection time / duration / size / filename), retry overlay on failed probes, duplicate filename grouping with count badge, and batch download/copy/remove toolbar. |
 | 84 | Popup job details modal/panel | partial | live-stream, Unified | Job-details for advanced diagnostics. |
 | 85 | Progressive preview while downloading | done | live-stream (MP4Box/MSE), Unified | `PreviewModal` accepts `downloadedRanges` + `liveSegmentSource` props and renders a green/gray progress strip over the scrub area; MSE byte-pumping wires through `run-hls-job.ts` orchestrator. |
 | 86 | Codec sniff via MP4Box | done | live-stream, Unified | `src/core/preview/codec-sniff.ts` parses MP4 `ftyp`/`moov` brand tokens + TS sync bytes (avc1, hvc1, vp09, av01, mp4a, Opus, ...); `CodecBadge` renders detected codec with warning style when `canPlayType` rejects it. |

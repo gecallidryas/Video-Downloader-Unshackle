@@ -1,0 +1,162 @@
+.preview-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px;
+}
+
+.preview-grid__toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.preview-grid__sort {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--text-label-size);
+  color: var(--on-surface-variant);
+}
+
+.preview-grid__sort select {
+  height: var(--touch-target);
+  background: var(--surface-container);
+  color: var(--on-surface);
+  border: 1px solid var(--outline-variant);
+  border-radius: var(--radius);
+  padding: 0 6px;
+}
+
+.preview-grid__actions {
+  display: inline-flex;
+  gap: 6px;
+}
+
+.preview-grid__actions button {
+  height: var(--touch-target);
+  padding: 0 8px;
+  border: 1px solid var(--outline-variant);
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--primary);
+  cursor: pointer;
+  font-size: var(--text-label-size);
+}
+
+.preview-grid__actions button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.preview-grid__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+  gap: 8px;
+}
+
+.preview-grid__cell {
+  position: relative;
+  border: 1px solid var(--outline-variant);
+  border-radius: var(--radius);
+  background: var(--surface-container-lowest);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.preview-grid__cell--selected {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 1px var(--primary) inset;
+}
+
+.preview-grid__select {
+  position: absolute;
+  top: 4px;
+  left: 4px;
+  z-index: 1;
+}
+
+.preview-grid__thumb {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  background: var(--surface-variant);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.preview-grid__thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.preview-grid__placeholder {
+  width: 100%;
+  height: 100%;
+  background:
+    repeating-linear-gradient(
+      45deg,
+      var(--surface-variant) 0,
+      var(--surface-variant) 6px,
+      var(--surface-container) 6px,
+      var(--surface-container) 12px
+    );
+}
+
+.preview-grid__broken {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  color: var(--on-surface-variant);
+  font-size: 24px;
+}
+
+.preview-grid__retry {
+  height: 24px;
+  padding: 0 8px;
+  font-size: var(--text-label-size);
+  border: 1px solid var(--outline-variant);
+  border-radius: var(--radius);
+  background: var(--surface-container);
+  color: var(--primary);
+  cursor: pointer;
+}
+
+.preview-grid__dup-badge {
+  position: absolute;
+  bottom: 4px;
+  right: 4px;
+  padding: 1px 6px;
+  border-radius: var(--radius);
+  background: var(--primary);
+  color: var(--on-primary);
+  font-size: 10px;
+  font-weight: 600;
+}
+
+.preview-grid__meta {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px;
+}
+
+.preview-grid__filename {
+  font-size: var(--text-label-size);
+  color: var(--on-surface);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.preview-grid__sub {
+  font-size: 11px;
+  color: var(--on-surface-variant);
+}
