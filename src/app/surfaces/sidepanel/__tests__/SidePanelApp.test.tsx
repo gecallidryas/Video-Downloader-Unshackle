@@ -5,6 +5,7 @@ import { usePanelStore } from '@/src/state/usePanelStore';
 import type { DetectedMedia } from '@/src/types/media';
 
 beforeEach(() => {
+  globalThis.localStorage?.removeItem('unshackle:sidepanel:activeTab');
   usePanelStore.setState({
     surfaceState: 'detecting',
     mediaItems: [],
@@ -102,4 +103,51 @@ test('opens the queue tab from the flat bottom nav', async () => {
     screen.getByRole('tablist', { name: /queue status/i }),
   ).toBeInTheDocument();
   expect(screen.getByRole('tab', { name: /active 0/i })).toBeInTheDocument();
+});
+
+test('persists active tab to localStorage', async () => {
+  const user = userEvent.setup();
+  globalThis.localStorage.removeItem('unshackle:sidepanel:activeTab');
+
+  render(<SidePanelApp />);
+  await user.click(screen.getByRole('button', { name: /queue/i }));
+
+  expect(globalThis.localStorage.getItem('unshackle:sidepanel:activeTab')).toBe(
+    'queue',
+  );
+});
+
+test('reads persisted active tab on mount', () => {
+  globalThis.localStorage.setItem('unshackle:sidepanel:activeTab', 'history');
+
+  render(<SidePanelApp />);
+
+  expect(screen.getByText(/no downloads yet/i)).toBeInTheDocument();
+  globalThis.localStorage.removeItem('unshackle:sidepanel:activeTab');
+});
+
+test('renders filter input with multi-field chips in results view', () => {
+  usePanelStore.setState({
+    surfaceState: 'results',
+    mediaItems: [
+      {
+        id: 'a',
+        title: 'Hello.mp4',
+        format: 'MP4',
+        size: '1 MB',
+        duration: '00:10',
+        mediaType: 'video',
+        qualities: [],
+        selectedQuality: '',
+      },
+    ],
+  });
+
+  render(<SidePanelApp />);
+
+  expect(
+    screen.getByRole('searchbox', { name: /filter streams/i }),
+  ).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: /^Filename$/i })).toBeInTheDocument();
+  expect(screen.getByText(/1 of 1 streams/i)).toBeInTheDocument();
 });

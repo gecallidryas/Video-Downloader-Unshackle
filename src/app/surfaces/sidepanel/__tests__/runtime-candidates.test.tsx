@@ -98,6 +98,7 @@ function buildRuntimeClient(candidates: MediaCandidate[]): RuntimeClient {
 }
 
 beforeEach(() => {
+  globalThis.localStorage?.removeItem('unshackle:sidepanel:activeTab');
   usePanelStore.setState({
     surfaceState: 'detecting',
     candidates: [],
