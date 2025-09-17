@@ -144,18 +144,18 @@ Extracted from `feature-parity-report.md` across all 8 reference analyses. Every
 | 91 | Copy buttons for video/audio/subtitle URLs | partial | puemos | Diagnostic/power-user feature. |
 | 92 | Copy filename button | gap/partial | puemos | Small affordance. |
 | 93 | Hover card for long filename | gap/partial | puemos | UI polish. |
-| 94 | Storage footer in downloads | partial (component ready) | puemos | `StorageFooter` shared component built with progressbar, level coloring (ok/moderate/high/critical), and percent text; wiring to downloads tab lands in Phase 5 Task 14. |
-| 95 | Router tab persisted in localStorage | gap/partial | puemos | Side panel benefits from persisted active tab. |
+| 94 | Storage footer in downloads | done | puemos | `StorageFooter` wired into the queue tab using `navigator.storage.estimate()` with level mapping (<60% ok, <80% moderate, <95% high, ≥95% critical). |
+| 95 | Router tab persisted in localStorage | done | puemos | SidePanelApp persists active tab to `unshackle:sidepanel:activeTab` and rehydrates on mount. |
 | 96 | Metadata badges for FPS, channels, default, autoselect | present/partial | puemos | Ensure all visible. |
-| 97 | Filter downloads by filename | present/partial | puemos | Add if absent. |
+| 97 | Filter downloads by filename | done | puemos | `FilterInput` above detected streams filters `media.title` case-insensitively with debounce; "N of M streams" count rendered below. |
 | 98 | Settings language list with ISO codes | partial | puemos | Preferred audio language UI presets. |
 | 99 | Estimated output size from bitrate and duration | partial | puemos | Pre-download storage warnings. |
 | 100 | Duplicate handling (duplicate URL/filename filtering) | partial | cat-catch | Duplicate-name grouping and one-click cleanup. |
 | 101 | Badge/command coverage (pause, clear, open parser) | partial | cat-catch | Keyboard commands for safe operational toggles. |
-| 102 | Current/all/previous candidate views | partial | stream-detector | Previous-session non-incognito detections restored separately. |
-| 103 | Recent-only compact mode | gap | stream-detector | Useful on pages emitting hundreds of fragments. |
-| 104 | Debounced notifications and badge mode | partial | stream-detector | Summarize many detections without spamming. |
-| 105 | Multi-field stream filtering | partial | stream-detector | Filter by filename, tab title, type, hostname. |
+| 102 | Current/all/previous candidate views | done | stream-detector | SidePanelApp exposes Current Tab / All Tabs / Previous Session sub-tabs; previous detections persisted via `previous-detections.ts` and `saveDetectionsOnTabClose` on tab close. |
+| 103 | Recent-only compact mode | done | stream-detector | "Recent only" toggle limits list to the last 20 detections, with a "Show N more" button to expand. |
+| 104 | Debounced notifications and badge mode | done | stream-detector | `detection-notifier.ts` batches detection events in a 2s window with `notificationMode: each | batched | off` setting (default batched); badge accumulates total. |
+| 105 | Multi-field stream filtering | done | stream-detector | Chip selector (Filename / Tab Title / Type / Hostname) drives `filterStreams` predicate in `src/state/streamFilter.ts`; chips are additive. |
 | 106 | Direct URL job panel | partial | cat-catch | Manual URL plus filename/referer/origin, per-job retry/stop. |
 
 ### Download & Export

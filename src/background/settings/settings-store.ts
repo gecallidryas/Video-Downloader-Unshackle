@@ -16,6 +16,7 @@ export type ThemeName =
   | 'dark'
   | 'system';
 export type PreferredQuality = 'highest' | 'best' | 'smallest' | 'ask' | '1080p' | '720p' | '480p' | '360p';
+export type DefaultQualityPolicy = 'highest' | 'lowest' | 'ask';
 export type OutputFormat = 'auto' | 'mp4' | 'mkv' | 'mp3' | 'webm';
 export type ProviderContainerPreference = 'auto' | 'mp4' | 'webm' | 'm3u8' | 'mpd';
 export type ProviderDashPairingPreference =
@@ -32,6 +33,7 @@ export type DefaultDownloadAction =
   | 'download_audio'
   | 'copy'
   | 'record_live';
+export type NotificationMode = 'each' | 'batched' | 'off';
 
 export interface ProviderDefaultSettings {
   quality: PreferredQuality;
@@ -51,6 +53,7 @@ export interface UnifiedSettings {
   segmentTimeoutMs: number;
   maxBandwidthPerHostKBps: number;
   preferredQuality: PreferredQuality;
+  defaultQualityPolicy: DefaultQualityPolicy;
   defaultOutputFormat: OutputFormat;
   providerDefaults: Record<string, ProviderDefaultSettings>;
   saveAsPrompt: boolean;
@@ -59,6 +62,7 @@ export interface UnifiedSettings {
   showNotifications: boolean;
   notifyOnComplete: boolean;
   notifyOnError: boolean;
+  notificationMode: NotificationMode;
   historyRetentionDays: number;
   namingTemplate: string;
   namingUseSiteRules: boolean;
@@ -77,6 +81,9 @@ export interface UnifiedSettings {
   captureRuleMinSizeBytes: number;
   captureRuleSizePredicate: string;
   advancedMode: boolean;
+  autoDownloadEnabled: boolean;
+  autoDownloadMinSize: number;
+  autoDownloadBlacklist: string[];
   _schemaVersion: number;
 }
 
@@ -91,6 +98,7 @@ export const DEFAULT_SETTINGS: UnifiedSettings = {
   segmentTimeoutMs: 30_000,
   maxBandwidthPerHostKBps: 0,
   preferredQuality: 'highest',
+  defaultQualityPolicy: 'ask',
   defaultOutputFormat: 'auto',
   providerDefaults: {},
   saveAsPrompt: true,
@@ -99,6 +107,7 @@ export const DEFAULT_SETTINGS: UnifiedSettings = {
   showNotifications: true,
   notifyOnComplete: true,
   notifyOnError: true,
+  notificationMode: 'batched',
   historyRetentionDays: 30,
   namingTemplate: '{title}_{quality}_{date}_{time}',
   namingUseSiteRules: true,
@@ -117,7 +126,10 @@ export const DEFAULT_SETTINGS: UnifiedSettings = {
   captureRuleMinSizeBytes: 0,
   captureRuleSizePredicate: '',
   advancedMode: false,
-  _schemaVersion: 6,
+  autoDownloadEnabled: false,
+  autoDownloadMinSize: 102_400,
+  autoDownloadBlacklist: [],
+  _schemaVersion: 9,
 };
 
 export interface SettingsStorageAdapter {
@@ -151,6 +163,7 @@ function cloneSettings(settings: UnifiedSettings): UnifiedSettings {
     captureRuleCustomExtensions: [...settings.captureRuleCustomExtensions],
     captureRuleCustomContentTypes: [...settings.captureRuleCustomContentTypes],
     captureRuleUrlBlacklist: [...settings.captureRuleUrlBlacklist],
+    autoDownloadBlacklist: [...settings.autoDownloadBlacklist],
   };
 }
 
@@ -230,6 +243,27 @@ function normalizeSettings(value: unknown): UnifiedSettings {
     )
       ? (incoming.remoteConfigSecurityMode as RemoteConfigSecurityMode)
       : DEFAULT_SETTINGS.remoteConfigSecurityMode,
+    defaultQualityPolicy: ['highest', 'lowest', 'ask'].includes(
+      String(incoming.defaultQualityPolicy),
+    )
+      ? (incoming.defaultQualityPolicy as DefaultQualityPolicy)
+      : DEFAULT_SETTINGS.defaultQualityPolicy,
+    notificationMode: ['each', 'batched', 'off'].includes(
+      String(incoming.notificationMode),
+    )
+      ? (incoming.notificationMode as NotificationMode)
+      : DEFAULT_SETTINGS.notificationMode,
+    autoDownloadEnabled: typeof incoming.autoDownloadEnabled === 'boolean'
+      ? incoming.autoDownloadEnabled
+      : DEFAULT_SETTINGS.autoDownloadEnabled,
+    autoDownloadMinSize:
+      Number.isInteger(incoming.autoDownloadMinSize) &&
+      Number(incoming.autoDownloadMinSize) >= 0
+        ? Number(incoming.autoDownloadMinSize)
+        : DEFAULT_SETTINGS.autoDownloadMinSize,
+    autoDownloadBlacklist: Array.isArray(incoming.autoDownloadBlacklist)
+      ? incoming.autoDownloadBlacklist.filter((value): value is string => typeof value === 'string')
+      : DEFAULT_SETTINGS.autoDownloadBlacklist,
     _schemaVersion: DEFAULT_SETTINGS._schemaVersion,
   };
 }

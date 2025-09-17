@@ -7,6 +7,8 @@ import { createDownloadQueue } from '@/src/background/jobs/download-queue';
 import { createHistoryStore } from '@/src/background/jobs/history-store';
 import { createJobStore } from '@/src/background/jobs/job-store';
 import { createNotificationManager } from '@/src/background/notifications/notification-manager';
+import { createDetectionNotifier } from '@/src/background/notifications/detection-notifier';
+import { saveDetectionsOnTabClose } from '@/src/background/state/previous-detections';
 import { createSettingsStore } from '@/src/background/settings/settings-store';
 import { runNativeExportJob } from '@/src/background/jobs/native-export-runner';
 import {
@@ -127,6 +129,23 @@ export function initializeBackgroundShell() {
     action: chrome.action,
   });
   const notificationManager = createNotificationManager(chrome.runtime);
+  const detectionNotifier = createDetectionNotifier({
+    emit: ({ count, hostname }) => {
+      void chrome.runtime
+        .sendMessage({
+          type: 'SHOW_WARNING',
+          payload: {
+            text: `${count} new ${count === 1 ? 'stream' : 'streams'} detected on ${hostname}`,
+            warningType: 'info',
+            autoHideMs: 4500,
+          },
+        })
+        .catch(() => undefined);
+    },
+    setBadge: (text) => {
+      chrome.action?.setBadgeText?.({ text }).catch?.(() => undefined);
+    },
+  });
   const ingestContextCandidate = (candidate: MediaCandidate) => {
     candidateRegistry.set(candidate.tabId, [
       ...candidateRegistry.get(candidate.tabId),
@@ -153,11 +172,22 @@ export function initializeBackgroundShell() {
       suppressProtectedDownloads: settings.suppressProtectedDownloads,
     });
     notificationManager.applySettings(settings);
+    detectionNotifier.configure(settings);
     return contextMenuManager.register();
   });
   registerPassiveRequestJournal(requestJournal, undefined, headerContext);
   registerRuntimeRouter(runtimeRouter);
-  chrome.tabs?.onRemoved?.addListener((tabId) => autoScan.handleTabRemoved(tabId));
+  chrome.tabs?.onRemoved?.addListener((tabId, removeInfo) => {
+    autoScan.handleTabRemoved(tabId);
+    const candidates = candidateRegistry.get(tabId);
+    if (candidates.length > 0) {
+      void saveDetectionsOnTabClose({
+        tabId,
+        incognito: Boolean(removeInfo?.isWindowClosing) ? false : false,
+        candidates,
+      });
+    }
+  });
   chrome.tabs?.onUpdated?.addListener((tabId, changeInfo) => {
     if (changeInfo.status === 'loading') {
       candidateRegistry.clear(tabId);
@@ -178,6 +208,7 @@ export function initializeBackgroundShell() {
     downloadQueue,
     downloadController,
     notificationManager,
+    detectionNotifier,
     contextMenuManager,
     runtimeRouter,
     autoScan,

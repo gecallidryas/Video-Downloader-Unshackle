@@ -414,7 +414,7 @@ Status meanings in this section:
 | Naming | Subtitle filename with language/name fallback | `generate-subtitle-file-name.ts` | partial | Good subtitle UX detail. |
 | UI | Popup fixed size 500x600 | `App.tsx` | not-scope | Side panel is primary for Unshackle. |
 | UI | Theme hook and design system package | design-system | present/partial | Unshackle has tokens; no need to copy. |
-| UI | Router tab persisted in localStorage | RouterController | gap/partial | Side panel may benefit from persisted active tab. |
+| UI | Router tab persisted in localStorage | RouterController | done | Unshackle persists side panel tab to `unshackle:sidepanel:activeTab` with safe fallback on miss. |
 | UI | Invalid persisted tab falls back to Sniffer | RouterController tests | partial | Good small robustness pattern. |
 | UI | Sniffer empty state | SnifferView | present | Keep. |
 | UI | Animated navigation and row expansion via GSAP | Sniffer/Job views | gap/not-scope | Optional; Unshackle can stay simpler. |
@@ -425,8 +425,8 @@ Status meanings in this section:
 | UI | Sticky footer actions in playlist/downloads | PlaylistView/DownloadsView | present/partial | Useful for popup; side panel can adapt. |
 | UI | Inline destructive confirmation | InlineConfirm | present/partial | Ensure cleanup/delete use confirmation. |
 | UI | Job expandable rows | JobView | present/partial | Unshackle queue cards likely similar. |
-| UI | Filter downloads by filename | DownloadsController | present/partial | Add if absent. |
-| UI | Storage footer in downloads | DownloadsView | gap/partial | Good constant visibility. |
+| UI | Filter downloads by filename | DownloadsController | done | `FilterInput` filters detected streams case-insensitively with debounce; multi-field chip selector also supports tab title, type, and hostname. |
+| UI | Storage footer in downloads | DownloadsView | done | Unshackle wires `StorageFooter` to the queue tab using `navigator.storage.estimate()` with level-tier coloring. |
 | UI | Settings language list with ISO-ish codes | SettingsView | partial | Useful if preferred audio language UI needs presets. |
 | UI | About links open through extension tabs API | AboutView | present/partial | Good MV2/MV3-compatible fallback. |
 | UI | Storybook for popup and design-system components | scripts/package | gap | Useful for visual QA if design system grows. |
@@ -784,12 +784,12 @@ The core detector is `reference/stream-detector/src/js/background.js`. It listen
 | Filename extraction | Uses URL pathname, with an MSS workaround that trims `.ism/manifest` to the parent path. | partial | Small but useful MSS detail. | Add protocol-specific display filename rules. |
 | Header capture | Stores User-Agent, Referer, Cookie, Set-Cookie, and Content-Length in request records. | review | Similar risk to cat-catch, but used for command generation rather than header replay. | Redact cookies by default; expose sensitive headers only with explicit per-copy consent. |
 | Source metadata | Stores documentUrl, originUrl, initiator, tab title/url/incognito, hostname, timestamp. | present | Useful and compact. | Keep this in candidate provenance and history. |
-| Storage lifecycle | Persists current `urlStorage`; on startup moves previous entries into `urlStorageRestore`, excluding private-window entries unless no-restore is enabled. | partial | Stronger than cat-catch for previous-session recall, weaker than Unshackle history. | Add previous-session recovery while respecting incognito boundaries. |
-| Badge/notifications | Badge increments for detected items; batched notifications summarize one or many detections after debounce. | partial | More restrained than cat-catch badge/toolbox. | Add debounced detection notifications with quiet-mode settings. |
-| Popup list | Popup shows type, filename, size, source, timestamp, delete, filter, current/all/previous tabs, copy all, clear list, disable, options. | partial | Less rich than cat-catch, more focused. | Fold this into side panel with current/all/previous filters. |
-| Sidebar list | Firefox sidebar has compact filename/delete list with same copy/filter controls (`sidebar.html`, `popup.js`). | partial | Aligns with Unshackle side-panel direction. | Keep side panel primary; use compact mode for high-volume streams. |
-| Recent limit | Option to show only a configured number of latest entries (`recentPref`, `recentAmount`). | gap | Useful for noisy pages. | Add recency/limit controls to stream list. |
-| Filter input | Popup/sidebar filter by filename, tab title, type, or hostname. | partial | Basic but effective. | Add multi-field stream filtering in side panel. |
+| Storage lifecycle | Persists current `urlStorage`; on startup moves previous entries into `urlStorageRestore`, excluding private-window entries unless no-restore is enabled. | done | Unshackle persists non-incognito candidates on tab close to `unshackle:previousDetections` and exposes them in the Previous Session view. | Maintained parity with stream-detector recall semantics. |
+| Badge/notifications | Badge increments for detected items; batched notifications summarize one or many detections after debounce. | done | Unshackle ships `detection-notifier.ts` with `notificationMode: each | batched | off` (default `batched`) and 2s coalescing; badge text accumulates total count. | Matches stream-detector behavior with explicit user control. |
+| Popup list | Popup shows type, filename, size, source, timestamp, delete, filter, current/all/previous tabs, copy all, clear list, disable, options. | done | Side panel now exposes Current Tab / All Tabs / Previous Session sub-tabs with filter, multi-field chips, and count summary. | |
+| Sidebar list | Firefox sidebar has compact filename/delete list with same copy/filter controls (`sidebar.html`, `popup.js`). | done | Side panel hosts the same controls. | |
+| Recent limit | Option to show only a configured number of latest entries (`recentPref`, `recentAmount`). | done | "Recent only" toggle limits the visible list to the last 20 detections with a "Show N more" expander. | |
+| Filter input | Popup/sidebar filter by filename, tab title, type, or hostname. | done | `FilterInput` + chip selector drive `filterStreams` in `src/state/streamFilter.ts`; chips additive across fields. | |
 | Direct download | Clicking direct file/custom entries can use `chrome.downloads.download`; optional auto-download for non-manifest files. | partial | Cat-catch has more downloader UI; stream-detector has clean simple direct download. | Direct media downloading is core; capture-rule blacklist and size guards are now available for safe auto-download wiring. |
 | Firefox referer download | Firefox direct downloads can include Referer header; Chrome path omits headers due API limits (`popup.js`, `background.js`). | partial | Useful browser capability distinction. | Model browser-specific download header support explicitly. |
 | Command generation | Copy methods include raw URL, Kodi URL, table form, yt-dlp, FFmpeg, Streamlink, hlsdl, N_m3u8DL-RE, and three user commands (`popup.js`). | partial | Best reference for command output UX. | Add command-preview/export as secondary to native download, with safe defaults. |

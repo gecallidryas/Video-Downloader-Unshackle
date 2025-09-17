@@ -20,6 +20,7 @@ describe('background settings store', () => {
       segmentTimeoutMs: 30_000,
       maxBandwidthPerHostKBps: 0,
       preferredQuality: 'highest',
+      defaultQualityPolicy: 'ask',
       defaultOutputFormat: 'auto',
       providerDefaults: {},
       saveAsPrompt: true,
@@ -28,6 +29,7 @@ describe('background settings store', () => {
       showNotifications: true,
       notifyOnComplete: true,
       notifyOnError: true,
+      notificationMode: 'batched',
       historyRetentionDays: 30,
       namingTemplate: '{title}_{quality}_{date}_{time}',
       defaultActionPerHost: {},
@@ -41,7 +43,10 @@ describe('background settings store', () => {
       captureRuleMinSizeBytes: 0,
       captureRuleSizePredicate: '',
       advancedMode: false,
-      _schemaVersion: 6,
+      autoDownloadEnabled: false,
+      autoDownloadMinSize: 102_400,
+      autoDownloadBlacklist: [],
+      _schemaVersion: 9,
     });
   });
 
