@@ -1,5 +1,10 @@
 import type { DownloadSelection, MediaVariant } from '@/video_downloader_types_skeleton';
+import type { DefaultQualityPolicy } from '@/src/background/settings/settings-store';
 import type { ParsedHlsManifest } from './parse-hls-manifest';
+
+export interface SelectHlsVariantOptions {
+  qualityPolicy?: DefaultQualityPolicy;
+}
 
 function variantScore(variant: MediaVariant): number {
   return variant.bitrate ?? variant.averageBitrate ?? variant.height ?? 0;
@@ -8,6 +13,7 @@ function variantScore(variant: MediaVariant): number {
 export function selectHlsVariant(
   manifest: ParsedHlsManifest,
   selection: DownloadSelection = { mode: 'best' },
+  options: SelectHlsVariantOptions = {},
 ): MediaVariant {
   if (selection.variantId) {
     const selected = manifest.variants.find(
@@ -21,8 +27,15 @@ export function selectHlsVariant(
     return selected;
   }
 
+  const policyMode =
+    options.qualityPolicy === 'lowest'
+      ? 'smallest'
+      : options.qualityPolicy === 'highest'
+        ? 'best'
+        : selection.mode;
+
   const sorted = [...manifest.variants].sort((a, b) => {
-    if (selection.mode === 'smallest') {
+    if (policyMode === 'smallest') {
       return variantScore(a) - variantScore(b);
     }
 
