@@ -357,6 +357,48 @@ describe('download controller decision flow', () => {
     expect(callArg).not.toHaveProperty('maxConcurrentPerHost');
   });
 
+  test('abort aborts the active fetch signal threaded through runHls', async () => {
+    const seenSignals: AbortSignal[] = [];
+    const runHls = vi.fn(async (input: { signal?: AbortSignal }) => {
+      if (input.signal) {
+        seenSignals.push(input.signal);
+      }
+      await new Promise<void>((resolve, reject) => {
+        input.signal?.addEventListener('abort', () => reject(new Error('aborted')), {
+          once: true,
+        });
+      });
+      return { fileName: 'never.mp4', mimeType: 'video/mp4' };
+    });
+    const fetchText = vi
+      .fn()
+      .mockResolvedValue('#EXTM3U\n#EXTINF:1,\nseg.ts\n#EXT-X-ENDLIST');
+    const jobStore = createJobStore(() => 1);
+    const controller = createDownloadController({
+      downloadFile: vi.fn(),
+      runHls,
+      runDash: vi.fn(),
+      fetchText,
+    });
+    const hlsCandidate = candidate({
+      protocol: 'hls',
+      sourceUrl: undefined,
+      manifestUrl: 'https://cdn.example.com/master.m3u8',
+    });
+    const queuedJob = jobStore.create(hlsCandidate, { mode: 'best' });
+
+    const pending = controller.start(hlsCandidate, queuedJob, {
+      selection: { mode: 'best' },
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    await controller.abort(queuedJob.id, { jobStore });
+
+    await expect(pending).rejects.toThrow('aborted');
+    expect(seenSignals).toHaveLength(1);
+    expect(seenSignals[0]?.aborted).toBe(true);
+  });
+
   test('rejects protected candidates before fetching segments and records controller failures', async () => {
     const jobStore = createJobStore(() => 300);
     const historyStore = createHistoryStore(() => 300);

@@ -37,6 +37,7 @@ export type RunHlsControllerJob = (input: {
   concurrency?: number;
   maxConcurrentPerHost?: number;
   segmentTimeoutMs?: number;
+  signal?: AbortSignal;
 }) => Promise<JobOutput>;
 
 export type RunDashControllerJob = (input: {
@@ -46,6 +47,7 @@ export type RunDashControllerJob = (input: {
   concurrency?: number;
   maxConcurrentPerHost?: number;
   segmentTimeoutMs?: number;
+  signal?: AbortSignal;
 }) => Promise<JobOutput>;
 
 export type RunNativeExportControllerJob = (input: {
@@ -131,6 +133,33 @@ export function createDownloadController(options: DownloadControllerOptions) {
       await chrome.downloads.cancel(downloadId);
     });
   let suppressProtectedDownloads = options.suppressProtectedDownloads;
+  const activeAbortControllers = new Map<string, AbortController>();
+
+  function registerSignal(
+    jobId: string,
+    externalSignal?: AbortSignal,
+  ): AbortSignal {
+    const controller = new AbortController();
+    activeAbortControllers.set(jobId, controller);
+
+    if (externalSignal) {
+      if (externalSignal.aborted) {
+        controller.abort(externalSignal.reason);
+      } else {
+        externalSignal.addEventListener(
+          'abort',
+          () => controller.abort(externalSignal.reason),
+          { once: true },
+        );
+      }
+    }
+
+    return controller.signal;
+  }
+
+  function releaseSignal(jobId: string): void {
+    activeAbortControllers.delete(jobId);
+  }
 
   async function start(
     candidate: MediaCandidate,
@@ -148,79 +177,86 @@ export function createDownloadController(options: DownloadControllerOptions) {
       ...job,
       selection,
     };
+    const jobSignal = registerSignal(controllerJob.id, startOptions.signal);
 
-    if (candidate.protocol === 'direct') {
-      if (hasTrim(selection) && options.nativeExport) {
-        return options.nativeExport({ candidate, job: controllerJob });
+    try {
+      if (candidate.protocol === 'direct') {
+        if (hasTrim(selection) && options.nativeExport) {
+          return await options.nativeExport({ candidate, job: controllerJob });
+        }
+
+        const output = await options.downloadFile(candidate, controllerJob);
+
+        return {
+          ...output,
+          ...(hasTrim(selection)
+            ? {
+                notes: [
+                  'Trim is not supported for direct downloads yet; downloaded the full file.',
+                ],
+              }
+            : {}),
+        };
       }
 
-      const output = await options.downloadFile(candidate, controllerJob);
+      const manifestUrl = candidate.manifestUrl ?? candidate.sourceUrl;
 
-      return {
-        ...output,
-        ...(hasTrim(selection)
-          ? {
-              notes: [
-                'Trim is not supported for direct downloads yet; downloaded the full file.',
-              ],
-            }
-          : {}),
-      };
-    }
+      if (!manifestUrl) {
+        throw new Error('Missing manifest URL.');
+      }
 
-    const manifestUrl = candidate.manifestUrl ?? candidate.sourceUrl;
+      if (options.nativeExport) {
+        return await options.nativeExport({ candidate, job: controllerJob });
+      }
 
-    if (!manifestUrl) {
-      throw new Error('Missing manifest URL.');
-    }
-
-    if (options.nativeExport) {
-      return options.nativeExport({ candidate, job: controllerJob });
-    }
-
-    const manifestText = await fetchText(manifestUrl, {
-      cache: 'no-store',
-      credentials: 'include',
-      signal: startOptions.signal,
-    });
-
-    const concurrencyFields: {
-      concurrency?: number;
-      maxConcurrentPerHost?: number;
-      segmentTimeoutMs?: number;
-    } = {};
-
-    if (startOptions.settings?.maxConcurrentSegments !== undefined) {
-      concurrencyFields.concurrency = startOptions.settings.maxConcurrentSegments;
-    }
-
-    if (startOptions.settings?.maxConcurrentSegmentsPerHost !== undefined) {
-      concurrencyFields.maxConcurrentPerHost = startOptions.settings.maxConcurrentSegmentsPerHost;
-    }
-
-    if (startOptions.settings?.segmentTimeoutMs !== undefined) {
-      concurrencyFields.segmentTimeoutMs = startOptions.settings.segmentTimeoutMs;
-    }
-
-    if (candidate.protocol === 'hls') {
-      return options.runHls({
-        job: controllerJob,
-        manifest: parseHlsManifest({ manifestUrl, content: manifestText }),
-        allowProtected,
-        ...concurrencyFields,
+      const manifestText = await fetchText(manifestUrl, {
+        cache: 'no-store',
+        credentials: 'include',
+        signal: jobSignal,
       });
-    }
 
-    if (candidate.protocol === 'dash') {
-      return options.runDash({
-        job: controllerJob,
-        manifest: parseMpd({ manifestUrl, content: manifestText }),
-        allowProtected,
-        ...concurrencyFields,
-      });
-    }
+      const concurrencyFields: {
+        concurrency?: number;
+        maxConcurrentPerHost?: number;
+        segmentTimeoutMs?: number;
+      } = {};
 
-    throw new Error(`Unsupported protocol: ${candidate.protocol}`);
+      if (startOptions.settings?.maxConcurrentSegments !== undefined) {
+        concurrencyFields.concurrency = startOptions.settings.maxConcurrentSegments;
+      }
+
+      if (startOptions.settings?.maxConcurrentSegmentsPerHost !== undefined) {
+        concurrencyFields.maxConcurrentPerHost = startOptions.settings.maxConcurrentSegmentsPerHost;
+      }
+
+      if (startOptions.settings?.segmentTimeoutMs !== undefined) {
+        concurrencyFields.segmentTimeoutMs = startOptions.settings.segmentTimeoutMs;
+      }
+
+      if (candidate.protocol === 'hls') {
+        return await options.runHls({
+          job: controllerJob,
+          manifest: parseHlsManifest({ manifestUrl, content: manifestText }),
+          allowProtected,
+          signal: jobSignal,
+          ...concurrencyFields,
+        });
+      }
+
+      if (candidate.protocol === 'dash') {
+        return await options.runDash({
+          job: controllerJob,
+          manifest: parseMpd({ manifestUrl, content: manifestText }),
+          allowProtected,
+          signal: jobSignal,
+          ...concurrencyFields,
+        });
+      }
+
+      throw new Error(`Unsupported protocol: ${candidate.protocol}`);
+    } finally {
+      releaseSignal(controllerJob.id);
+    }
   }
 
   async function runManaged(
@@ -268,6 +304,13 @@ export function createDownloadController(options: DownloadControllerOptions) {
 
     if (!job) {
       return { cancelled: false };
+    }
+
+    const activeController = activeAbortControllers.get(jobId);
+
+    if (activeController) {
+      activeController.abort(new DOMException('Cancelled by user', 'AbortError'));
+      activeAbortControllers.delete(jobId);
     }
 
     if (typeof downloadId === 'number') {
