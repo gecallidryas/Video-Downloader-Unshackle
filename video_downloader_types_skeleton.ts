@@ -171,13 +171,16 @@ export interface SegmentDescriptor {
   index: number;
   mediaSequence?: number;
   url: string;
+  fallbackUrls?: string[];
   initSegment?: boolean;
   byteRange?: { start: number; end: number };
   trackType?: 'video' | 'audio' | 'text';
   durationSec?: number;
+  discontinuity?: boolean;
   encryption?: {
     method?: string;
     keyUri?: string;
+    fallbackKeyUris?: string[];
     iv?: string;
   };
 }
