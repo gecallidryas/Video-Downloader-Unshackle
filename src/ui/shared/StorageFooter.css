@@ -1,0 +1,44 @@
+.storage-footer {
+  position: sticky;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px var(--panel-padding, 12px);
+  background: var(--surface-container);
+  border-top: 1px solid var(--outline-variant);
+  font-size: var(--text-label-size, 10px);
+  color: var(--on-surface-variant);
+}
+
+.storage-footer__bar {
+  flex: 1;
+  height: 4px;
+  background: var(--surface-variant);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.storage-footer__fill {
+  height: 100%;
+  background: var(--secondary);
+  transition: width 200ms ease;
+}
+
+.storage-footer--moderate .storage-footer__fill {
+  background: var(--tertiary);
+}
+
+.storage-footer--high .storage-footer__fill,
+.storage-footer--critical .storage-footer__fill {
+  background: var(--error);
+}
+
+.storage-footer--critical {
+  color: var(--error);
+}
+
+.storage-footer__text {
+  flex-shrink: 0;
+  font-variant-numeric: tabular-nums;
+}

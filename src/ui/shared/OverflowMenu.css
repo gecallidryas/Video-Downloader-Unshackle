@@ -1,0 +1,88 @@
+.overflow-menu {
+  position: relative;
+  display: inline-block;
+}
+
+.overflow-menu__trigger {
+  width: var(--touch-target, 28px);
+  height: var(--touch-target, 28px);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-sm, 4px);
+  color: var(--on-surface-variant);
+  cursor: pointer;
+  padding: 0;
+}
+
+.overflow-menu__trigger:hover,
+.overflow-menu__trigger[aria-expanded='true'] {
+  background: var(--surface-variant);
+  color: var(--on-surface);
+}
+
+.overflow-menu__trigger:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 1px;
+}
+
+.overflow-menu__panel {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  min-width: 180px;
+  background: var(--surface-container-high);
+  border-radius: var(--radius-md, 8px);
+  box-shadow: var(--control-shadow, 0 4px 12px rgba(0, 0, 0, 0.2));
+  padding: 4px;
+  z-index: 50;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.overflow-menu__item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 32px;
+  padding: 4px 10px;
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-sm, 4px);
+  text-align: left;
+  font-size: var(--text-body-size, 13px);
+  color: var(--on-surface);
+  cursor: pointer;
+}
+
+.overflow-menu__item:hover:not(:disabled),
+.overflow-menu__item:focus-visible {
+  background: var(--surface-variant);
+}
+
+.overflow-menu__item:disabled {
+  color: var(--outline);
+  cursor: not-allowed;
+}
+
+.overflow-menu__item--danger {
+  color: var(--error);
+}
+
+.overflow-menu__item--danger:hover:not(:disabled),
+.overflow-menu__item--danger:focus-visible {
+  background: var(--error-container);
+  color: var(--on-error-container);
+}
+
+.overflow-menu__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+}
