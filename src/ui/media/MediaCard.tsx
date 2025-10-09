@@ -1,7 +1,8 @@
-import { useRef, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import type { DetectedMedia } from '@/src/types/media';
 import type { ProviderPolicyResult } from '@/src/core/policy/evaluate-provider-policy';
 import { ProtectedActionGate } from '@/src/ui/protected/ProtectedActionGate';
+import { OverflowMenu, type MenuAction } from '@/src/ui/shared/OverflowMenu';
 import { TrackPicker } from './TrackPicker';
 import { TrimControls } from './TrimControls';
 import { VariantPicker } from './VariantPicker';
@@ -17,6 +18,9 @@ interface MediaCardProps {
   onSubtitleTrackChange?: (trackIds: string[]) => void;
   onTrimChange?: (trim: DetectedMedia['trim']) => void;
   onPreviewHover?: () => void;
+  onCopyUrl?: (url: string) => void;
+  onCopyFilename?: () => void;
+  onCopyAllUrls?: () => void;
   providerPolicy?: ProviderPolicyResult;
   onProtectedProceed?: (
     policy: Extract<ProviderPolicyResult, { kind: 'authorized-workflow' }>,
@@ -52,6 +56,9 @@ export function MediaCard({
   onSubtitleTrackChange = () => {},
   onTrimChange = () => {},
   onPreviewHover = () => {},
+  onCopyUrl,
+  onCopyFilename,
+  onCopyAllUrls,
   providerPolicy,
   onProtectedProceed,
 }: MediaCardProps) {
@@ -76,6 +83,59 @@ export function MediaCard({
 
   function handleThumbLeave() {
     setHoveringThumb(false);
+  }
+
+  const hasAudioUrl = (media.audioTracks ?? []).some((track) => !!track.url);
+  const hasSubtitleUrl = (media.subtitleTracks ?? []).some((track) => !!track.url);
+
+  const menuActions = useMemo<MenuAction[]>(() => {
+    const items: MenuAction[] = [];
+    if (media.url) {
+      items.push({ id: 'copy-video-url', label: 'Copy video URL' });
+    }
+    if (hasAudioUrl) {
+      items.push({ id: 'copy-audio-url', label: 'Copy audio URL' });
+    }
+    if (hasSubtitleUrl) {
+      items.push({ id: 'copy-subtitle-url', label: 'Copy subtitle URL' });
+    }
+    items.push({ id: 'copy-filename', label: 'Copy filename' });
+    items.push({ id: 'copy-all-urls', label: 'Copy all URLs' });
+    items.push({ id: 'remove', label: 'Remove', danger: true, divider: true });
+    return items;
+  }, [media.url, hasAudioUrl, hasSubtitleUrl]);
+
+  function handleMenuAction(actionId: string) {
+    switch (actionId) {
+      case 'copy-video-url':
+        if (media.url) {
+          onCopyUrl?.(media.url);
+        }
+        break;
+      case 'copy-audio-url': {
+        const url = (media.audioTracks ?? []).find((track) => !!track.url)?.url;
+        if (url) {
+          onCopyUrl?.(url);
+        }
+        break;
+      }
+      case 'copy-subtitle-url': {
+        const url = (media.subtitleTracks ?? []).find((track) => !!track.url)?.url;
+        if (url) {
+          onCopyUrl?.(url);
+        }
+        break;
+      }
+      case 'copy-filename':
+        onCopyFilename?.();
+        break;
+      case 'copy-all-urls':
+        onCopyAllUrls?.();
+        break;
+      case 'remove':
+        onRemove();
+        break;
+    }
   }
 
   return (
@@ -175,16 +235,11 @@ export function MediaCard({
               <path d="M10 4.5C5.8 4.5 2.3 7.3 1 10c1.3 2.7 4.8 5.5 9 5.5s7.7-2.8 9-5.5c-1.3-2.7-4.8-5.5-9-5.5zm0 9a3.5 3.5 0 110-7 3.5 3.5 0 010 7zm0-5.5a2 2 0 100 4 2 2 0 000-4z" />
             </svg>
           </button>
-          <button
-            className="media-card__icon-btn media-card__icon-btn--danger"
-            onClick={onRemove}
-            aria-label="Remove"
-            title="Remove"
-          >
-            <svg viewBox="0 0 20 20" width="16" height="16" fill="currentColor">
-              <path d="M14.3 5.7a1 1 0 00-1.4 0L10 8.6 7.1 5.7a1 1 0 00-1.4 1.4L8.6 10l-2.9 2.9a1 1 0 101.4 1.4L10 11.4l2.9 2.9a1 1 0 001.4-1.4L11.4 10l2.9-2.9a1 1 0 000-1.4z" />
-            </svg>
-          </button>
+          <OverflowMenu
+            actions={menuActions}
+            onAction={handleMenuAction}
+            aria-label="More actions"
+          />
           <button
             className={`media-card__download-btn ${
               isBlocked ? 'media-card__download-btn--blocked' : ''

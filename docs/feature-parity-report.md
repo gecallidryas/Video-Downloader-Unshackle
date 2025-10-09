@@ -310,8 +310,8 @@ Status meanings in this section:
 | Detection | Toolbar icon updates only after playlist parses ready | listener store subscription | partial | Useful: avoid badge/icon success before parse succeeds. |
 | Intake | Manual direct playlist URL entry inside Sniffer | `SnifferController.addDirectPlaylist` | present | Unshackle now accepts manual HLS URL strings from context selection/link flows and creates side-panel candidates. |
 | Intake | Direct module files still exist but router no longer exposes Direct tab | `src/popup/src/modules/Direct/*`, router types | not-scope | Treat as legacy/dead code in reference, not a feature to port. |
-| Intake | Copy all playlist URLs | Sniffer controller/view | partial | Add side-panel bulk copy if absent. |
-| Intake | Copy individual playlist URL | Sniffer playlist row | present/partial | Good small UX affordance. |
+| Intake | Copy all playlist URLs | Sniffer controller/view | done | MediaCard overflow menu exposes `Copy all URLs` action (P2 #90). |
+| Intake | Copy individual playlist URL | Sniffer playlist row | done | MediaCard overflow menu copies the per-card video URL (P2 #91). |
 | Intake | Filter playlists by URL, page title, initiator | Sniffer controller | present/partial | Add initiator/title search if absent. |
 | Intake | Clear playlist list and levels | Sniffer clear action | present | Keep with candidate clear. |
 | Intake | Expand/collapse playlist rows | Sniffer row | UI-specific | Optional UI polish. |
@@ -330,9 +330,9 @@ Status meanings in this section:
 | Parsing | Key URI absolute resolution per segment | parser | present | Keep. |
 | Parsing | Session key/encryption inspection | `inspectLevelEncryption` | present | `classifyHlsProtection` now detects `#EXT-X-SESSION-KEY` and reuses the key classification path. |
 | Parsing | IV normalization for string, Uint32Array, Uint8Array | `inspectLevelEncryption` | present | Added tested `normalizeIV()` support for hex strings, numbers, `Uint8Array`, and `Uint32Array`. |
-| URL handling | Append master query params to level/fragment/key URLs | `appendQueryParams` | present | Added `propagateQueryParams()` and HLS planner propagation for init, segment, and AES key URLs. |
+| URL handling | Append master query params to level/fragment/key URLs | `appendQueryParams` | present | Added `propagateQueryParams()` and HLS planner propagation for init, segment, and AES key URLs, with original URLs retained as scheduler fallbacks. |
 | URL handling | Primary/fallback URI fetch | `fetchWithFallback` | present | Planner preserves existing URL params while appending missing same-origin master params, providing a safe fallback URI shape without overwriting segment params. |
-| URL handling | Fallback for fragments without appended params | use-case tests | partial | Add to scheduler tests. |
+| URL handling | Fallback for fragments without appended params | use-case tests | present | Scheduler now tries original fallback URLs when signed primary segment URLs fail, with regression coverage. |
 | Selection | Pick one video level | Playlist UI | present | Keep. |
 | Selection | Pick separate audio level | Playlist UI | present | Keep. |
 | Selection | Pick optional subtitle/CC track | Playlist UI | present | Keep. |
@@ -355,8 +355,8 @@ Status meanings in this section:
 | Preview | Teardown destroys hls.js and clears video src | `PlaylistPreview` cleanup | present/partial | Good frontend cleanup pattern. |
 | Download | Job creation fetches video/audio/subtitle data concurrently | `addDownloadJobEpic` | present/partial | Keep but review memory/latency. |
 | Download | Random UUID with fallback job id | `crypto.randomUUID` fallback | present | Keep. |
-| Download | Generates MP4 unless subtitles selected, then MKV | add job epic | partial | Useful automatic container decision. |
-| Download | Stores subtitle text before mux/save | `storeSubtitleTextFactory`, save epic restorage | partial | Good reliability pattern for MV3/offscreen. |
+| Download | Generates MP4 unless subtitles selected, then MKV | add job epic | done | `resolveOutputContainer` picks MKV when subtitles included, MP4 otherwise; explicit overrides honored. |
+| Download | Stores subtitle text before mux/save | `storeSubtitleTextFactory`, save epic restorage | done | `SubtitleStore` in-memory adapter with byte estimation and per-job listing/deletion lets subtitles survive failed mux. |
 | Download | Download job queue action after job creation | jobs slice and queue epic | present | Keep. |
 | Download | Active download limit, 0 means unlimited | config and queue epic | partial | Unshackle has max concurrent; consider explicit unlimited semantics. |
 | Download | Oldest queued job starts first | queue sort by `createdAt` | present/partial | Keep deterministic scheduling. |
@@ -401,7 +401,7 @@ Status meanings in this section:
 | Export | Mux video+audio TS to MP4 with stream copy | `ffmpeg-muxer.ts` | present via native | Keep native helper; compare args. |
 | Export | Video-only preserves all streams | `-map 0 -c copy` | partial | Useful when video stream includes embedded audio. |
 | Export | Audio-only AAC output path | `-c:a aac -b:a 192k` | present/partial | Useful fallback. |
-| Export | Subtitle mux to MKV with WebVTT | output `.mkv`, `video/x-matroska` | partial | Unshackle has subtitle track pickers; verify mux output. |
+| Export | Subtitle mux to MKV with WebVTT | output `.mkv`, `video/x-matroska` | done | `buildMuxArgs` emits `-c:s copy` into MKV; `verifySubtitleTrack` confirms embedded codec from ffprobe streams (falls back to sidecar). |
 | Export | `-shortest` for muxed outputs | ffmpeg args | partial | Good guard against mismatched audio/video duration. |
 | Export | Best-effort ffmpeg temp cleanup | `finally deleteFile` | present/partial | Keep. |
 | Export | MV3 offscreen object URL creation | `offscreen.ts` | present | Unshackle offscreen is already comparable. |
@@ -419,8 +419,8 @@ Status meanings in this section:
 | UI | Sniffer empty state | SnifferView | present | Keep. |
 | UI | Animated navigation and row expansion via GSAP | Sniffer/Job views | gap/not-scope | Optional; Unshackle can stay simpler. |
 | UI | Metadata badges for resolution, bitrate, FPS, audio fields | `Metadata.tsx`, PlaylistView | present/partial | Ensure FPS/channels/default/autoselect visible. |
-| UI | Copy buttons for video/audio/subtitle URLs | PlaylistView | partial | Useful diagnostic/power-user feature. |
-| UI | Copy filename button | JobView | gap/partial | Small useful affordance. |
+| UI | Copy buttons for video/audio/subtitle URLs | PlaylistView | done | Per-track copy entries surfaced through MediaCard overflow menu (P2 #91). |
+| UI | Copy filename button | JobView | done | MediaCard overflow menu `Copy filename` action wires the callback (P2 #92). |
 | UI | Hover card for long filename | JobView | gap/partial | Optional UI polish. |
 | UI | Sticky footer actions in playlist/downloads | PlaylistView/DownloadsView | present/partial | Useful for popup; side panel can adapt. |
 | UI | Inline destructive confirmation | InlineConfirm | present/partial | Ensure cleanup/delete use confirmation. |
@@ -501,7 +501,7 @@ The UI is split across specialized HTML pages: `popup.html` for detected resourc
 | Passive capture | Correlates send headers and response starts, then classifies media by URL, extension, request type, content type, content disposition, length, and range (`js/background.js`, `js/function.js`). | present | UnifiedVideoDownloader and live-stream-downloader have comparable passive capture. | Add any missing small classifiers as tests, especially content-disposition filename and range-size handling. |
 | Extension/MIME filters | Default extension and MIME lists cover audio, video, HLS, DASH, MSE fragments, subtitles, octet-stream variants, and disabled noisy types (`js/init.js`). | present | cat-catch has the most user-editable filter catalog. | Add user-extensible capture rules with clear defaults and reset behavior. |
 | Size expressions | Options support size filters with comparison, ranges, and B/KB/MB/GB units (`js/options.js`, changelog 2.6.8). | present | Not present in puemos; richer than live-stream-downloader. | Added typed binary-unit size predicate parser for capture filters. |
-| Regex classification | Regex rules can extract names, override extensions, blacklist, and test matches in the options UI (`js/init.js`, `js/options.js`). | partial/improved | UnifiedVideoDownloader has site heuristics; cat-catch exposes generic rules. | Added `createRegexClassifier` with ordered matching and typed construction-time validation; UI editor remains future work. |
+| Regex classification | Regex rules can extract names, override extensions, blacklist, and test matches in the options UI (`js/init.js`, `js/options.js`). | partial/improved | UnifiedVideoDownloader has site heuristics; cat-catch exposes generic rules. | Added `createRegexClassifier` with ordered matching, typed construction-time validation, and capture-rule engine integration; UI editor remains future work. |
 | Per-tab cache | Stores candidates by tab, deduplicates via `G.urlMap`, caps tab lists (`G.maxLength`), clears on tab events and auto-clear modes (`js/background.js`). | present | live-stream-downloader uses job windows; puemos persists HLS jobs. | Keep Unshackle queue/history; add explicit candidate cap diagnostics. |
 | Duplicate handling | Optional duplicate URL and duplicate filename filtering, including preview-page duplicate filename cleanup (`js/init.js`, `js/preview.js`). | partial | cat-catch has stronger UX controls here. | Add duplicate-name grouping and one-click cleanup in the side panel. |
 | Badge and commands | Badge count, pause/enable, auto-download, clear, reboot, catch, m3u8, and deep-search keyboard commands (`js/background.js`, manifests). | partial | UnifiedVideoDownloader has command breadth; cat-catch exposes more operational toggles. | Add command coverage for safe actions only: pause capture, clear candidates, open parser, open downloads. |
