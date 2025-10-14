@@ -172,7 +172,7 @@ Extracted from `feature-parity-report.md` across all 8 reference analyses. Every
 | 114 | `-shortest` for muxed outputs | ~~partial~~ done | puemos | `buildMuxArgs` appends `-shortest` whenever multiple inputs are muxed. |
 | 115 | Subtitle mux to MKV with WebVTT verification | ~~partial~~ done | puemos | Added `verifySubtitleTrack` reading ffprobe streams to confirm embedded subtitle codec; emits sidecar fallback. |
 | 116 | Cancel dispatches actual fetch abort, not just state stop | ~~partial~~ done | puemos | DownloadController threads a per-job AbortController through manifest fetch and runHls/runDash; abort() aborts the live signal. |
-| 117 | Re-save completed job if link still valid | partial (backend) | puemos | URL replacement helper exists; full re-save pipeline lands with UI overflow menu in Phase 2 Task 6. |
+| 117 | Re-save completed job if link still valid | ~~partial (backend)~~ improved | puemos | QueueItem overflow menu exposes `Save again`, `Copy URL`, `Copy filename`, `Copy command`, and `Remove from queue` actions; backend resave still pending Phase 6 Task 17. |
 | 118 | Safe auto-download for direct/unprotected candidates | ~~partial~~ done | cat-catch | Added `isAutoDownloadEligible` requiring advancedMode + direct media + size/blacklist gates; settings `autoDownloadEnabled`, `autoDownloadMinSize`, `autoDownloadBlacklist` (schema v8). |
 | 119 | Browser-specific download header support modeling | ~~partial~~ done | stream-detector | Added `detectBrowser` + `supportsRefererInDownload` so generated commands can adapt referer flag per browser. |
 

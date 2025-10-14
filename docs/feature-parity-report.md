@@ -376,7 +376,7 @@ Status meanings in this section:
 | Download | Retry failed job requeues and resets progress | JobController/jobs slice | present | Keep. |
 | Download | Queued job can be removed | JobView | present | Keep. |
 | Download | Downloading job can be cancelled | JobView | present | Keep. |
-| Download | Ready/done job can save again | JobView | partial | Useful if generated link is still valid. |
+| Download | Ready/done job can save again | JobView | improved | QueueItem overflow menu exposes `Save again` for completed jobs (P2 #117 UI wiring); backend resave behavior is tracked under Phase 6 Task 17. |
 | Download | Delete job also deletes storage bucket | delete epic | present | Keep. |
 | Download | Cancel dispatches delete | cancel-delete epic | partial | Unshackle may prefer cancelled history retention. |
 | Download | Auto delete after save setting | `autoDeleteAfterSaveEpic` | gap/partial | Useful storage-saving option. |
