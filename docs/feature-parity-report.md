@@ -345,7 +345,7 @@ Status meanings in this section:
 | Selection | Encryption inspection before enabling download | Playlist module | present | Keep protected gate. |
 | Selection | Block unsupported encryption before job creation | `encryptionBlocked` | present | Keep. |
 | Selection | Show checking encryption state | `inspectionPending` | present/partial | UX polish. |
-| Selection | Estimated output size from bitrate and duration | Playlist module | partial | Useful for pre-download storage warnings. |
+| Selection | Estimated output size from bitrate and duration | Playlist module | done | MediaCard derives `~N MB` from bitrate × duration and surfaces a storage warning marker (P2 #99). |
 | Duration | Fetch level playlist durations from `EXTINF` | `fetchLevelDurationEpic` | partial/gap | Useful for estimate and duration display. |
 | Duration | Concurrent duration fetch limit of 4 | epic mergeMap concurrency | gap | Good small bounded-work pattern. |
 | Preview | HLS preview in popup with native HLS fallback | `PlaylistPreview` | present/partial | Unshackle preview path is different; hls.js preview is useful fallback. |
@@ -418,10 +418,10 @@ Status meanings in this section:
 | UI | Invalid persisted tab falls back to Sniffer | RouterController tests | partial | Good small robustness pattern. |
 | UI | Sniffer empty state | SnifferView | present | Keep. |
 | UI | Animated navigation and row expansion via GSAP | Sniffer/Job views | gap/not-scope | Optional; Unshackle can stay simpler. |
-| UI | Metadata badges for resolution, bitrate, FPS, audio fields | `Metadata.tsx`, PlaylistView | present/partial | Ensure FPS/channels/default/autoselect visible. |
+| UI | Metadata badges for resolution, bitrate, FPS, audio fields | `Metadata.tsx`, PlaylistView | done | MediaCard renders FPS/channels/default/autoselect chips alongside format/quality/protection (P2 #96). |
 | UI | Copy buttons for video/audio/subtitle URLs | PlaylistView | done | Per-track copy entries surfaced through MediaCard overflow menu (P2 #91). |
 | UI | Copy filename button | JobView | done | MediaCard overflow menu `Copy filename` action wires the callback (P2 #92). |
-| UI | Hover card for long filename | JobView | gap/partial | Optional UI polish. |
+| UI | Hover card for long filename | JobView | done | Custom 300 ms hover tooltip on MediaCard title shows filename, size, and duration (P2 #93). |
 | UI | Sticky footer actions in playlist/downloads | PlaylistView/DownloadsView | present/partial | Useful for popup; side panel can adapt. |
 | UI | Inline destructive confirmation | InlineConfirm | present/partial | Ensure cleanup/delete use confirmation. |
 | UI | Job expandable rows | JobView | present/partial | Unshackle queue cards likely similar. |

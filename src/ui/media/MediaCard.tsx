@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { DetectedMedia } from '@/src/types/media';
 import type { ProviderPolicyResult } from '@/src/core/policy/evaluate-provider-policy';
 import { ProtectedActionGate } from '@/src/ui/protected/ProtectedActionGate';
@@ -21,6 +21,7 @@ interface MediaCardProps {
   onCopyUrl?: (url: string) => void;
   onCopyFilename?: () => void;
   onCopyAllUrls?: () => void;
+  remainingStorageBytes?: number;
   providerPolicy?: ProviderPolicyResult;
   onProtectedProceed?: (
     policy: Extract<ProviderPolicyResult, { kind: 'authorized-workflow' }>,
@@ -32,6 +33,28 @@ function selectedQualityLabel(media: DetectedMedia): string {
     media.qualities.find((quality) => quality.value === media.selectedQuality)?.label ??
     media.selectedQuality
   );
+}
+
+function formatEstimatedSize(bytes: number): string {
+  if (bytes >= 1_073_741_824) {
+    return `~${(bytes / 1_073_741_824).toFixed(2)} GB`;
+  }
+  if (bytes >= 1_048_576) {
+    return `~${Math.round(bytes / 1_048_576)} MB`;
+  }
+  if (bytes >= 1024) {
+    return `~${Math.round(bytes / 1024)} KB`;
+  }
+  return `~${bytes} B`;
+}
+
+function estimatedBytes(media: DetectedMedia): number | null {
+  if (typeof media.bitrate === 'number' && typeof media.durationSec === 'number') {
+    if (media.bitrate > 0 && media.durationSec > 0) {
+      return Math.round((media.bitrate / 8) * media.durationSec);
+    }
+  }
+  return null;
 }
 
 function protectionBadge(media: DetectedMedia): string | null {
@@ -59,6 +82,7 @@ export function MediaCard({
   onCopyUrl,
   onCopyFilename,
   onCopyAllUrls,
+  remainingStorageBytes,
   providerPolicy,
   onProtectedProceed,
 }: MediaCardProps) {
@@ -72,6 +96,40 @@ export function MediaCard({
   const trimEnabled = media.protocol === 'hls' || media.protocol === 'dash';
   const [hoveringThumb, setHoveringThumb] = useState(false);
   const hoverRequested = useRef(false);
+  const [filenameTooltipVisible, setFilenameTooltipVisible] = useState(false);
+  const tooltipTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (tooltipTimer.current !== null) {
+        clearTimeout(tooltipTimer.current);
+      }
+    };
+  }, []);
+
+  function handleTitleEnter() {
+    if (tooltipTimer.current !== null) {
+      clearTimeout(tooltipTimer.current);
+    }
+    tooltipTimer.current = setTimeout(() => {
+      setFilenameTooltipVisible(true);
+    }, 300);
+  }
+
+  function handleTitleLeave() {
+    if (tooltipTimer.current !== null) {
+      clearTimeout(tooltipTimer.current);
+      tooltipTimer.current = null;
+    }
+    setFilenameTooltipVisible(false);
+  }
+
+  const estimateBytes = estimatedBytes(media);
+  const displaySize = estimateBytes !== null ? formatEstimatedSize(estimateBytes) : media.size;
+  const overStorage =
+    typeof remainingStorageBytes === 'number' &&
+    estimateBytes !== null &&
+    estimateBytes > remainingStorageBytes;
 
   function handleThumbEnter() {
     setHoveringThumb(true);
@@ -177,8 +235,28 @@ export function MediaCard({
         </div>
 
         <div className="media-card__info">
-          <span className="media-card__title truncate" title={media.title}>
+          <span
+            className="media-card__title truncate"
+            onMouseEnter={handleTitleEnter}
+            onMouseLeave={handleTitleLeave}
+            onFocus={handleTitleEnter}
+            onBlur={handleTitleLeave}
+            tabIndex={0}
+          >
             {media.title}
+            {filenameTooltipVisible ? (
+              <span
+                className="media-card__filename-tooltip"
+                role="tooltip"
+                data-testid="media-filename-tooltip"
+              >
+                <span className="media-card__filename-tooltip-name">{media.title}</span>
+                <span className="media-card__filename-tooltip-meta">
+                  {displaySize}
+                  {media.duration ? ` · ${media.duration}` : ''}
+                </span>
+              </span>
+            ) : null}
           </span>
           <div className="media-card__meta">
             <span className="media-card__chip">{media.format}</span>
@@ -192,7 +270,38 @@ export function MediaCard({
                 {protectedLabel}
               </span>
             ) : null}
-            <span className="media-card__size label-xs">{media.size}</span>
+            {typeof media.fps === 'number' ? (
+              <span className="media-card__chip media-card__chip--fps">
+                {media.fps}fps
+              </span>
+            ) : null}
+            {media.channels ? (
+              <span className="media-card__chip media-card__chip--channels">
+                {media.channels}ch
+              </span>
+            ) : null}
+            {media.default ? (
+              <span className="media-card__chip media-card__chip--default">default</span>
+            ) : null}
+            {media.autoselect ? (
+              <span className="media-card__chip media-card__chip--autoselect">
+                autoselect
+              </span>
+            ) : null}
+            <span className="media-card__size label-xs">
+              {displaySize}
+              {overStorage ? (
+                <span
+                  className="media-card__storage-warning"
+                  data-testid="media-storage-warning"
+                  aria-label="Estimated size exceeds remaining storage"
+                  title="Estimated size exceeds remaining storage"
+                >
+                  {' '}
+                  &#9888;
+                </span>
+              ) : null}
+            </span>
           </div>
         </div>
       </div>

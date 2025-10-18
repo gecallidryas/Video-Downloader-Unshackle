@@ -143,13 +143,13 @@ Extracted from `feature-parity-report.md` across all 8 reference analyses. Every
 | 90 | Copy all playlist URLs (bulk copy) | ~~partial~~ done | puemos | MediaCard overflow menu wires `onCopyAllUrls` callback. |
 | 91 | Copy buttons for video/audio/subtitle URLs | ~~partial~~ done | puemos | Per-track copy entries in MediaCard overflow menu when URLs present. |
 | 92 | Copy filename button | ~~gap/partial~~ done | puemos | `Copy filename` action in MediaCard overflow menu. |
-| 93 | Hover card for long filename | gap/partial | puemos | UI polish. |
+| 93 | Hover card for long filename | ~~gap/partial~~ done | puemos | Custom 300 ms hover tooltip on MediaCard title shows full filename, size, and duration. |
 | 94 | Storage footer in downloads | partial (component ready) | puemos | `StorageFooter` shared component built with progressbar, level coloring (ok/moderate/high/critical), and percent text; wiring to downloads tab lands in Phase 5 Task 14. |
 | 95 | Router tab persisted in localStorage | gap/partial | puemos | Side panel benefits from persisted active tab. |
-| 96 | Metadata badges for FPS, channels, default, autoselect | present/partial | puemos | Ensure all visible. |
+| 96 | Metadata badges for FPS, channels, default, autoselect | ~~present/partial~~ done | puemos | MediaCard chips render FPS/channels/default/autoselect from new DetectedMedia fields. |
 | 97 | Filter downloads by filename | present/partial | puemos | Add if absent. |
 | 98 | Settings language list with ISO codes | partial | puemos | Preferred audio language UI presets. |
-| 99 | Estimated output size from bitrate and duration | partial | puemos | Pre-download storage warnings. |
+| 99 | Estimated output size from bitrate and duration | ~~partial~~ done | puemos | MediaCard shows `~N MB` estimate from bitrate × duration and a ⚠ marker when over `remainingStorageBytes`. |
 | 100 | Duplicate handling (duplicate URL/filename filtering) | partial | cat-catch | Duplicate-name grouping and one-click cleanup. |
 | 101 | Badge/command coverage (pause, clear, open parser) | partial | cat-catch | Keyboard commands for safe operational toggles. |
 | 102 | Current/all/previous candidate views | partial | stream-detector | Previous-session non-incognito detections restored separately. |

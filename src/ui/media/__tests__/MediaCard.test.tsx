@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { vi } from 'vitest';
 import { MediaCard } from '../MediaCard';
@@ -203,6 +203,94 @@ test('overflow menu Copy filename calls onCopyFilename', async () => {
   await user.click(screen.getByRole('button', { name: /more actions/i }));
   await user.click(screen.getByRole('menuitem', { name: /copy filename/i }));
   expect(onCopyFilename).toHaveBeenCalledTimes(1);
+});
+
+test('renders FPS, channels, default, and autoselect chips when data is present', () => {
+  render(
+    <MediaCard
+      media={{
+        ...mockVideo,
+        fps: 60,
+        channels: '5.1',
+        default: true,
+        autoselect: true,
+      }}
+      onPreview={noop}
+      onRemove={noop}
+      onDownload={noop}
+      onQualityChange={noop}
+    />,
+  );
+
+  expect(screen.getByText('60fps')).toBeInTheDocument();
+  expect(screen.getByText('5.1ch')).toBeInTheDocument();
+  expect(screen.getByText(/^default$/i)).toBeInTheDocument();
+  expect(screen.getByText(/^autoselect$/i)).toBeInTheDocument();
+});
+
+test('renders estimated size when bitrate and durationSec are present', () => {
+  render(
+    <MediaCard
+      media={{
+        ...mockVideo,
+        size: '',
+        bitrate: 5_000_000,
+        durationSec: 600,
+      }}
+      onPreview={noop}
+      onRemove={noop}
+      onDownload={noop}
+      onQualityChange={noop}
+    />,
+  );
+
+  expect(screen.getByText(/^~/)).toBeInTheDocument();
+});
+
+test('shows storage warning when estimated size exceeds remainingStorageBytes', () => {
+  render(
+    <MediaCard
+      media={{
+        ...mockVideo,
+        bitrate: 8_000_000,
+        durationSec: 3600,
+      }}
+      onPreview={noop}
+      onRemove={noop}
+      onDownload={noop}
+      onQualityChange={noop}
+      remainingStorageBytes={100_000_000}
+    />,
+  );
+
+  expect(screen.getByTestId('media-storage-warning')).toBeInTheDocument();
+});
+
+test('shows custom filename hover card after delay', () => {
+  vi.useFakeTimers();
+  try {
+    render(
+      <MediaCard
+        media={mockVideo}
+        onPreview={noop}
+        onRemove={noop}
+        onDownload={noop}
+        onQualityChange={noop}
+      />,
+    );
+
+    const title = screen.getByText('Ocean Sunset Timelapse - 4K Nature');
+    fireEvent.mouseEnter(title);
+    act(() => {
+      vi.advanceTimersByTime(350);
+    });
+    expect(screen.getByTestId('media-filename-tooltip')).toBeInTheDocument();
+
+    fireEvent.mouseLeave(title);
+    expect(screen.queryByTestId('media-filename-tooltip')).not.toBeInTheDocument();
+  } finally {
+    vi.useRealTimers();
+  }
 });
 
 test('overflow menu Copy all URLs calls onCopyAllUrls', async () => {
