@@ -150,7 +150,7 @@ Extracted from `feature-parity-report.md` across all 8 reference analyses. Every
 | 97 | Filter downloads by filename | present/partial | puemos | Add if absent. |
 | 98 | Settings language list with ISO codes | partial | puemos | Preferred audio language UI presets. |
 | 99 | Estimated output size from bitrate and duration | ~~partial~~ done | puemos | MediaCard shows `~N MB` estimate from bitrate × duration and a ⚠ marker when over `remainingStorageBytes`. |
-| 100 | Duplicate handling (duplicate URL/filename filtering) | partial | cat-catch | Duplicate-name grouping and one-click cleanup. |
+| 100 | Duplicate handling (duplicate URL/filename filtering) | ~~partial~~ improved | cat-catch | DuplicateBadge primitive plus MediaCard `duplicateCount`/`onDuplicateClick` props; grouping logic still pending parent integration. |
 | 101 | Badge/command coverage (pause, clear, open parser) | partial | cat-catch | Keyboard commands for safe operational toggles. |
 | 102 | Current/all/previous candidate views | partial | stream-detector | Previous-session non-incognito detections restored separately. |
 | 103 | Recent-only compact mode | gap | stream-detector | Useful on pages emitting hundreds of fragments. |
@@ -184,7 +184,7 @@ Extracted from `feature-parity-report.md` across all 8 reference analyses. Every
 | 121 | NFC Unicode normalization in filenames | ~~partial~~ done | puemos | `normalizeFilenameUnicode` applies NFC; `resolveRichFilename` returns NFC output covered by tests. |
 | 122 | Subtitle filename with language/name fallback | ~~partial~~ done | puemos | Added `deriveSubtitleFilename` with language→trackName→und fallback and filename sanitization. |
 | 123 | Ignore empty link gracefully | ~~gap/partial~~ done | puemos | `isEmptyLink` returns true for empty, whitespace, `#`, and `javascript:void(...)`. |
-| 124 | Output naming preview for stream jobs | gap | stream-detector | Preview filename before download. |
+| 124 | Output naming preview for stream jobs | ~~gap~~ improved | stream-detector | MediaCard renders `→ outputFilename` under the title when it differs from `media.title`; backend filename generation tracked under Phase 7 Task 18. |
 | 125 | Title+quality filename tests | ~~partial~~ done | ViewTube | `resolveRichFilename` composes `{author} - {title} - {quality}.{ext}`, sanitizes, trims to 200 chars, and falls back through pageTitle/URL/`download`. |
 
 ### Integrations

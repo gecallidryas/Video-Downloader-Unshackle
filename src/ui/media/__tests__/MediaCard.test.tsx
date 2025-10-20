@@ -205,6 +205,68 @@ test('overflow menu Copy filename calls onCopyFilename', async () => {
   expect(onCopyFilename).toHaveBeenCalledTimes(1);
 });
 
+test('renders DuplicateBadge when duplicateCount > 0', () => {
+  render(
+    <MediaCard
+      media={mockVideo}
+      onPreview={noop}
+      onRemove={noop}
+      onDownload={noop}
+      onQualityChange={noop}
+      duplicateCount={3}
+    />,
+  );
+
+  expect(screen.getByRole('button', { name: /3 duplicates/i })).toBeInTheDocument();
+});
+
+test('does not render DuplicateBadge when duplicateCount is 0', () => {
+  render(
+    <MediaCard
+      media={mockVideo}
+      onPreview={noop}
+      onRemove={noop}
+      onDownload={noop}
+      onQualityChange={noop}
+      duplicateCount={0}
+    />,
+  );
+
+  expect(screen.queryByText(/duplicate/i)).not.toBeInTheDocument();
+});
+
+test('shows output filename preview when outputFilename differs from title', () => {
+  render(
+    <MediaCard
+      media={mockVideo}
+      onPreview={noop}
+      onRemove={noop}
+      onDownload={noop}
+      onQualityChange={noop}
+      outputFilename="Creator - Ocean Sunset - 1080p.mp4"
+    />,
+  );
+
+  expect(
+    screen.getByText('→ Creator - Ocean Sunset - 1080p.mp4'),
+  ).toBeInTheDocument();
+});
+
+test('hides output filename preview when it equals media.title', () => {
+  render(
+    <MediaCard
+      media={mockVideo}
+      onPreview={noop}
+      onRemove={noop}
+      onDownload={noop}
+      onQualityChange={noop}
+      outputFilename={mockVideo.title}
+    />,
+  );
+
+  expect(screen.queryByText(/^→/)).not.toBeInTheDocument();
+});
+
 test('renders FPS, channels, default, and autoselect chips when data is present', () => {
   render(
     <MediaCard

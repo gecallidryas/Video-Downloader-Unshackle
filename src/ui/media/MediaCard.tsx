@@ -3,6 +3,7 @@ import type { DetectedMedia } from '@/src/types/media';
 import type { ProviderPolicyResult } from '@/src/core/policy/evaluate-provider-policy';
 import { ProtectedActionGate } from '@/src/ui/protected/ProtectedActionGate';
 import { OverflowMenu, type MenuAction } from '@/src/ui/shared/OverflowMenu';
+import { DuplicateBadge } from './DuplicateBadge';
 import { TrackPicker } from './TrackPicker';
 import { TrimControls } from './TrimControls';
 import { VariantPicker } from './VariantPicker';
@@ -22,6 +23,9 @@ interface MediaCardProps {
   onCopyFilename?: () => void;
   onCopyAllUrls?: () => void;
   remainingStorageBytes?: number;
+  duplicateCount?: number;
+  onDuplicateClick?: () => void;
+  outputFilename?: string;
   providerPolicy?: ProviderPolicyResult;
   onProtectedProceed?: (
     policy: Extract<ProviderPolicyResult, { kind: 'authorized-workflow' }>,
@@ -83,6 +87,9 @@ export function MediaCard({
   onCopyFilename,
   onCopyAllUrls,
   remainingStorageBytes,
+  duplicateCount,
+  onDuplicateClick,
+  outputFilename,
   providerPolicy,
   onProtectedProceed,
 }: MediaCardProps) {
@@ -235,6 +242,12 @@ export function MediaCard({
         </div>
 
         <div className="media-card__info">
+          {typeof duplicateCount === 'number' && duplicateCount > 0 ? (
+            <DuplicateBadge
+              count={duplicateCount}
+              onClick={onDuplicateClick ?? (() => {})}
+            />
+          ) : null}
           <span
             className="media-card__title truncate"
             onMouseEnter={handleTitleEnter}
@@ -258,6 +271,9 @@ export function MediaCard({
               </span>
             ) : null}
           </span>
+          {outputFilename && outputFilename !== media.title ? (
+            <span className="media-card__output-preview">{`→ ${outputFilename}`}</span>
+          ) : null}
           <div className="media-card__meta">
             <span className="media-card__chip">{media.format}</span>
             {media.selectedQuality ? (
