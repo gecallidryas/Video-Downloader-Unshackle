@@ -86,3 +86,14 @@
   width: 16px;
   height: 16px;
 }
+
+.overflow-menu__row {
+  display: flex;
+  flex-direction: column;
+}
+
+.overflow-menu__divider {
+  height: 1px;
+  margin: 4px 6px;
+  background: var(--outline-variant, var(--outline));
+}

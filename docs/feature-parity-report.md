@@ -310,8 +310,8 @@ Status meanings in this section:
 | Detection | Toolbar icon updates only after playlist parses ready | listener store subscription | partial | Useful: avoid badge/icon success before parse succeeds. |
 | Intake | Manual direct playlist URL entry inside Sniffer | `SnifferController.addDirectPlaylist` | present | Unshackle now accepts manual HLS URL strings from context selection/link flows and creates side-panel candidates. |
 | Intake | Direct module files still exist but router no longer exposes Direct tab | `src/popup/src/modules/Direct/*`, router types | not-scope | Treat as legacy/dead code in reference, not a feature to port. |
-| Intake | Copy all playlist URLs | Sniffer controller/view | partial | Add side-panel bulk copy if absent. |
-| Intake | Copy individual playlist URL | Sniffer playlist row | present/partial | Good small UX affordance. |
+| Intake | Copy all playlist URLs | Sniffer controller/view | done | MediaCard overflow menu exposes `Copy all URLs` action (P2 #90). |
+| Intake | Copy individual playlist URL | Sniffer playlist row | done | MediaCard overflow menu copies the per-card video URL (P2 #91). |
 | Intake | Filter playlists by URL, page title, initiator | Sniffer controller | present/partial | Add initiator/title search if absent. |
 | Intake | Clear playlist list and levels | Sniffer clear action | present | Keep with candidate clear. |
 | Intake | Expand/collapse playlist rows | Sniffer row | UI-specific | Optional UI polish. |
@@ -345,7 +345,7 @@ Status meanings in this section:
 | Selection | Encryption inspection before enabling download | Playlist module | present | Keep protected gate. |
 | Selection | Block unsupported encryption before job creation | `encryptionBlocked` | present | Keep. |
 | Selection | Show checking encryption state | `inspectionPending` | present/partial | UX polish. |
-| Selection | Estimated output size from bitrate and duration | Playlist module | partial | Useful for pre-download storage warnings. |
+| Selection | Estimated output size from bitrate and duration | Playlist module | done | MediaCard derives `~N MB` from bitrate × duration and surfaces a storage warning marker (P2 #99). |
 | Duration | Fetch level playlist durations from `EXTINF` | `fetchLevelDurationEpic` | partial/gap | Useful for estimate and duration display. |
 | Duration | Concurrent duration fetch limit of 4 | epic mergeMap concurrency | gap | Good small bounded-work pattern. |
 | Preview | HLS preview in popup with native HLS fallback | `PlaylistPreview` | present (`usePreviewPlayer` lazy hls.js fallback) | Unshackle preview path is different; hls.js preview is useful fallback. |
@@ -376,7 +376,7 @@ Status meanings in this section:
 | Download | Retry failed job requeues and resets progress | JobController/jobs slice | present | Keep. |
 | Download | Queued job can be removed | JobView | present | Keep. |
 | Download | Downloading job can be cancelled | JobView | present | Keep. |
-| Download | Ready/done job can save again | JobView | partial | Useful if generated link is still valid. |
+| Download | Ready/done job can save again | JobView | improved | QueueItem overflow menu exposes `Save again` for completed jobs (P2 #117 UI wiring); backend resave behavior is tracked under Phase 6 Task 17. |
 | Download | Delete job also deletes storage bucket | delete epic | present | Keep. |
 | Download | Cancel dispatches delete | cancel-delete epic | partial | Unshackle may prefer cancelled history retention. |
 | Download | Auto delete after save setting | `autoDeleteAfterSaveEpic` | gap/partial | Useful storage-saving option. |
@@ -418,10 +418,10 @@ Status meanings in this section:
 | UI | Invalid persisted tab falls back to Sniffer | RouterController tests | partial | Good small robustness pattern. |
 | UI | Sniffer empty state | SnifferView | present | Keep. |
 | UI | Animated navigation and row expansion via GSAP | Sniffer/Job views | gap/not-scope | Optional; Unshackle can stay simpler. |
-| UI | Metadata badges for resolution, bitrate, FPS, audio fields | `Metadata.tsx`, PlaylistView | present/partial | Ensure FPS/channels/default/autoselect visible. |
-| UI | Copy buttons for video/audio/subtitle URLs | PlaylistView | partial | Useful diagnostic/power-user feature. |
-| UI | Copy filename button | JobView | gap/partial | Small useful affordance. |
-| UI | Hover card for long filename | JobView | gap/partial | Optional UI polish. |
+| UI | Metadata badges for resolution, bitrate, FPS, audio fields | `Metadata.tsx`, PlaylistView | done | MediaCard renders FPS/channels/default/autoselect chips alongside format/quality/protection (P2 #96). |
+| UI | Copy buttons for video/audio/subtitle URLs | PlaylistView | done | Per-track copy entries surfaced through MediaCard overflow menu (P2 #91). |
+| UI | Copy filename button | JobView | done | MediaCard overflow menu `Copy filename` action wires the callback (P2 #92). |
+| UI | Hover card for long filename | JobView | done | Custom 300 ms hover tooltip on MediaCard title shows filename, size, and duration (P2 #93). |
 | UI | Sticky footer actions in playlist/downloads | PlaylistView/DownloadsView | present/partial | Useful for popup; side panel can adapt. |
 | UI | Inline destructive confirmation | InlineConfirm | present/partial | Ensure cleanup/delete use confirmation. |
 | UI | Job expandable rows | JobView | present/partial | Unshackle queue cards likely similar. |
@@ -503,7 +503,7 @@ The UI is split across specialized HTML pages: `popup.html` for detected resourc
 | Size expressions | Options support size filters with comparison, ranges, and B/KB/MB/GB units (`js/options.js`, changelog 2.6.8). | present | Not present in puemos; richer than live-stream-downloader. | Added typed binary-unit size predicate parser for capture filters. |
 | Regex classification | Regex rules can extract names, override extensions, blacklist, and test matches in the options UI (`js/init.js`, `js/options.js`). | partial/improved | UnifiedVideoDownloader has site heuristics; cat-catch exposes generic rules. | Added `createRegexClassifier` with ordered matching, typed construction-time validation, and capture-rule engine integration; UI editor remains future work. |
 | Per-tab cache | Stores candidates by tab, deduplicates via `G.urlMap`, caps tab lists (`G.maxLength`), clears on tab events and auto-clear modes (`js/background.js`). | present | live-stream-downloader uses job windows; puemos persists HLS jobs. | Keep Unshackle queue/history; add explicit candidate cap diagnostics. |
-| Duplicate handling | Optional duplicate URL and duplicate filename filtering, including preview-page duplicate filename cleanup (`js/init.js`, `js/preview.js`). | partial | cat-catch has stronger UX controls here. | Add duplicate-name grouping and one-click cleanup in the side panel. |
+| Duplicate handling | Optional duplicate URL and duplicate filename filtering, including preview-page duplicate filename cleanup (`js/init.js`, `js/preview.js`). | improved | DuplicateBadge primitive plus MediaCard `duplicateCount`/`onDuplicateClick` props expose the affordance; parent grouping logic still pending (P2 #100). |
 | Badge and commands | Badge count, pause/enable, auto-download, clear, reboot, catch, m3u8, and deep-search keyboard commands (`js/background.js`, manifests). | partial | UnifiedVideoDownloader has command breadth; cat-catch exposes more operational toggles. | Add command coverage for safe actions only: pause capture, clear candidates, open parser, open downloads. |
 | Blocklist/opt-out | Block URL list, whitelist mode, and a README opt-out process for site owners (`README_en.md`, `js/options.js`, `js/background.js`). | partial/improved | Complements live-stream-downloader owner-request blocklist and puemos store/independent variants. | Added `docs/OWNER-EXCLUSION.md`; remote/local blocklist mechanics remain separate policy work. |
 | Request headers | Extracts Referer, Origin, Cookie, Authorization from request headers; removes cookie from replayable header list but keeps separate `data.cookie` (`js/background.js`). | review | Stronger than puemos and live-stream-downloader, but higher release risk. | Strip cookies/auth by default; allow explicit, per-download, expiring header grants for referer/origin first. |
@@ -760,7 +760,7 @@ The core detector is `reference/stream-detector/src/js/background.js`. It listen
 | Streamlink template | Supports proxy, User-Agent/Cookie/Referer headers, output file vs player mode, URL, and `best`. | Good command profile once sensitive headers are gated. |
 | hlsdl/N_m3u8DL-RE templates | Adds user-agent, Cookie, Referer, proxy, output/save-name flags, and stream URL. | Optional templates should be declarative profiles, not hardcoded string concatenation. |
 | User templates | `%url%`, `%filename%`, `%useragent%`, `%referer%`, `%cookie%`, `%proxy%`, `%origin%`, `%tabtitle%`, `%timestamp%`; optional regex replacement validates regex in options. | Implement a typed template engine; sensitive variables should be unavailable until explicitly enabled. |
-| Filename output | Can use tab title as output filename, sanitize filesystem-dangerous characters, append timestamp, and choose output extension `ts`, `mp4`, or `mkv`. | Add output naming preview for stream jobs. |
+| Filename output | Can use tab title as output filename, sanitize filesystem-dangerous characters, append timestamp, and choose output extension `ts`, `mp4`, or `mkv`. | MediaCard now previews the resolved `→ outputFilename` line when it differs from the source title; backend filename generation tracked under Phase 7 Task 18 (P2 #124). |
 | Localization | `_locales/en/messages.json` includes labels/tooltips for all stream types, filters, direct download, blacklist, command profiles, and variables; de/ja/ko/pl/ru/sk are present. | Keep stream detector UI terminology localizable from the start. |
 | Build scripts | `package.json` uses Parcel WebExtension config, separate `build-firefox`, `build-chrome`, and `start`; lint/prettier/stylelint configs exist. | Useful release shape, but Unshackle should use repo-native WXT scripts. |
 | Tests | No `test`/`spec` files or test script found. | Convert behavior into Unshackle tests rather than inheriting untested logic. |

@@ -140,17 +140,17 @@ Extracted from `feature-parity-report.md` across all 8 reference analyses. Every
 | 87 | hls.js preview when native HLS unsupported | done | puemos | `usePreviewPlayer` hook checks `canPlayType('application/vnd.apple.mpegurl')` and lazy `import('hls.js')` only when needed; degrades gracefully if peer is absent. |
 | 88 | Preview reload button | done | puemos | Refresh icon button in `PreviewModal` header bumps `key` to destroy and recreate the player. |
 | 89 | Preview duration callback | done | puemos | `PreviewModal` fires `onDurationResolved(durationSec)` on `loadedmetadata`. |
-| 90 | Copy all playlist URLs (bulk copy) | partial | puemos | Side-panel bulk copy. |
-| 91 | Copy buttons for video/audio/subtitle URLs | partial | puemos | Diagnostic/power-user feature. |
-| 92 | Copy filename button | gap/partial | puemos | Small affordance. |
-| 93 | Hover card for long filename | gap/partial | puemos | UI polish. |
+| 90 | Copy all playlist URLs (bulk copy) | ~~partial~~ done | puemos | MediaCard overflow menu wires `onCopyAllUrls` callback. |
+| 91 | Copy buttons for video/audio/subtitle URLs | ~~partial~~ done | puemos | Per-track copy entries in MediaCard overflow menu when URLs present. |
+| 92 | Copy filename button | ~~gap/partial~~ done | puemos | `Copy filename` action in MediaCard overflow menu. |
+| 93 | Hover card for long filename | ~~gap/partial~~ done | puemos | Custom 300 ms hover tooltip on MediaCard title shows full filename, size, and duration. |
 | 94 | Storage footer in downloads | done | puemos | `StorageFooter` wired into the queue tab using `navigator.storage.estimate()` with level mapping (<60% ok, <80% moderate, <95% high, ≥95% critical). |
 | 95 | Router tab persisted in localStorage | done | puemos | SidePanelApp persists active tab to `unshackle:sidepanel:activeTab` and rehydrates on mount. |
-| 96 | Metadata badges for FPS, channels, default, autoselect | present/partial | puemos | Ensure all visible. |
+| 96 | Metadata badges for FPS, channels, default, autoselect | ~~present/partial~~ done | puemos | MediaCard chips render FPS/channels/default/autoselect from new DetectedMedia fields. |
 | 97 | Filter downloads by filename | done | puemos | `FilterInput` above detected streams filters `media.title` case-insensitively with debounce; "N of M streams" count rendered below. |
 | 98 | Settings language list with ISO codes | partial | puemos | Preferred audio language UI presets. |
-| 99 | Estimated output size from bitrate and duration | partial | puemos | Pre-download storage warnings. |
-| 100 | Duplicate handling (duplicate URL/filename filtering) | partial | cat-catch | Duplicate-name grouping and one-click cleanup. |
+| 99 | Estimated output size from bitrate and duration | ~~partial~~ done | puemos | MediaCard shows `~N MB` estimate from bitrate × duration and a ⚠ marker when over `remainingStorageBytes`. |
+| 100 | Duplicate handling (duplicate URL/filename filtering) | ~~partial~~ improved | cat-catch | DuplicateBadge primitive plus MediaCard `duplicateCount`/`onDuplicateClick` props; grouping logic still pending parent integration. |
 | 101 | Badge/command coverage (pause, clear, open parser) | partial | cat-catch | Keyboard commands for safe operational toggles. |
 | 102 | Current/all/previous candidate views | done | stream-detector | SidePanelApp exposes Current Tab / All Tabs / Previous Session sub-tabs; previous detections persisted via `previous-detections.ts` and `saveDetectionsOnTabClose` on tab close. |
 | 103 | Recent-only compact mode | done | stream-detector | "Recent only" toggle limits list to the last 20 detections, with a "Show N more" button to expand. |
@@ -172,7 +172,7 @@ Extracted from `feature-parity-report.md` across all 8 reference analyses. Every
 | 114 | `-shortest` for muxed outputs | ~~partial~~ done | puemos | `buildMuxArgs` appends `-shortest` whenever multiple inputs are muxed. |
 | 115 | Subtitle mux to MKV with WebVTT verification | ~~partial~~ done | puemos | Added `verifySubtitleTrack` reading ffprobe streams to confirm embedded subtitle codec; emits sidecar fallback. |
 | 116 | Cancel dispatches actual fetch abort, not just state stop | ~~partial~~ done | puemos | DownloadController threads a per-job AbortController through manifest fetch and runHls/runDash; abort() aborts the live signal. |
-| 117 | Re-save completed job if link still valid | partial (backend) | puemos | URL replacement helper exists; full re-save pipeline lands with UI overflow menu in Phase 2 Task 6. |
+| 117 | Re-save completed job if link still valid | ~~partial~~ improved | puemos | QueueItem overflow menu exposes `Save again`, `Copy URL`, `Copy filename`, `Copy command`, and `Remove from queue` actions. URL replacement helper (Phase 6 Task 17) handles the backend re-derivation when source links rotate. |
 | 118 | Safe auto-download for direct/unprotected candidates | ~~partial~~ done | cat-catch | Added `isAutoDownloadEligible` requiring advancedMode + direct media + size/blacklist gates; settings `autoDownloadEnabled`, `autoDownloadMinSize`, `autoDownloadBlacklist` (schema v8). |
 | 119 | Browser-specific download header support modeling | ~~partial~~ done | stream-detector | Added `detectBrowser` + `supportsRefererInDownload` so generated commands can adapt referer flag per browser. |
 
@@ -184,7 +184,7 @@ Extracted from `feature-parity-report.md` across all 8 reference analyses. Every
 | 121 | NFC Unicode normalization in filenames | ~~partial~~ done | puemos | `normalizeFilenameUnicode` applies NFC; `resolveRichFilename` returns NFC output covered by tests. |
 | 122 | Subtitle filename with language/name fallback | ~~partial~~ done | puemos | Added `deriveSubtitleFilename` with language→trackName→und fallback and filename sanitization. |
 | 123 | Ignore empty link gracefully | ~~gap/partial~~ done | puemos | `isEmptyLink` returns true for empty, whitespace, `#`, and `javascript:void(...)`. |
-| 124 | Output naming preview for stream jobs | gap | stream-detector | Preview filename before download. |
+| 124 | Output naming preview for stream jobs | ~~gap~~ improved | stream-detector | MediaCard renders `→ outputFilename` under the title when it differs from `media.title`; backend filename generation lives in `resolveRichFilename` (Phase 7 Task 18). |
 | 125 | Title+quality filename tests | ~~partial~~ done | ViewTube | `resolveRichFilename` composes `{author} - {title} - {quality}.{ext}`, sanitizes, trims to 200 chars, and falls back through pageTitle/URL/`download`. |
 
 ### Integrations

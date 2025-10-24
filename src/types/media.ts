@@ -21,6 +21,9 @@ export interface TrackOption {
   label: string;
   language?: string;
   default?: boolean;
+  autoselect?: boolean;
+  channels?: string;
+  url?: string;
 }
 
 export interface MediaTrimSelection {
@@ -40,10 +43,17 @@ export interface DetectedMedia {
   format: string;
   size: string;
   duration: string;
+  url?: string;
   thumbnailUrl?: string;
   previewAssetUrl?: string;
   previewLoading?: boolean;
   mediaType: 'video' | 'audio';
+  bitrate?: number;
+  durationSec?: number;
+  fps?: number;
+  channels?: string;
+  default?: boolean;
+  autoselect?: boolean;
   qualities: QualityOption[];
   selectedQuality: string;
   audioTracks?: TrackOption[];

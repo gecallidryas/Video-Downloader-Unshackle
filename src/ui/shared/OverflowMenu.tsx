@@ -7,6 +7,7 @@ export interface MenuAction {
   icon?: React.ReactNode;
   danger?: boolean;
   disabled?: boolean;
+  divider?: boolean;
 }
 
 export interface OverflowMenuProps {
@@ -104,28 +105,36 @@ export function OverflowMenu({
           onKeyDown={handleMenuKeyDown}
         >
           {actions.map((action, index) => (
-            <button
-              key={action.id}
-              ref={(element) => {
-                itemsRef.current[index] = element;
-              }}
-              type="button"
-              role="menuitem"
-              disabled={action.disabled}
-              className={
-                action.danger
-                  ? 'overflow-menu__item overflow-menu__item--danger'
-                  : 'overflow-menu__item'
-              }
-              onClick={() => handleSelect(action)}
-            >
-              {action.icon ? (
-                <span className="overflow-menu__icon" aria-hidden="true">
-                  {action.icon}
-                </span>
+            <div key={action.id} className="overflow-menu__row">
+              {action.divider ? (
+                <div
+                  className="overflow-menu__divider"
+                  role="separator"
+                  aria-hidden="true"
+                />
               ) : null}
-              <span>{action.label}</span>
-            </button>
+              <button
+                ref={(element) => {
+                  itemsRef.current[index] = element;
+                }}
+                type="button"
+                role="menuitem"
+                disabled={action.disabled}
+                className={
+                  action.danger
+                    ? 'overflow-menu__item overflow-menu__item--danger'
+                    : 'overflow-menu__item'
+                }
+                onClick={() => handleSelect(action)}
+              >
+                {action.icon ? (
+                  <span className="overflow-menu__icon" aria-hidden="true">
+                    {action.icon}
+                  </span>
+                ) : null}
+                <span>{action.label}</span>
+              </button>
+            </div>
           ))}
         </div>
       ) : null}
