@@ -1,3 +1,5 @@
+import { OverflowMenu, type MenuAction } from '@/src/ui/shared/OverflowMenu';
+
 export type QueueViewStatus = 'pending' | 'running' | 'completed' | 'failed' | 'paused';
 
 export interface QueueViewItem {
@@ -15,6 +17,8 @@ export type QueueAction = 'cancel' | 'retry' | 'open' | 'pause' | 'resume';
 interface QueueItemProps {
   item: QueueViewItem;
   onAction: (action: QueueAction, id: string) => void;
+  onCopyCommand?: (profileId: string, id: string) => void;
+  commandProfileIds?: string[];
 }
 
 function statusLabel(item: QueueViewItem): string {
@@ -29,8 +33,21 @@ function statusLabel(item: QueueViewItem): string {
   return item.status;
 }
 
-export function QueueItem({ item, onAction }: QueueItemProps) {
+const DEFAULT_PROFILE_IDS = ['yt-dlp', 'ffmpeg', 'streamlink', 'hlsdl', 'n_m3u8dl-re'];
+
+export function QueueItem({
+  item,
+  onAction,
+  onCopyCommand,
+  commandProfileIds,
+}: QueueItemProps) {
   const progress = Math.max(0, Math.min(100, Math.round(item.progressPct || 0)));
+  const overflowActions: MenuAction[] = onCopyCommand
+    ? (commandProfileIds ?? DEFAULT_PROFILE_IDS).map((profileId) => ({
+        id: `copy-command:${profileId}`,
+        label: `Copy ${profileId} command`,
+      }))
+    : [];
 
   return (
     <article className="queue-item">
@@ -88,6 +105,18 @@ export function QueueItem({ item, onAction }: QueueItemProps) {
           >
             Open
           </button>
+        ) : null}
+        {overflowActions.length > 0 && onCopyCommand ? (
+          <OverflowMenu
+            aria-label={`More actions for ${item.title}`}
+            actions={overflowActions}
+            onAction={(actionId) => {
+              const [kind, profileId] = actionId.split(':');
+              if (kind === 'copy-command' && profileId) {
+                onCopyCommand(profileId, item.id);
+              }
+            }}
+          />
         ) : null}
       </div>
     </article>

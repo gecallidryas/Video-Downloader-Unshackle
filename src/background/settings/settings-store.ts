@@ -77,7 +77,20 @@ export interface UnifiedSettings {
   captureRuleMinSizeBytes: number;
   captureRuleSizePredicate: string;
   advancedMode: boolean;
+  customCommandTemplate: string;
+  aria2Enabled: boolean;
+  aria2RpcUrl: string;
+  aria2Secret: string;
+  webhookEnabled: boolean;
+  webhookUrl: string;
+  externalPlayerProfiles: ExternalPlayerProfile[];
   _schemaVersion: number;
+}
+
+export interface ExternalPlayerProfile {
+  id: string;
+  name: string;
+  path: string;
 }
 
 export const DEFAULT_SETTINGS: UnifiedSettings = {
@@ -117,7 +130,14 @@ export const DEFAULT_SETTINGS: UnifiedSettings = {
   captureRuleMinSizeBytes: 0,
   captureRuleSizePredicate: '',
   advancedMode: false,
-  _schemaVersion: 6,
+  customCommandTemplate: '',
+  aria2Enabled: false,
+  aria2RpcUrl: 'http://localhost:6800/jsonrpc',
+  aria2Secret: '',
+  webhookEnabled: false,
+  webhookUrl: '',
+  externalPlayerProfiles: [],
+  _schemaVersion: 9,
 };
 
 export interface SettingsStorageAdapter {
@@ -151,7 +171,27 @@ function cloneSettings(settings: UnifiedSettings): UnifiedSettings {
     captureRuleCustomExtensions: [...settings.captureRuleCustomExtensions],
     captureRuleCustomContentTypes: [...settings.captureRuleCustomContentTypes],
     captureRuleUrlBlacklist: [...settings.captureRuleUrlBlacklist],
+    externalPlayerProfiles: settings.externalPlayerProfiles.map((profile) => ({ ...profile })),
   };
+}
+
+function normalizeExternalPlayerProfiles(value: unknown): ExternalPlayerProfile[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  const result: ExternalPlayerProfile[] = [];
+  for (const entry of value) {
+    if (typeof entry !== 'object' || entry === null) continue;
+    const item = entry as Partial<ExternalPlayerProfile>;
+    if (
+      typeof item.id === 'string' &&
+      typeof item.name === 'string' &&
+      typeof item.path === 'string'
+    ) {
+      result.push({ id: item.id, name: item.name, path: item.path });
+    }
+  }
+  return result;
 }
 
 function normalizeProviderDefaults(
@@ -230,6 +270,25 @@ function normalizeSettings(value: unknown): UnifiedSettings {
     )
       ? (incoming.remoteConfigSecurityMode as RemoteConfigSecurityMode)
       : DEFAULT_SETTINGS.remoteConfigSecurityMode,
+    customCommandTemplate:
+      typeof incoming.customCommandTemplate === 'string'
+        ? incoming.customCommandTemplate
+        : DEFAULT_SETTINGS.customCommandTemplate,
+    aria2Enabled: Boolean(incoming.aria2Enabled),
+    aria2RpcUrl:
+      typeof incoming.aria2RpcUrl === 'string' && incoming.aria2RpcUrl.length > 0
+        ? incoming.aria2RpcUrl
+        : DEFAULT_SETTINGS.aria2RpcUrl,
+    aria2Secret:
+      typeof incoming.aria2Secret === 'string'
+        ? incoming.aria2Secret
+        : DEFAULT_SETTINGS.aria2Secret,
+    webhookEnabled: Boolean(incoming.webhookEnabled),
+    webhookUrl:
+      typeof incoming.webhookUrl === 'string'
+        ? incoming.webhookUrl
+        : DEFAULT_SETTINGS.webhookUrl,
+    externalPlayerProfiles: normalizeExternalPlayerProfiles(incoming.externalPlayerProfiles),
     _schemaVersion: DEFAULT_SETTINGS._schemaVersion,
   };
 }

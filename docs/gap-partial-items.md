@@ -191,8 +191,8 @@ Extracted from `feature-parity-report.md` across all 8 reference analyses. Every
 
 | # | Item | Status | Stronger in | Action |
 |---|---|---|---|---|
-| 126 | Command profile templates (yt-dlp, FFmpeg, Streamlink, hlsdl, N_m3u8DL-RE) | partial | stream-detector | Native download primary; command export as power-user fallback. |
-| 127 | User command templates with safe variables | partial | stream-detector, cat-catch | Typed template engine; sensitive variables opt-in. |
+| 126 | Command profile templates (yt-dlp, FFmpeg, Streamlink, hlsdl, N_m3u8DL-RE) | done | stream-detector | `command-profiles.ts` renders all five built-ins via `command-generation-policy`; QueueItem overflow exposes copy command. |
+| 127 | User command templates with safe variables | done | stream-detector, cat-catch | `customCommandTemplate` setting + `renderProfileCommand('custom', ...)` reuses template engine; sensitive vars gated behind advancedMode + includeAuthHeaders. |
 | 128 | Optional external integration hub (Aria2/webhook/local protocol) | partial | cat-catch | Explicit opt-in, secret redaction, no credential forwarding by default. |
 | 129 | Safe external-player profiles (VLC/mpv/PotPlayer/helper) | partial | ViewTube, cat-catch | Explicit user-configured handoff without automatic protocol navigation. |
 | 130 | Aria2 external tool profile | gap | hls_downloader, cat-catch | aria2c as practical power-user integration. |
