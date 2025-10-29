@@ -579,7 +579,7 @@ The UI is split across specialized HTML pages: `popup.html` for detected resourc
 | P1 | Add DASH representation inspector | DASH parser UI | Show audio/video representation metadata and reuse HLS-style job runner for clear segment lists. |
 | P1 | Add settings import/export with secret redaction | settings schema | Export versioned JSON; redact Aria2 tokens, webhook secrets, MQTT passwords, and any future header profiles. |
 | P2 | Add copy/share template engine | row actions, settings | Safe tags for URL, title, filename, extension, size, referer/origin only when permitted; no cookie/auth variables by default. |
-| P2 | Add optional external integration hub | settings/integrations | Aria2/webhook/local protocol first; MQTT only after a generic export model exists. |
+| P2 | Add optional external integration hub | settings/integrations | Done: `src/integrations/external-hub.ts` orchestrates Aria2 + webhook dispatch with per-integration toggles and sensitive-header redaction. |
 | P2 | Add direct URL job panel | queue/downloader UI | Manual URL plus filename/referer/origin/custom safe headers, per-job retry/stop, and task handoff to existing queue. |
 | P2 | Add manifest/icon/package release checks | release scripts | Borrow cat-catch's practical `justfile` checks, but implement in repo-native tooling. |
 | P2 | Add public opt-out documentation | docs/release/site policy | Combine cat-catch's README opt-out language with live-stream-downloader's owner-request blocklist concept. |
@@ -707,7 +707,7 @@ The player layer is shared: helper functions create elements, sanitize titles, f
 | P1 | Add DASH audio/video pairing preferences | `src/background/settings/settings-store.ts` | Improved: added typed provider `dashPairing` defaults for auto, video-with-audio, video-only, and audio-only selection. |
 | P1 | Add per-provider defaults | `src/background/settings/settings-store.ts` | Done: schema v6 stores quality, container, subtitles, and DASH pairing preferences per provider. |
 | P2 | Add clearer extraction failure reasons | `src/plugins/hosts/extraction-failure.ts` | Done: typed failure reasons now map to user-facing descriptions and are available to host plugin contracts. |
-| P2 | Add safe external-player profiles | integrations | Explicit user-configured VLC/mpv/PotPlayer/helper handoff without automatic page protocol navigation. |
+| P2 | Add safe external-player profiles | integrations | Done: `externalPlayerProfiles` setting + `player-launcher.ts` native-messaging dispatcher with header redaction. |
 | P2 | Add title+quality filename tests | naming module | Include sanitized title, author/source, selected quality, and extension. |
 
 ### Things Not To Copy Literally / Risks
@@ -921,7 +921,7 @@ The entire tool is one shell script with no imports, modules, or configuration f
 | P2 | Add sidecar subtitle download option | `src/core/export/*`, UI | Users may prefer sidecar files over muxed subtitles. |
 | P1 | Add segment fetch timeout setting | `src/core/download/segment-scheduler.ts`, settings, HLS/DASH runners | Implemented as `segmentTimeoutMs` with a 30s default, settings schema v5, scheduler enforcement, and controller-to-runner wiring when settings are supplied. |
 | P3 | Add relative URL resolution fixtures for nested paths | `src/core/hls/__tests__/parse-hls-manifest.test.ts` | Add test cases for relative variant URLs, relative segment URLs, and mixed absolute/relative within the same manifest. |
-| P3 | Add aria2 external tool profile | integrations/settings | aria2c with `-x16 -s16 -j N` is a practical power-user integration. |
+| P3 | Add aria2 external tool profile | integrations/settings | Done: `src/integrations/aria2-client.ts` JSON-RPC client + `aria2Enabled/RpcUrl/Secret` settings; webhook + player-launcher dispatcher in `external-hub.ts`. |
 
 ### Things Not To Copy Literally / Risks
 
