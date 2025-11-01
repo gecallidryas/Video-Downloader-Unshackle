@@ -134,7 +134,7 @@ Extracted from `feature-parity-report.md` across all 8 reference analyses. Every
 | 81 | Segment range selection for HLS jobs | partial | m3u8-downloader, cat-catch (richer) | Start/end segment picker for partial download. |
 | 82 | Periodic auto-retry for errored segments | partial | m3u8-downloader | Configurable auto-retry with backoff and max-attempt limits. |
 | 83 | Preview grid advanced mode | partial | cat-catch | Lazy probes, duration sorting, failed-preview cleanup, duplicate filename cleanup, batch ops. |
-| 84 | Popup job details modal/panel | partial | live-stream, Unified | Job-details for advanced diagnostics. |
+| 84 | Popup job details modal/panel | done | live-stream, Unified | PopupApp now accepts `jobs` prop; selecting a job opens a detail view with progress, segments done/failed, speed, elapsed, and error; back button returns to list. |
 | 85 | Progressive preview while downloading | partial | live-stream (MP4Box/MSE), Unified | Optional enrichment. |
 | 86 | Codec sniff via MP4Box | partial | live-stream, Unified | Preview compatibility diagnostics. |
 | 87 | hls.js preview when native HLS unsupported | gap/partial | puemos | Side-panel preview without native helper. |
@@ -151,12 +151,12 @@ Extracted from `feature-parity-report.md` across all 8 reference analyses. Every
 | 98 | Settings language list with ISO codes | partial | puemos | Preferred audio language UI presets. |
 | 99 | Estimated output size from bitrate and duration | partial | puemos | Pre-download storage warnings. |
 | 100 | Duplicate handling (duplicate URL/filename filtering) | partial | cat-catch | Duplicate-name grouping and one-click cleanup. |
-| 101 | Badge/command coverage (pause, clear, open parser) | partial | cat-catch | Keyboard commands for safe operational toggles. |
+| 101 | Badge/command coverage (pause, clear, open parser) | done | cat-catch | Registered `pause-all`, `clear-completed`, `open-side-panel` in `wxt.config.ts` manifest commands with Ctrl+Shift+P/X/D suggested keys; PopupApp footer lists shortcuts. |
 | 102 | Current/all/previous candidate views | partial | stream-detector | Previous-session non-incognito detections restored separately. |
 | 103 | Recent-only compact mode | gap | stream-detector | Useful on pages emitting hundreds of fragments. |
 | 104 | Debounced notifications and badge mode | partial | stream-detector | Summarize many detections without spamming. |
 | 105 | Multi-field stream filtering | partial | stream-detector | Filter by filename, tab title, type, hostname. |
-| 106 | Direct URL job panel | partial | cat-catch | Manual URL plus filename/referer/origin, per-job retry/stop. |
+| 106 | Direct URL job panel | done | cat-catch | `DirectUrlPanel.tsx` form (URL/filename/referer/origin) plus result list with per-job retry/stop callbacks. |
 
 ### Download & Export
 
@@ -196,8 +196,8 @@ Extracted from `feature-parity-report.md` across all 8 reference analyses. Every
 | 128 | Optional external integration hub (Aria2/webhook/local protocol) | done | cat-catch | `external-hub.ts` dispatcher honors per-integration opt-in toggles; webhook payload strips cookie/authorization unless advancedMode + consent. |
 | 129 | Safe external-player profiles (VLC/mpv/PotPlayer/helper) | done | ViewTube, cat-catch | `player-launcher.ts` dispatches typed launch payload via native messaging; `externalPlayerProfiles` setting stores user-configured paths. |
 | 130 | Aria2 external tool profile | done | hls_downloader, cat-catch | `aria2-client.ts` JSON-RPC `addUri` with optional `token:<secret>` and header redaction; settings `aria2Enabled/RpcUrl/Secret`. |
-| 131 | QR/share action for safe resources | gap | cat-catch | Useful for mobile handoff; disable for sensitive URLs. |
-| 132 | Media-control diagnostics panel | partial | cat-catch | Play/pause, PiP, screenshot, seek — as opt-in manual tool. |
+| 131 | QR/share action for safe resources | done | cat-catch | `QRModal.tsx` renders SVG QR from `generate-qr-matrix.ts`; `isUrlSafeForQr` rejects URLs containing token/cookie/sig/expires/auth params. |
+| 132 | Media-control diagnostics panel | done | cat-catch | `MediaControlPanel.tsx` (advancedMode-gated) dispatches play/pause/PiP/screenshot/seek via typed `media-control-bridge.ts`. |
 
 ---
 
