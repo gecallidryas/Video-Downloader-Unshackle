@@ -25,7 +25,7 @@ describe('external hub', () => {
   });
 
   test('calls Aria2 when enabled', async () => {
-    const aria2 = vi.fn(async () => 'gid-1');
+    const aria2 = vi.fn(async (_url: string) => 'gid-1');
     const hub = createExternalHub({
       aria2Enabled: true,
       webhookEnabled: false,
@@ -48,7 +48,7 @@ describe('external hub', () => {
   });
 
   test('webhook payload omits cookies and authorization by default', async () => {
-    const webhook = vi.fn(async () => new Response('', { status: 200 }));
+    const webhook = vi.fn<typeof fetch>(async () => new Response('', { status: 200 }));
     const hub = createExternalHub({
       aria2Enabled: false,
       webhookEnabled: true,
@@ -72,7 +72,7 @@ describe('external hub', () => {
   });
 
   test('webhook forwards sensitive headers only when advancedMode + consent', async () => {
-    const webhook = vi.fn(async () => new Response('', { status: 200 }));
+    const webhook = vi.fn<typeof fetch>(async () => new Response('', { status: 200 }));
     const hub = createExternalHub({
       aria2Enabled: false,
       webhookEnabled: true,
@@ -107,7 +107,7 @@ describe('external hub', () => {
   });
 
   test('player launch goes through playerLauncher with selected profile', async () => {
-    const launch = vi.fn(async () => ({ ok: true }));
+    const launch = vi.fn(async (_input: unknown) => ({ ok: true }));
     const hub = createExternalHub({
       aria2Enabled: false,
       webhookEnabled: false,

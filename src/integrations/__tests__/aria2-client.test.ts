@@ -3,7 +3,7 @@ import { createAria2Client } from '../aria2-client';
 
 describe('aria2 client', () => {
   test('addUri posts JSON-RPC payload with url and headers', async () => {
-    const fetchMock = vi.fn(async () =>
+    const fetchMock = vi.fn<typeof fetch>(async () =>
       new Response(JSON.stringify({ id: '1', jsonrpc: '2.0', result: 'gid-123' }), {
         status: 200,
         headers: { 'Content-Type': 'application/json' },
@@ -37,7 +37,7 @@ describe('aria2 client', () => {
   });
 
   test('omits secret token from params when not configured', async () => {
-    const fetchMock = vi.fn(async () =>
+    const fetchMock = vi.fn<typeof fetch>(async () =>
       new Response(JSON.stringify({ id: '1', jsonrpc: '2.0', result: 'gid' })),
     );
     const client = createAria2Client({
@@ -51,7 +51,7 @@ describe('aria2 client', () => {
   });
 
   test('throws when RPC returns error', async () => {
-    const fetchMock = vi.fn(async () =>
+    const fetchMock = vi.fn<typeof fetch>(async () =>
       new Response(
         JSON.stringify({ id: '1', jsonrpc: '2.0', error: { code: 1, message: 'fail' } }),
       ),
@@ -65,7 +65,7 @@ describe('aria2 client', () => {
   });
 
   test('does not include sensitive cookie or authorization unless allowSensitive true', async () => {
-    const fetchMock = vi.fn(async () =>
+    const fetchMock = vi.fn<typeof fetch>(async () =>
       new Response(JSON.stringify({ id: '1', jsonrpc: '2.0', result: 'gid' })),
     );
     const client = createAria2Client({
@@ -84,7 +84,7 @@ describe('aria2 client', () => {
   });
 
   test('allowSensitive forwards Cookie/Authorization', async () => {
-    const fetchMock = vi.fn(async () =>
+    const fetchMock = vi.fn<typeof fetch>(async () =>
       new Response(JSON.stringify({ id: '1', jsonrpc: '2.0', result: 'gid' })),
     );
     const client = createAria2Client({

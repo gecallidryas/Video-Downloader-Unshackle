@@ -3,7 +3,7 @@ import { createPlayerLauncher } from '../player-launcher';
 
 describe('player launcher', () => {
   test('launch dispatches via native messaging handler', async () => {
-    const send = vi.fn(async () => ({ ok: true }));
+    const send = vi.fn(async (_payload: Record<string, unknown>) => ({ ok: true }));
     const launcher = createPlayerLauncher({ sendNativeMessage: send });
     await launcher.launch({
       profile: { id: 'vlc', name: 'VLC', path: '/usr/bin/vlc' },
@@ -38,7 +38,7 @@ describe('player launcher', () => {
   });
 
   test('does not forward sensitive headers unless allowed', async () => {
-    const send = vi.fn(async () => ({ ok: true }));
+    const send = vi.fn(async (_payload: Record<string, unknown>) => ({ ok: true }));
     const launcher = createPlayerLauncher({ sendNativeMessage: send });
     await launcher.launch({
       profile: { id: 'mpv', name: 'mpv', path: '/usr/bin/mpv' },

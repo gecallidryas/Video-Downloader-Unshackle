@@ -427,7 +427,7 @@ Status meanings in this section:
 | UI | Job expandable rows | JobView | present/partial | Unshackle queue cards likely similar. |
 | UI | Filter downloads by filename | DownloadsController | present/partial | Add if absent. |
 | UI | Storage footer in downloads | DownloadsView | gap/partial | Good constant visibility. |
-| UI | Settings language list with ISO-ish codes | SettingsView | partial | Useful if preferred audio language UI needs presets. |
+| UI | Settings language list with ISO-ish codes | SettingsView | done | `LanguagePicker.tsx` exposes ISO 639-1 presets for en/es/fr/de/ja/ko/zh/pt/ru/ar/hi/it plus Other free-text; `select-audio-by-language.ts` resolves preference against audio tracks with subtag fallback. |
 | UI | About links open through extension tabs API | AboutView | present/partial | Good MV2/MV3-compatible fallback. |
 | UI | Storybook for popup and design-system components | scripts/package | gap | Useful for visual QA if design system grows. |
 | Tests | Core use-case tests | many files | present | Unshackle has broad Vitest; keep. |

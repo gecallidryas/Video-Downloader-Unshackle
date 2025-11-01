@@ -17,7 +17,7 @@ describe('MediaControlPanel', () => {
 
   test('dispatches play/pause/screenshot/seek through bridge', async () => {
     const user = userEvent.setup();
-    const dispatch = vi.fn(async () => {});
+    const dispatch = vi.fn(async (_command: unknown) => {});
     const bridge = createMediaControlBridge({ dispatch });
     render(<MediaControlPanel bridge={bridge} advancedMode />);
 

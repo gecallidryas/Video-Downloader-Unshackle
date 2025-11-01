@@ -148,7 +148,7 @@ Extracted from `feature-parity-report.md` across all 8 reference analyses. Every
 | 95 | Router tab persisted in localStorage | gap/partial | puemos | Side panel benefits from persisted active tab. |
 | 96 | Metadata badges for FPS, channels, default, autoselect | present/partial | puemos | Ensure all visible. |
 | 97 | Filter downloads by filename | present/partial | puemos | Add if absent. |
-| 98 | Settings language list with ISO codes | partial | puemos | Preferred audio language UI presets. |
+| 98 | Settings language list with ISO codes | done | puemos | `LanguagePicker.tsx` presets (en/es/fr/de/ja/ko/zh/pt/ru/ar/hi/it) + Other free-text; `select-audio-by-language.ts` auto-matches with subtag fallback. |
 | 99 | Estimated output size from bitrate and duration | partial | puemos | Pre-download storage warnings. |
 | 100 | Duplicate handling (duplicate URL/filename filtering) | partial | cat-catch | Duplicate-name grouping and one-click cleanup. |
 | 101 | Badge/command coverage (pause, clear, open parser) | done | cat-catch | Registered `pause-all`, `clear-completed`, `open-side-panel` in `wxt.config.ts` manifest commands with Ctrl+Shift+P/X/D suggested keys; PopupApp footer lists shortcuts. |
