@@ -1,6 +1,6 @@
 import { fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { PopupApp } from '../PopupApp';
+import { PopupApp, type PopupJob } from '../PopupApp';
 import { useSettingsStore } from '@/src/state/useSettingsStore';
 
 beforeEach(() => {
@@ -148,4 +148,43 @@ test('shows validation errors for invalid capture rules', async () => {
   await user.type(screen.getByRole('textbox', { name: /custom extensions/i }), 'webm');
 
   expect(screen.getByText(/invalid extension/i)).toBeInTheDocument();
+});
+
+test('renders keyboard shortcut hints in popup footer', () => {
+  render(<PopupApp />);
+  const list = screen.getByLabelText(/keyboard shortcuts/i);
+  expect(list).toHaveTextContent(/ctrl\+shift\+p/i);
+  expect(list).toHaveTextContent(/ctrl\+shift\+x/i);
+  expect(list).toHaveTextContent(/ctrl\+shift\+d/i);
+});
+
+const jobsFixture: PopupJob[] = [
+  {
+    id: 'job-1',
+    title: 'Clip A',
+    status: 'running',
+    progressPct: 42,
+    segmentsDone: 12,
+    segmentsFailed: 1,
+    speedKBps: 320.5,
+    elapsedSec: 18,
+  },
+];
+
+test('jobs prop renders job list and detail view with back navigation', async () => {
+  const user = userEvent.setup();
+  render(<PopupApp jobs={jobsFixture} />);
+  expect(screen.getByLabelText(/download jobs/i)).toBeInTheDocument();
+  await user.click(screen.getByRole('button', { name: /clip a/i }));
+  expect(screen.getByLabelText(/details for clip a/i)).toBeInTheDocument();
+  expect(screen.getByText(/42%/)).toBeInTheDocument();
+  expect(screen.getByText(/12/)).toBeInTheDocument();
+  await user.click(screen.getByRole('button', { name: /back to job list/i }));
+  expect(screen.getByLabelText(/download jobs/i)).toBeInTheDocument();
+});
+
+test('empty jobs prop renders empty state and shortcut hints', () => {
+  render(<PopupApp jobs={[]} />);
+  expect(screen.getByText(/no active downloads/i)).toBeInTheDocument();
+  expect(screen.getByLabelText(/keyboard shortcuts/i)).toBeInTheDocument();
 });

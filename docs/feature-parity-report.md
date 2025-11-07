@@ -427,7 +427,7 @@ Status meanings in this section:
 | UI | Job expandable rows | JobView | present/partial | Unshackle queue cards likely similar. |
 | UI | Filter downloads by filename | DownloadsController | done | `FilterInput` filters detected streams case-insensitively with debounce; multi-field chip selector also supports tab title, type, and hostname. |
 | UI | Storage footer in downloads | DownloadsView | done | Unshackle wires `StorageFooter` to the queue tab using `navigator.storage.estimate()` with level-tier coloring. |
-| UI | Settings language list with ISO-ish codes | SettingsView | partial | Useful if preferred audio language UI needs presets. |
+| UI | Settings language list with ISO-ish codes | SettingsView | done | `LanguagePicker.tsx` exposes ISO 639-1 presets for en/es/fr/de/ja/ko/zh/pt/ru/ar/hi/it plus Other free-text; `select-audio-by-language.ts` resolves preference against audio tracks with subtag fallback. |
 | UI | About links open through extension tabs API | AboutView | present/partial | Good MV2/MV3-compatible fallback. |
 | UI | Storybook for popup and design-system components | scripts/package | gap | Useful for visual QA if design system grows. |
 | Tests | Core use-case tests | many files | present | Unshackle has broad Vitest; keep. |
@@ -504,7 +504,7 @@ The UI is split across specialized HTML pages: `popup.html` for detected resourc
 | Regex classification | Regex rules can extract names, override extensions, blacklist, and test matches in the options UI (`js/init.js`, `js/options.js`). | partial/improved | UnifiedVideoDownloader has site heuristics; cat-catch exposes generic rules. | Added `createRegexClassifier` with ordered matching, typed construction-time validation, and capture-rule engine integration; UI editor remains future work. |
 | Per-tab cache | Stores candidates by tab, deduplicates via `G.urlMap`, caps tab lists (`G.maxLength`), clears on tab events and auto-clear modes (`js/background.js`). | present | live-stream-downloader uses job windows; puemos persists HLS jobs. | Keep Unshackle queue/history; add explicit candidate cap diagnostics. |
 | Duplicate handling | Optional duplicate URL and duplicate filename filtering, including preview-page duplicate filename cleanup (`js/init.js`, `js/preview.js`). | improved | DuplicateBadge primitive plus MediaCard `duplicateCount`/`onDuplicateClick` props expose the affordance; parent grouping logic still pending (P2 #100). |
-| Badge and commands | Badge count, pause/enable, auto-download, clear, reboot, catch, m3u8, and deep-search keyboard commands (`js/background.js`, manifests). | partial | UnifiedVideoDownloader has command breadth; cat-catch exposes more operational toggles. | Add command coverage for safe actions only: pause capture, clear candidates, open parser, open downloads. |
+| Badge and commands | Badge count, pause/enable, auto-download, clear, reboot, catch, m3u8, and deep-search keyboard commands (`js/background.js`, manifests). | done | `wxt.config.ts` declares `pause-all` (Ctrl+Shift+P), `clear-completed` (Ctrl+Shift+X), and `open-side-panel` (Ctrl+Shift+D); PopupApp footer surfaces the hints. Safe commands only; advanced toggles remain settings-gated. |
 | Blocklist/opt-out | Block URL list, whitelist mode, and a README opt-out process for site owners (`README_en.md`, `js/options.js`, `js/background.js`). | partial/improved | Complements live-stream-downloader owner-request blocklist and puemos store/independent variants. | Added `docs/OWNER-EXCLUSION.md`; remote/local blocklist mechanics remain separate policy work. |
 | Request headers | Extracts Referer, Origin, Cookie, Authorization from request headers; removes cookie from replayable header list but keeps separate `data.cookie` (`js/background.js`). | review | Stronger than puemos and live-stream-downloader, but higher release risk. | Strip cookies/auth by default; allow explicit, per-download, expiring header grants for referer/origin first. |
 | Header replay | Uses DNR session rules to set per-resource request headers, including cookie when supplied (`js/function.js`). | review | live-stream-downloader has referer/origin scoping; cat-catch is broader. | Implement scoped header profiles with visible consent and no silent cookie/auth forwarding. |
@@ -544,7 +544,7 @@ The UI is split across specialized HTML pages: `popup.html` for detected resourc
 | JSON tool | Fetches/loads JSON URL/text with header support and renders a collapsible viewer (`json.html`, `js/json.js`). | not-scope | Utility feature only. | Do not prioritize unless diagnostics hub is added. |
 | External downloaders | Aria2 RPC, local custom protocol invocation, N_m3u8DL-style URI schemes, and send-to-local endpoint (`js/popup-utils.js`, `js/options.js`, `js/init.js`). | partial | cat-catch has the broadest integration surface. | Add integrations behind explicit opt-in, secret redaction, and no cookie/auth forwarding by default. |
 | MQTT export | Publishes candidate metadata to configured MQTT broker/topic with auth/QoS options (`js/popup-utils.js`, `options.html`). | gap | Unique reference feature. | Consider a generic webhook/export interface instead of MQTT-specific UI first. |
-| QR codes | Popup can render QR codes for resource URLs (`js/popup.js`, `lib/jquery.qrcode.min.js`). | gap | Small but useful for cross-device workflows. | Add share/copy actions only for safe direct URLs. |
+| QR codes | Popup can render QR codes for resource URLs (`js/popup.js`, `lib/jquery.qrcode.min.js`). | done | `QRModal.tsx` renders SVG QR through `generate-qr-matrix.ts` (placeholder encoder; flagged for replacement) and refuses URLs whose query carries token/cookie/sig/expires/auth keys. | Library swap needed before shipping QR feature; safety gate already in place. |
 | Local/online FFmpeg | Sends blobs/files to online FFmpeg service or iframe FFmpeg mode (`js/content-script.js`, `js/m3u8.js`, `js/downloader.js`). | review | Unshackle native helper is safer. | Keep processing local/native by default; remote processing must be explicit and redact sensitive headers. |
 | Build/release | `justfile` validates manifest JSON, copies assets, builds zip/CRX with `crx3`, checks icons, lints required files, and has release/status tasks. | partial | puemos has better test/build architecture; cat-catch has practical packaging checks. | Add manifest/icon/package sanity checks to release scripts. |
 | Tests | No conventional test suite or `package.json` was found; changelog mentions m3u8 parser test items, but source tree has no durable harness. | present | puemos remains strongest test reference. | Do not mirror test posture; use cat-catch findings to create Unshackle fixtures. |
@@ -579,12 +579,12 @@ The UI is split across specialized HTML pages: `popup.html` for detected resourc
 | P1 | Add DASH representation inspector | DASH parser UI | Show audio/video representation metadata and reuse HLS-style job runner for clear segment lists. |
 | P1 | Add settings import/export with secret redaction | settings schema | Export versioned JSON; redact Aria2 tokens, webhook secrets, MQTT passwords, and any future header profiles. |
 | P2 | Add copy/share template engine | row actions, settings | Safe tags for URL, title, filename, extension, size, referer/origin only when permitted; no cookie/auth variables by default. |
-| P2 | Add optional external integration hub | settings/integrations | Aria2/webhook/local protocol first; MQTT only after a generic export model exists. |
-| P2 | Add direct URL job panel | queue/downloader UI | Manual URL plus filename/referer/origin/custom safe headers, per-job retry/stop, and task handoff to existing queue. |
+| P2 | Add optional external integration hub | settings/integrations | Done: `src/integrations/external-hub.ts` orchestrates Aria2 + webhook dispatch with per-integration toggles and sensitive-header redaction. |
+| P2 | Add direct URL job panel | queue/downloader UI | Done: `src/ui/media/DirectUrlPanel.tsx` collects URL/filename/referer/origin and shows per-result retry/stop controls. |
 | P2 | Add manifest/icon/package release checks | release scripts | Borrow cat-catch's practical `justfile` checks, but implement in repo-native tooling. |
 | P2 | Add public opt-out documentation | docs/release/site policy | Combine cat-catch's README opt-out language with live-stream-downloader's owner-request blocklist concept. |
-| P3 | Add QR/share action for safe resources | row action menu | Useful for mobile handoff; disable for sensitive, expiring, or header-dependent resources. |
-| P3 | Add media-control diagnostics panel | side panel tools | Playback speed, PiP, screenshot, seek, volume, mute, loop, and active media selection as a manual tool. |
+| P3 | Add QR/share action for safe resources | row action menu | Done: `QRModal` blocks sharing of URLs with token/cookie/auth/sig/expires query params. |
+| P3 | Add media-control diagnostics panel | side panel tools | Done: `MediaControlPanel` (advancedMode-gated) routes play/pause/PiP/screenshot/seek through typed `media-control-bridge`. |
 
 ### Things Not To Copy Literally / Risks
 
@@ -707,7 +707,7 @@ The player layer is shared: helper functions create elements, sanitize titles, f
 | P1 | Add DASH audio/video pairing preferences | `src/background/settings/settings-store.ts` | Improved: added typed provider `dashPairing` defaults for auto, video-with-audio, video-only, and audio-only selection. |
 | P1 | Add per-provider defaults | `src/background/settings/settings-store.ts` | Done: schema v6 stores quality, container, subtitles, and DASH pairing preferences per provider. |
 | P2 | Add clearer extraction failure reasons | `src/plugins/hosts/extraction-failure.ts` | Done: typed failure reasons now map to user-facing descriptions and are available to host plugin contracts. |
-| P2 | Add safe external-player profiles | integrations | Explicit user-configured VLC/mpv/PotPlayer/helper handoff without automatic page protocol navigation. |
+| P2 | Add safe external-player profiles | integrations | Done: `externalPlayerProfiles` setting + `player-launcher.ts` native-messaging dispatcher with header redaction. |
 | P2 | Add title+quality filename tests | naming module | Include sanitized title, author/source, selected quality, and extension. |
 
 ### Things Not To Copy Literally / Risks
@@ -792,7 +792,7 @@ The core detector is `reference/stream-detector/src/js/background.js`. It listen
 | Filter input | Popup/sidebar filter by filename, tab title, type, or hostname. | done | `FilterInput` + chip selector drive `filterStreams` in `src/state/streamFilter.ts`; chips additive across fields. | |
 | Direct download | Clicking direct file/custom entries can use `chrome.downloads.download`; optional auto-download for non-manifest files. | partial | Cat-catch has more downloader UI; stream-detector has clean simple direct download. | Direct media downloading is core; capture-rule blacklist and size guards are now available for safe auto-download wiring. |
 | Firefox referer download | Firefox direct downloads can include Referer header; Chrome path omits headers due API limits (`popup.js`, `background.js`). | partial | Useful browser capability distinction. | Model browser-specific download header support explicitly. |
-| Command generation | Copy methods include raw URL, Kodi URL, table form, yt-dlp, FFmpeg, Streamlink, hlsdl, N_m3u8DL-RE, and three user commands (`popup.js`). | partial | Best reference for command output UX. | Add command-preview/export as secondary to native download, with safe defaults. |
+| Command generation | Copy methods include raw URL, Kodi URL, table form, yt-dlp, FFmpeg, Streamlink, hlsdl, N_m3u8DL-RE, and three user commands (`popup.js`). | done | Unshackle now ships `src/core/export/command-profiles.ts` exposing yt-dlp, ffmpeg, streamlink, hlsdl, n_m3u8dl-re plus a `custom` template profile through `command-generation-policy`; sensitive headers gated. | Command-preview wired into QueueItem overflow menu via `onCopyCommand`. |
 | yt-dlp options | Adds `--no-part`, `--restrict-filenames`, optional `-N`, optional external downloader, output template, proxy, user-agent, cookie/header, referer, and browser cookie-store flags. | review | Useful but sensitive. | Provide command generation only with header redaction and explicit cookie handling. |
 | FFmpeg options | Generates `ffmpeg -user_agent`, `-headers "Cookie: ..."`, `-referer`, proxy, `-i`, and `-c copy` output commands. | review | Similar to cat-catch external tools. | Make command output visible/editable; do not silently include cookies. |
 | Streamlink options | Supports output file vs player mode plus headers/proxy. | partial | Unique focus among references. | Add streamlink template only after generic command profile exists. |
@@ -921,7 +921,7 @@ The entire tool is one shell script with no imports, modules, or configuration f
 | P2 | Add sidecar subtitle download option | `src/core/export/*`, UI | Users may prefer sidecar files over muxed subtitles. |
 | P1 | Add segment fetch timeout setting | `src/core/download/segment-scheduler.ts`, settings, HLS/DASH runners | Implemented as `segmentTimeoutMs` with a 30s default, settings schema v5, scheduler enforcement, and controller-to-runner wiring when settings are supplied. |
 | P3 | Add relative URL resolution fixtures for nested paths | `src/core/hls/__tests__/parse-hls-manifest.test.ts` | Add test cases for relative variant URLs, relative segment URLs, and mixed absolute/relative within the same manifest. |
-| P3 | Add aria2 external tool profile | integrations/settings | aria2c with `-x16 -s16 -j N` is a practical power-user integration. |
+| P3 | Add aria2 external tool profile | integrations/settings | Done: `src/integrations/aria2-client.ts` JSON-RPC client + `aria2Enabled/RpcUrl/Secret` settings; webhook + player-launcher dispatcher in `external-hub.ts`. |
 
 ### Things Not To Copy Literally / Risks
 

@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import type { ReactNode } from 'react';
 import { createNativeFfmpegClient, NativeFfmpegClientError } from '@/src/native/native-ffmpeg-client';
 import { createCaptureRuleEngine } from '@/src/core/capture-rules/capture-rule-engine';
 import { useSettingsStore } from '@/src/state/useSettingsStore';
@@ -484,7 +485,137 @@ function SettingsContent() {
   );
 }
 
-export function PopupApp({ embedded = false }: { embedded?: boolean }) {
+export interface PopupJob {
+  id: string;
+  title: string;
+  status: 'pending' | 'running' | 'completed' | 'failed' | 'paused';
+  progressPct: number;
+  segmentsDone?: number;
+  segmentsFailed?: number;
+  speedKBps?: number;
+  elapsedSec?: number;
+  error?: string;
+}
+
+interface PopupAppProps {
+  embedded?: boolean;
+  jobs?: PopupJob[];
+}
+
+function KeyboardHintFooter(): ReactNode {
+  return (
+    <ul aria-label="Keyboard shortcuts" className="popup__shortcuts" style={{ listStyle: 'none', padding: 0, margin: 0, fontSize: 11, opacity: 0.7 }}>
+      <li>Pause all: Ctrl+Shift+P</li>
+      <li>Clear completed: Ctrl+Shift+X</li>
+      <li>Open side panel: Ctrl+Shift+D</li>
+    </ul>
+  );
+}
+
+function JobsList({ jobs, onSelect }: { jobs: PopupJob[]; onSelect: (id: string) => void }) {
+  if (jobs.length === 0) {
+    return <p className="popup__empty">No active downloads.</p>;
+  }
+  return (
+    <ul aria-label="Download jobs" className="popup__jobs" style={{ listStyle: 'none', padding: 0, margin: 0 }}>
+      {jobs.map((job) => (
+        <li key={job.id} style={{ borderBottom: '1px solid var(--outline-variant, #2a2a2a)' }}>
+          <button
+            type="button"
+            className="popup__job"
+            style={{
+              width: '100%',
+              textAlign: 'left',
+              background: 'transparent',
+              color: 'inherit',
+              border: 'none',
+              padding: '8px 4px',
+              cursor: 'pointer',
+            }}
+            onClick={() => onSelect(job.id)}
+          >
+            <strong>{job.title}</strong>
+            <span style={{ marginLeft: 8, opacity: 0.7 }}>
+              {job.status} · {Math.round(job.progressPct)}%
+            </span>
+          </button>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+function JobDetail({ job, onBack }: { job: PopupJob; onBack: () => void }) {
+  return (
+    <section aria-label={`Details for ${job.title}`}>
+      <button type="button" onClick={onBack} aria-label="Back to job list">
+        ← Back
+      </button>
+      <h2 style={{ fontSize: 14, margin: '8px 0' }}>{job.title}</h2>
+      <dl style={{ display: 'grid', gridTemplateColumns: 'auto 1fr', gap: '4px 12px', fontSize: 12 }}>
+        <dt>Progress</dt>
+        <dd>{Math.round(job.progressPct)}%</dd>
+        <dt>Status</dt>
+        <dd>{job.status}</dd>
+        {job.segmentsDone !== undefined ? (
+          <>
+            <dt>Segments done</dt>
+            <dd>{job.segmentsDone}</dd>
+          </>
+        ) : null}
+        {job.segmentsFailed !== undefined ? (
+          <>
+            <dt>Segments failed</dt>
+            <dd>{job.segmentsFailed}</dd>
+          </>
+        ) : null}
+        {job.speedKBps !== undefined ? (
+          <>
+            <dt>Speed</dt>
+            <dd>{job.speedKBps.toFixed(1)} KB/s</dd>
+          </>
+        ) : null}
+        {job.elapsedSec !== undefined ? (
+          <>
+            <dt>Elapsed</dt>
+            <dd>{job.elapsedSec.toFixed(0)} s</dd>
+          </>
+        ) : null}
+        {job.error ? (
+          <>
+            <dt>Error</dt>
+            <dd role="alert">{job.error}</dd>
+          </>
+        ) : null}
+      </dl>
+    </section>
+  );
+}
+
+export function PopupApp({ embedded = false, jobs }: PopupAppProps) {
+  const [selectedJobId, setSelectedJobId] = useState<string | null>(null);
+  const selectedJob = jobs?.find((job) => job.id === selectedJobId) ?? null;
+
+  if (jobs !== undefined) {
+    return (
+      <div className="popup">
+        <header className="popup__header">
+          <h1 className="popup__title">Downloads</h1>
+        </header>
+        <div className="popup__body">
+          {selectedJob ? (
+            <JobDetail job={selectedJob} onBack={() => setSelectedJobId(null)} />
+          ) : (
+            <JobsList jobs={jobs} onSelect={setSelectedJobId} />
+          )}
+        </div>
+        <footer className="popup__footer">
+          <KeyboardHintFooter />
+        </footer>
+      </div>
+    );
+  }
+
   if (embedded) {
     return (
       <>
@@ -496,6 +627,7 @@ export function PopupApp({ embedded = false }: { embedded?: boolean }) {
         </div>
         <div className="popup__footer">
           <span className="popup__version">Video Downloader — Unshackle v0.1.0</span>
+          <KeyboardHintFooter />
         </div>
       </>
     );
@@ -514,6 +646,7 @@ export function PopupApp({ embedded = false }: { embedded?: boolean }) {
       </div>
       <footer className="popup__footer">
         <span className="popup__version">Video Downloader — Unshackle v0.1.0</span>
+        <KeyboardHintFooter />
       </footer>
     </div>
   );

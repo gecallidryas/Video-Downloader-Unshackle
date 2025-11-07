@@ -28,6 +28,8 @@ export type QueueAction =
 interface QueueItemProps {
   item: QueueViewItem;
   onAction: (action: QueueAction, id: string) => void;
+  onCopyCommand?: (profileId: string, id: string) => void;
+  commandProfileIds?: string[];
 }
 
 function statusLabel(item: QueueViewItem): string {
@@ -42,7 +44,14 @@ function statusLabel(item: QueueViewItem): string {
   return item.status;
 }
 
-export function QueueItem({ item, onAction }: QueueItemProps) {
+const DEFAULT_PROFILE_IDS = ['yt-dlp', 'ffmpeg', 'streamlink', 'hlsdl', 'n_m3u8dl-re'];
+
+export function QueueItem({
+  item,
+  onAction,
+  onCopyCommand,
+  commandProfileIds,
+}: QueueItemProps) {
   const progress = Math.max(0, Math.min(100, Math.round(item.progressPct || 0)));
 
   const menuActions = useMemo<MenuAction[]>(() => {
@@ -53,7 +62,13 @@ export function QueueItem({ item, onAction }: QueueItemProps) {
     if (item.status === 'completed') {
       items.push({ id: 'resave', label: 'Save again' });
     }
-    items.push({ id: 'copy-command', label: 'Copy command' });
+    if (onCopyCommand) {
+      for (const profileId of commandProfileIds ?? DEFAULT_PROFILE_IDS) {
+        items.push({ id: `copy-command:${profileId}`, label: `Copy ${profileId} command` });
+      }
+    } else {
+      items.push({ id: 'copy-command', label: 'Copy command' });
+    }
     items.push({
       id: 'remove',
       label: 'Remove from queue',
@@ -61,9 +76,16 @@ export function QueueItem({ item, onAction }: QueueItemProps) {
       divider: true,
     });
     return items;
-  }, [item.status]);
+  }, [item.status, onCopyCommand, commandProfileIds]);
 
   function handleMenu(actionId: string) {
+    if (actionId.startsWith('copy-command:') && onCopyCommand) {
+      const [, profileId] = actionId.split(':');
+      if (profileId) {
+        onCopyCommand(profileId, item.id);
+        return;
+      }
+    }
     onAction(actionId as QueueAction, item.id);
   }
 
@@ -127,7 +149,7 @@ export function QueueItem({ item, onAction }: QueueItemProps) {
         <OverflowMenu
           actions={menuActions}
           onAction={handleMenu}
-          aria-label="More actions"
+          aria-label={`More actions for ${item.title}`}
         />
       </div>
     </article>

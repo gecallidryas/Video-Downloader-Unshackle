@@ -42,6 +42,12 @@ export interface ProviderDefaultSettings {
   dashPairing: ProviderDashPairingPreference;
 }
 
+export interface ExternalPlayerProfile {
+  id: string;
+  name: string;
+  path: string;
+}
+
 export interface UnifiedSettings {
   theme: ThemeName;
   uiMode: UiMode;
@@ -84,6 +90,13 @@ export interface UnifiedSettings {
   autoDownloadEnabled: boolean;
   autoDownloadMinSize: number;
   autoDownloadBlacklist: string[];
+  customCommandTemplate: string;
+  aria2Enabled: boolean;
+  aria2RpcUrl: string;
+  aria2Secret: string;
+  webhookEnabled: boolean;
+  webhookUrl: string;
+  externalPlayerProfiles: ExternalPlayerProfile[];
   _schemaVersion: number;
 }
 
@@ -129,6 +142,13 @@ export const DEFAULT_SETTINGS: UnifiedSettings = {
   autoDownloadEnabled: false,
   autoDownloadMinSize: 102_400,
   autoDownloadBlacklist: [],
+  customCommandTemplate: '',
+  aria2Enabled: false,
+  aria2RpcUrl: 'http://localhost:6800/jsonrpc',
+  aria2Secret: '',
+  webhookEnabled: false,
+  webhookUrl: '',
+  externalPlayerProfiles: [],
   _schemaVersion: 9,
 };
 
@@ -164,7 +184,27 @@ function cloneSettings(settings: UnifiedSettings): UnifiedSettings {
     captureRuleCustomContentTypes: [...settings.captureRuleCustomContentTypes],
     captureRuleUrlBlacklist: [...settings.captureRuleUrlBlacklist],
     autoDownloadBlacklist: [...settings.autoDownloadBlacklist],
+    externalPlayerProfiles: settings.externalPlayerProfiles.map((profile) => ({ ...profile })),
   };
+}
+
+function normalizeExternalPlayerProfiles(value: unknown): ExternalPlayerProfile[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  const result: ExternalPlayerProfile[] = [];
+  for (const entry of value) {
+    if (typeof entry !== 'object' || entry === null) continue;
+    const item = entry as Partial<ExternalPlayerProfile>;
+    if (
+      typeof item.id === 'string' &&
+      typeof item.name === 'string' &&
+      typeof item.path === 'string'
+    ) {
+      result.push({ id: item.id, name: item.name, path: item.path });
+    }
+  }
+  return result;
 }
 
 function normalizeProviderDefaults(
@@ -264,6 +304,29 @@ function normalizeSettings(value: unknown): UnifiedSettings {
     autoDownloadBlacklist: Array.isArray(incoming.autoDownloadBlacklist)
       ? incoming.autoDownloadBlacklist.filter((value): value is string => typeof value === 'string')
       : DEFAULT_SETTINGS.autoDownloadBlacklist,
+    customCommandTemplate:
+      typeof incoming.customCommandTemplate === 'string'
+        ? incoming.customCommandTemplate
+        : DEFAULT_SETTINGS.customCommandTemplate,
+    aria2Enabled: typeof incoming.aria2Enabled === 'boolean'
+      ? incoming.aria2Enabled
+      : DEFAULT_SETTINGS.aria2Enabled,
+    aria2RpcUrl:
+      typeof incoming.aria2RpcUrl === 'string' && incoming.aria2RpcUrl.length > 0
+        ? incoming.aria2RpcUrl
+        : DEFAULT_SETTINGS.aria2RpcUrl,
+    aria2Secret:
+      typeof incoming.aria2Secret === 'string'
+        ? incoming.aria2Secret
+        : DEFAULT_SETTINGS.aria2Secret,
+    webhookEnabled: typeof incoming.webhookEnabled === 'boolean'
+      ? incoming.webhookEnabled
+      : DEFAULT_SETTINGS.webhookEnabled,
+    webhookUrl:
+      typeof incoming.webhookUrl === 'string'
+        ? incoming.webhookUrl
+        : DEFAULT_SETTINGS.webhookUrl,
+    externalPlayerProfiles: normalizeExternalPlayerProfiles(incoming.externalPlayerProfiles),
     _schemaVersion: DEFAULT_SETTINGS._schemaVersion,
   };
 }

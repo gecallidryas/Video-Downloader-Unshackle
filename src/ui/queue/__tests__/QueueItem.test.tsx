@@ -63,7 +63,7 @@ describe('QueueItem overflow menu', () => {
     expect(onAction).toHaveBeenCalledWith('copy-url', 'job-1');
   });
 
-  test('Copy command emits copy-command action', async () => {
+  test('Copy command emits generic copy-command action when no onCopyCommand provided', async () => {
     const user = userEvent.setup();
     const onAction = vi.fn();
     render(<QueueItem item={baseItem} onAction={onAction} />);
@@ -72,5 +72,23 @@ describe('QueueItem overflow menu', () => {
     await user.click(screen.getByRole('menuitem', { name: /copy command/i }));
 
     expect(onAction).toHaveBeenCalledWith('copy-command', 'job-1');
+  });
+
+  test('invokes onCopyCommand with profile id and item id when callback provided', async () => {
+    const user = userEvent.setup();
+    const onCopyCommand = vi.fn();
+    render(
+      <QueueItem
+        item={baseItem}
+        onAction={() => {}}
+        onCopyCommand={onCopyCommand}
+        commandProfileIds={['yt-dlp', 'ffmpeg']}
+      />,
+    );
+
+    await user.click(screen.getByRole('button', { name: /more actions/i }));
+    await user.click(screen.getByRole('menuitem', { name: /copy yt-dlp command/i }));
+
+    expect(onCopyCommand).toHaveBeenCalledWith('yt-dlp', 'job-1');
   });
 });

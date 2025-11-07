@@ -134,7 +134,7 @@ Extracted from `feature-parity-report.md` across all 8 reference analyses. Every
 | 81 | Segment range selection for HLS jobs | partial | m3u8-downloader, cat-catch (richer) | Start/end segment picker for partial download. |
 | 82 | Periodic auto-retry for errored segments | partial | m3u8-downloader | Configurable auto-retry with backoff and max-attempt limits. |
 | 83 | Preview grid advanced mode | done | cat-catch | `PreviewGrid` advanced-mode component with IntersectionObserver lazy thumbnails, sort (detection time / duration / size / filename), retry overlay on failed probes, duplicate filename grouping with count badge, and batch download/copy/remove toolbar. |
-| 84 | Popup job details modal/panel | partial | live-stream, Unified | Job-details for advanced diagnostics. |
+| 84 | Popup job details modal/panel | done | live-stream, Unified | PopupApp now accepts `jobs` prop; selecting a job opens a detail view with progress, segments done/failed, speed, elapsed, and error; back button returns to list. |
 | 85 | Progressive preview while downloading | done | live-stream (MP4Box/MSE), Unified | `PreviewModal` accepts `downloadedRanges` + `liveSegmentSource` props and renders a green/gray progress strip over the scrub area; MSE byte-pumping wires through `run-hls-job.ts` orchestrator. |
 | 86 | Codec sniff via MP4Box | done | live-stream, Unified | `src/core/preview/codec-sniff.ts` parses MP4 `ftyp`/`moov` brand tokens + TS sync bytes (avc1, hvc1, vp09, av01, mp4a, Opus, ...); `CodecBadge` renders detected codec with warning style when `canPlayType` rejects it. |
 | 87 | hls.js preview when native HLS unsupported | done | puemos | `usePreviewPlayer` hook checks `canPlayType('application/vnd.apple.mpegurl')` and lazy `import('hls.js')` only when needed; degrades gracefully if peer is absent. |
@@ -148,15 +148,15 @@ Extracted from `feature-parity-report.md` across all 8 reference analyses. Every
 | 95 | Router tab persisted in localStorage | done | puemos | SidePanelApp persists active tab to `unshackle:sidepanel:activeTab` and rehydrates on mount. |
 | 96 | Metadata badges for FPS, channels, default, autoselect | ~~present/partial~~ done | puemos | MediaCard chips render FPS/channels/default/autoselect from new DetectedMedia fields. |
 | 97 | Filter downloads by filename | done | puemos | `FilterInput` above detected streams filters `media.title` case-insensitively with debounce; "N of M streams" count rendered below. |
-| 98 | Settings language list with ISO codes | partial | puemos | Preferred audio language UI presets. |
+| 98 | Settings language list with ISO codes | done | puemos | `LanguagePicker.tsx` presets (en/es/fr/de/ja/ko/zh/pt/ru/ar/hi/it) + Other free-text; `select-audio-by-language.ts` auto-matches with subtag fallback. |
 | 99 | Estimated output size from bitrate and duration | ~~partial~~ done | puemos | MediaCard shows `~N MB` estimate from bitrate × duration and a ⚠ marker when over `remainingStorageBytes`. |
 | 100 | Duplicate handling (duplicate URL/filename filtering) | ~~partial~~ improved | cat-catch | DuplicateBadge primitive plus MediaCard `duplicateCount`/`onDuplicateClick` props; grouping logic still pending parent integration. |
-| 101 | Badge/command coverage (pause, clear, open parser) | partial | cat-catch | Keyboard commands for safe operational toggles. |
+| 101 | Badge/command coverage (pause, clear, open parser) | done | cat-catch | Registered `pause-all`, `clear-completed`, `open-side-panel` in `wxt.config.ts` manifest commands with Ctrl+Shift+P/X/D suggested keys; PopupApp footer lists shortcuts. |
 | 102 | Current/all/previous candidate views | done | stream-detector | SidePanelApp exposes Current Tab / All Tabs / Previous Session sub-tabs; previous detections persisted via `previous-detections.ts` and `saveDetectionsOnTabClose` on tab close. |
 | 103 | Recent-only compact mode | done | stream-detector | "Recent only" toggle limits list to the last 20 detections, with a "Show N more" button to expand. |
 | 104 | Debounced notifications and badge mode | done | stream-detector | `detection-notifier.ts` batches detection events in a 2s window with `notificationMode: each | batched | off` setting (default batched); badge accumulates total. |
 | 105 | Multi-field stream filtering | done | stream-detector | Chip selector (Filename / Tab Title / Type / Hostname) drives `filterStreams` predicate in `src/state/streamFilter.ts`; chips are additive. |
-| 106 | Direct URL job panel | partial | cat-catch | Manual URL plus filename/referer/origin, per-job retry/stop. |
+| 106 | Direct URL job panel | done | cat-catch | `DirectUrlPanel.tsx` form (URL/filename/referer/origin) plus result list with per-job retry/stop callbacks. |
 
 ### Download & Export
 
@@ -191,13 +191,13 @@ Extracted from `feature-parity-report.md` across all 8 reference analyses. Every
 
 | # | Item | Status | Stronger in | Action |
 |---|---|---|---|---|
-| 126 | Command profile templates (yt-dlp, FFmpeg, Streamlink, hlsdl, N_m3u8DL-RE) | partial | stream-detector | Native download primary; command export as power-user fallback. |
-| 127 | User command templates with safe variables | partial | stream-detector, cat-catch | Typed template engine; sensitive variables opt-in. |
-| 128 | Optional external integration hub (Aria2/webhook/local protocol) | partial | cat-catch | Explicit opt-in, secret redaction, no credential forwarding by default. |
-| 129 | Safe external-player profiles (VLC/mpv/PotPlayer/helper) | partial | ViewTube, cat-catch | Explicit user-configured handoff without automatic protocol navigation. |
-| 130 | Aria2 external tool profile | gap | hls_downloader, cat-catch | aria2c as practical power-user integration. |
-| 131 | QR/share action for safe resources | gap | cat-catch | Useful for mobile handoff; disable for sensitive URLs. |
-| 132 | Media-control diagnostics panel | partial | cat-catch | Play/pause, PiP, screenshot, seek — as opt-in manual tool. |
+| 126 | Command profile templates (yt-dlp, FFmpeg, Streamlink, hlsdl, N_m3u8DL-RE) | done | stream-detector | `command-profiles.ts` renders all five built-ins via `command-generation-policy`; QueueItem overflow exposes copy command. |
+| 127 | User command templates with safe variables | done | stream-detector, cat-catch | `customCommandTemplate` setting + `renderProfileCommand('custom', ...)` reuses template engine; sensitive vars gated behind advancedMode + includeAuthHeaders. |
+| 128 | Optional external integration hub (Aria2/webhook/local protocol) | done | cat-catch | `external-hub.ts` dispatcher honors per-integration opt-in toggles; webhook payload strips cookie/authorization unless advancedMode + consent. |
+| 129 | Safe external-player profiles (VLC/mpv/PotPlayer/helper) | done | ViewTube, cat-catch | `player-launcher.ts` dispatches typed launch payload via native messaging; `externalPlayerProfiles` setting stores user-configured paths. |
+| 130 | Aria2 external tool profile | done | hls_downloader, cat-catch | `aria2-client.ts` JSON-RPC `addUri` with optional `token:<secret>` and header redaction; settings `aria2Enabled/RpcUrl/Secret`. |
+| 131 | QR/share action for safe resources | done | cat-catch | `QRModal.tsx` renders SVG QR from `generate-qr-matrix.ts`; `isUrlSafeForQr` rejects URLs containing token/cookie/sig/expires/auth params. |
+| 132 | Media-control diagnostics panel | done | cat-catch | `MediaControlPanel.tsx` (advancedMode-gated) dispatches play/pause/PiP/screenshot/seek via typed `media-control-bridge.ts`. |
 
 ---
 
