@@ -80,7 +80,8 @@ test('renders runtime results and updates after removing the last item', async (
   expect(screen.getByText('Runtime Candidate Example')).toBeInTheDocument();
   expect(screen.getByText('1 File')).toBeInTheDocument();
 
-  await user.click(screen.getByRole('button', { name: /remove/i }));
+  await user.click(screen.getByRole('button', { name: /more actions/i }));
+  await user.click(screen.getByRole('menuitem', { name: /^remove$/i }));
 
   expect(screen.queryByText('Runtime Candidate Example')).not.toBeInTheDocument();
   expect(screen.getByText(/no media detected on this page/i)).toBeInTheDocument();
