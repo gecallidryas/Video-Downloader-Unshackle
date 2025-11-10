@@ -9,6 +9,7 @@ import {
   type FetchScheduledSegment,
 } from '@/src/core/download/segment-scheduler';
 import type { SegmentProgressCallback } from '@/src/core/download/progress-events';
+import type { DefaultQualityPolicy } from '@/src/background/settings/settings-store';
 import { createLiveHlsTelemetry } from './live-hls-telemetry';
 import { planHlsSegments } from './plan-hls-segments';
 import type { ParsedHlsManifest } from './parse-hls-manifest';
@@ -38,6 +39,7 @@ export interface RunHlsJobInput {
   concurrency?: number;
   maxConcurrentPerHost?: number;
   segmentTimeoutMs?: number;
+  qualityPolicy?: DefaultQualityPolicy;
   onProgress?: SegmentProgressCallback;
 }
 
@@ -53,6 +55,7 @@ export async function runHlsJob(input: RunHlsJobInput): Promise<JobOutput> {
   const plan = planHlsSegments(input.manifest, {
     jobId: input.job.id,
     selection: input.job.selection,
+    qualityPolicy: input.qualityPolicy,
   });
   const liveTelemetry = input.manifest.isLive ? createLiveHlsTelemetry() : undefined;
 

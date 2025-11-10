@@ -226,7 +226,7 @@ export interface DownloadSelection {
   variantId?: string;
   audioTrackIds?: string[];
   subtitleTrackIds?: string[];
-  outputKind?: 'original' | 'audio-only' | 'mp4' | 'webm' | 'subtitle-only';
+  outputKind?: 'auto' | 'original' | 'audio-only' | 'mp4' | 'mkv' | 'webm' | 'subtitle-only';
   action?: 'download' | 'download_as' | 'download_audio' | 'copy' | 'record_live';
   saveAs?: boolean;
   liveRecording?: boolean;

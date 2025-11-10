@@ -326,6 +326,8 @@ function extensionForOutput(payload: FfmpegExportPayload): string {
       return 'webm';
     case 'audio-only':
       return 'mp3';
+    case 'mkv':
+      return 'mkv';
     case 'mp4':
       return 'mp4';
     case 'original':
@@ -346,6 +348,8 @@ function mimeForOutput(payload: FfmpegExportPayload): string {
       return 'video/webm';
     case 'audio-only':
       return 'audio/mpeg';
+    case 'mkv':
+      return 'video/x-matroska';
     case 'mp4':
     case 'original':
       return 'video/mp4';

@@ -6,7 +6,7 @@ export type FfmpegCommandPlan = {
 };
 
 export type FfmpegProtocol = 'direct' | 'hls' | 'dash';
-export type FfmpegOutputKind = 'original' | 'mp4' | 'webm' | 'audio-only';
+export type FfmpegOutputKind = 'original' | 'mp4' | 'mkv' | 'webm' | 'audio-only';
 export type FfmpegThumbnailFormat = 'jpg' | 'png' | 'webp';
 export type FfmpegPreviewFormat = 'webm' | 'mp4' | 'gif';
 
@@ -42,7 +42,7 @@ export type FfmpegPreviewClipPayload = {
   format: FfmpegPreviewFormat;
 };
 
-const OUTPUT_KINDS = new Set<FfmpegOutputKind>(['original', 'mp4', 'webm', 'audio-only']);
+const OUTPUT_KINDS = new Set<FfmpegOutputKind>(['original', 'mp4', 'mkv', 'webm', 'audio-only']);
 const THUMBNAIL_FORMATS = new Set<FfmpegThumbnailFormat>(['jpg', 'png', 'webp']);
 const PREVIEW_FORMATS = new Set<FfmpegPreviewFormat>(['webm', 'mp4', 'gif']);
 const SEGMENTED_PROTOCOL_WHITELIST = 'file,http,https,tcp,tls,crypto';
@@ -141,6 +141,8 @@ function exportCodecArgs(kind: FfmpegOutputKind): string[] {
       return ['-c', 'copy'];
     case 'mp4':
       return ['-c:v', 'libx264', '-c:a', 'aac', '-movflags', '+faststart'];
+    case 'mkv':
+      return ['-map', '0', '-c', 'copy'];
     case 'webm':
       return ['-c:v', 'libvpx-vp9', '-c:a', 'libopus'];
     case 'audio-only':

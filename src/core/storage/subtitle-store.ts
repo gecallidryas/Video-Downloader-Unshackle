@@ -5,6 +5,7 @@ export interface SubtitleEntry {
   trackId: string;
   language?: string;
   format: SubtitleFormat;
+  fileName?: string;
   content: string;
 }
 

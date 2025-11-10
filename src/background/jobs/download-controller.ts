@@ -16,9 +16,14 @@ import { parseHlsManifest, type ParsedHlsManifest } from '@/src/core/hls/parse-h
 import { parseMpd, type ParsedDashManifest } from '@/src/core/dash/parse-mpd';
 import { runHlsJob } from '@/src/core/hls/run-hls-job';
 import { runDashJob } from '@/src/core/dash/run-dash-job';
+import type {
+  DefaultQualityPolicy,
+  OutputFormat,
+} from '@/src/background/settings/settings-store';
 
 export interface DownloadControllerSettings {
-  defaultOutputFormat?: DownloadSelection['outputKind'];
+  defaultOutputFormat?: OutputFormat;
+  defaultQualityPolicy?: DefaultQualityPolicy;
   maxConcurrentSegments?: number;
   maxConcurrentSegmentsPerHost?: number;
   segmentTimeoutMs?: number;
@@ -37,6 +42,7 @@ export type RunHlsControllerJob = (input: {
   concurrency?: number;
   maxConcurrentPerHost?: number;
   segmentTimeoutMs?: number;
+  qualityPolicy?: DefaultQualityPolicy;
   signal?: AbortSignal;
 }) => Promise<JobOutput>;
 
@@ -108,11 +114,27 @@ function selectionForJob(
   job: DownloadJob,
   options: DownloadControllerStartOptions,
 ): DownloadSelection {
-  return {
+  const selection: DownloadSelection = {
     ...job.selection,
-    outputKind: options.settings?.defaultOutputFormat ?? job.selection.outputKind,
     ...options.selection,
   };
+  const defaultOutputFormat = options.settings?.defaultOutputFormat;
+
+  if (selection.outputKind === undefined && defaultOutputFormat && defaultOutputFormat !== 'auto') {
+    selection.outputKind = defaultOutputFormat === 'mp3' ? 'audio-only' : defaultOutputFormat;
+  }
+
+  if (options.settings?.defaultQualityPolicy === 'highest') {
+    const { variantId: _variantId, ...rest } = selection;
+    return { ...rest, mode: 'best' };
+  }
+
+  if (options.settings?.defaultQualityPolicy === 'lowest') {
+    const { variantId: _variantId, ...rest } = selection;
+    return { ...rest, mode: 'smallest' };
+  }
+
+  return selection;
 }
 
 function hasTrim(selection: DownloadSelection): boolean {
@@ -133,6 +155,7 @@ export function createDownloadController(options: DownloadControllerOptions) {
       await chrome.downloads.cancel(downloadId);
     });
   let suppressProtectedDownloads = options.suppressProtectedDownloads;
+  let controllerSettings: DownloadControllerSettings = {};
   const activeAbortControllers = new Map<string, AbortController>();
 
   function registerSignal(
@@ -172,7 +195,14 @@ export function createDownloadController(options: DownloadControllerOptions) {
       throw new Error('Protected media cannot be downloaded by the generic pipeline.');
     }
 
-    const selection = selectionForJob(job, startOptions);
+    const settings = {
+      ...controllerSettings,
+      ...startOptions.settings,
+    };
+    const selection = selectionForJob(job, {
+      ...startOptions,
+      settings,
+    });
     const controllerJob: DownloadJob = {
       ...job,
       selection,
@@ -221,16 +251,16 @@ export function createDownloadController(options: DownloadControllerOptions) {
         segmentTimeoutMs?: number;
       } = {};
 
-      if (startOptions.settings?.maxConcurrentSegments !== undefined) {
-        concurrencyFields.concurrency = startOptions.settings.maxConcurrentSegments;
+      if (settings.maxConcurrentSegments !== undefined) {
+        concurrencyFields.concurrency = settings.maxConcurrentSegments;
       }
 
-      if (startOptions.settings?.maxConcurrentSegmentsPerHost !== undefined) {
-        concurrencyFields.maxConcurrentPerHost = startOptions.settings.maxConcurrentSegmentsPerHost;
+      if (settings.maxConcurrentSegmentsPerHost !== undefined) {
+        concurrencyFields.maxConcurrentPerHost = settings.maxConcurrentSegmentsPerHost;
       }
 
-      if (startOptions.settings?.segmentTimeoutMs !== undefined) {
-        concurrencyFields.segmentTimeoutMs = startOptions.settings.segmentTimeoutMs;
+      if (settings.segmentTimeoutMs !== undefined) {
+        concurrencyFields.segmentTimeoutMs = settings.segmentTimeoutMs;
       }
 
       if (candidate.protocol === 'hls') {
@@ -239,6 +269,7 @@ export function createDownloadController(options: DownloadControllerOptions) {
           manifest: parseHlsManifest({ manifestUrl, content: manifestText }),
           allowProtected,
           signal: jobSignal,
+          qualityPolicy: settings.defaultQualityPolicy,
           ...concurrencyFields,
         });
       }
@@ -333,11 +364,30 @@ export function createDownloadController(options: DownloadControllerOptions) {
   }
 
   function updateSettings(
-    patch: Pick<DownloadControllerOptions, 'suppressProtectedDownloads'>,
+    patch: Pick<DownloadControllerOptions, 'suppressProtectedDownloads'> &
+      Partial<DownloadControllerSettings>,
   ): void {
     if (patch.suppressProtectedDownloads !== undefined) {
       suppressProtectedDownloads = patch.suppressProtectedDownloads;
     }
+    controllerSettings = {
+      ...controllerSettings,
+      ...(patch.defaultOutputFormat !== undefined
+        ? { defaultOutputFormat: patch.defaultOutputFormat }
+        : {}),
+      ...(patch.defaultQualityPolicy !== undefined
+        ? { defaultQualityPolicy: patch.defaultQualityPolicy }
+        : {}),
+      ...(patch.maxConcurrentSegments !== undefined
+        ? { maxConcurrentSegments: patch.maxConcurrentSegments }
+        : {}),
+      ...(patch.maxConcurrentSegmentsPerHost !== undefined
+        ? { maxConcurrentSegmentsPerHost: patch.maxConcurrentSegmentsPerHost }
+        : {}),
+      ...(patch.segmentTimeoutMs !== undefined
+        ? { segmentTimeoutMs: patch.segmentTimeoutMs }
+        : {}),
+    };
   }
 
   return {

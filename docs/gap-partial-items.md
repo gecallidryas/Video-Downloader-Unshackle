@@ -165,9 +165,9 @@ Extracted from `feature-parity-report.md` across all 8 reference analyses. Every
 | 107 | Batch timeline/download jobs | ~~partial~~ done | live-stream, Unified | `splitTimelineIntoBatchJobs` splits discontinuity groups into numbered output names with tests. |
 | 108 | User URL replacement on failed segment | ~~gap~~ done | live-stream | Added `computeUrlReplacement`/`applyUrlReplacement` pure helpers with tests for prefix swap and signed-query refresh. |
 | 109 | Bulk retry pass after initial download | partial | hls_downloader | Two-pass approach (download all, then retry all failures once). |
-| 110 | Auto-highest quality selection policy | ~~partial~~ done | hls_downloader | Added `defaultQualityPolicy` setting (schema v7) and `selectHlsVariant` qualityPolicy option with tests. |
-| 111 | Automatic container decision (MP4 unless subtitles → MKV) | ~~partial~~ done | puemos | Added `resolveOutputContainer` with auto MKV-when-subtitles and override pass-through tests. |
-| 112 | Subtitle text storage before mux/save | ~~partial~~ done | puemos | Added `SubtitleStore` contract with in-memory adapter, byte estimation, and per-job listing/deletion. |
+| 110 | Auto-highest quality selection policy | ~~partial~~ done | hls_downloader | `defaultQualityPolicy` now threads through DownloadController, runHls, and planHlsSegments; auto highest/lowest clears stale picker variant IDs. |
+| 111 | Automatic container decision (MP4 unless subtitles → MKV) | ~~partial~~ done | puemos | Native export uses `resolveOutputContainer` for selected subtitles, emits MKV output names, and the native FFmpeg contract/helper accepts MKV. |
+| 112 | Subtitle text storage before mux/save | ~~partial~~ done | puemos | Native export pre-stores selected subtitle text in `SubtitleStore` before FFmpeg mux so sidecar data survives mux failure. |
 | 113 | Video-only preserves all streams (`-map 0 -c copy`) | ~~partial~~ done | puemos | `buildMuxArgs` emits `-map 0 -c copy` for single inputs preserving embedded audio. |
 | 114 | `-shortest` for muxed outputs | ~~partial~~ done | puemos | `buildMuxArgs` appends `-shortest` whenever multiple inputs are muxed. |
 | 115 | Subtitle mux to MKV with WebVTT verification | ~~partial~~ done | puemos | Added `verifySubtitleTrack` reading ffprobe streams to confirm embedded subtitle codec; emits sidecar fallback. |
@@ -182,7 +182,7 @@ Extracted from `feature-parity-report.md` across all 8 reference analyses. Every
 |---|---|---|---|---|
 | 120 | Filename from content-disposition tests | ~~present/partial~~ done | live-stream | `parseContentDispositionFilename` handles quoted, unquoted, RFC 5987 `filename*`, and malformed inputs with tests. |
 | 121 | NFC Unicode normalization in filenames | ~~partial~~ done | puemos | `normalizeFilenameUnicode` applies NFC; `resolveRichFilename` returns NFC output covered by tests. |
-| 122 | Subtitle filename with language/name fallback | ~~partial~~ done | puemos | Added `deriveSubtitleFilename` with language→trackName→und fallback and filename sanitization. |
+| 122 | Subtitle filename with language/name fallback | ~~partial~~ done | puemos | `deriveSubtitleFilename` is used when pre-storing selected subtitles, producing `{videoName}.{language|trackName|und}.{format}` sidecar names. |
 | 123 | Ignore empty link gracefully | ~~gap/partial~~ done | puemos | `isEmptyLink` returns true for empty, whitespace, `#`, and `javascript:void(...)`. |
 | 124 | Output naming preview for stream jobs | ~~gap~~ improved | stream-detector | MediaCard renders `→ outputFilename` under the title when it differs from `media.title`; backend filename generation lives in `resolveRichFilename` (Phase 7 Task 18). |
 | 125 | Title+quality filename tests | ~~partial~~ done | ViewTube | `resolveRichFilename` composes `{author} - {title} - {quality}.{ext}`, sanitizes, trims to 200 chars, and falls back through pageTitle/URL/`download`. |

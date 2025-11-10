@@ -42,6 +42,22 @@ describe('native ffmpeg message contract', () => {
     expect(isNativeFfmpegRequest(request)).toBe(true);
   });
 
+  test('accepts MKV export requests for subtitle mux outputs', () => {
+    const request = createNativeRequest(
+      'EXPORT_MEDIA',
+      {
+        jobId: 'job-1',
+        inputUrl: 'https://cdn.example.com/master.m3u8',
+        protocol: 'hls',
+        outputName: 'video.mkv',
+        outputKind: 'mkv',
+      },
+      'req-export-mkv',
+    );
+
+    expect(isNativeFfmpegRequest(request)).toBe(true);
+  });
+
   test('accepts EXTRACT_THUMBNAIL requests with candidate and seek details', () => {
     const request = createNativeRequest(
       'EXTRACT_THUMBNAIL',

@@ -1,5 +1,5 @@
 export type NativeFfmpegProtocol = 'direct' | 'hls' | 'dash';
-export type NativeFfmpegOutputKind = 'original' | 'mp4' | 'webm' | 'audio-only';
+export type NativeFfmpegOutputKind = 'original' | 'mp4' | 'mkv' | 'webm' | 'audio-only';
 export type NativeFfmpegPreviewFormat = 'webm' | 'mp4' | 'gif';
 export type NativeFfmpegThumbnailFormat = 'jpg' | 'png' | 'webp';
 
@@ -152,6 +152,7 @@ const PROTOCOLS = ['direct', 'hls', 'dash'] as const satisfies readonly NativeFf
 const OUTPUT_KINDS = [
   'original',
   'mp4',
+  'mkv',
   'webm',
   'audio-only',
 ] as const satisfies readonly NativeFfmpegOutputKind[];

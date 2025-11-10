@@ -170,6 +170,11 @@ export function initializeBackgroundShell() {
     });
     downloadController.updateSettings({
       suppressProtectedDownloads: settings.suppressProtectedDownloads,
+      defaultOutputFormat: settings.defaultOutputFormat,
+      defaultQualityPolicy: settings.defaultQualityPolicy,
+      maxConcurrentSegments: settings.maxConcurrentSegments,
+      maxConcurrentSegmentsPerHost: settings.maxConcurrentSegmentsPerHost,
+      segmentTimeoutMs: settings.segmentTimeoutMs,
     });
     notificationManager.applySettings(settings);
     detectionNotifier.configure(settings);

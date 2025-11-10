@@ -103,6 +103,22 @@ describe('ffmpeg command builder', () => {
     expect(plan.args).toEqual(expect.arrayContaining(['-c:v', 'libvpx-vp9', '-c:a', 'libopus']));
   });
 
+  it('builds MKV copy output args for subtitle-preserving exports', () => {
+    const plan = buildExportArgs(
+      {
+        jobId: 'job-6',
+        inputUrl: hlsUrl,
+        protocol: 'hls',
+        outputName: 'video.mkv',
+        outputKind: 'mkv',
+      },
+      'C:\\Users\\tester\\AppData\\Local\\VideoDownloaderUnshackle\\outputs\\video.mkv',
+    );
+
+    expect(plan.args).toEqual(expect.arrayContaining(['-map', '0', '-c', 'copy']));
+    expect(plan.args.at(-1)).toBe('C:\\Users\\tester\\AppData\\Local\\VideoDownloaderUnshackle\\outputs\\video.mkv');
+  });
+
   it('builds audio-only output args', () => {
     const plan = buildExportArgs(
       {

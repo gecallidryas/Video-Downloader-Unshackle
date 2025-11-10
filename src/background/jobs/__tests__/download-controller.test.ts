@@ -268,6 +268,70 @@ describe('download controller decision flow', () => {
     );
   });
 
+  test('threads default quality policy through to runHls and clears stale picker variant', async () => {
+    const runHls = vi.fn().mockResolvedValue({ fileName: 'hls.mp4', mimeType: 'video/mp4' });
+    const fetchText = vi
+      .fn()
+      .mockResolvedValue('#EXTM3U\n#EXT-X-TARGETDURATION:6\n#EXTINF:6,\nseg0.ts\n#EXT-X-ENDLIST');
+    const controller = createDownloadController({
+      downloadFile: vi.fn(),
+      runHls,
+      runDash: vi.fn(),
+      fetchText,
+    });
+
+    await controller.start(
+      candidate({ protocol: 'hls', sourceUrl: undefined, manifestUrl: 'https://cdn.example.com/master.m3u8' }),
+      job(),
+      {
+        selection: { mode: 'custom', variantId: 'stale-ui-choice' },
+        settings: {
+          defaultQualityPolicy: 'highest',
+        },
+      },
+    );
+
+    expect(runHls).toHaveBeenCalledWith(
+      expect.objectContaining({
+        qualityPolicy: 'highest',
+        job: expect.objectContaining({
+          selection: expect.not.objectContaining({ variantId: 'stale-ui-choice' }),
+        }),
+      }),
+    );
+  });
+
+  test('uses loaded default quality policy settings for queued HLS jobs', async () => {
+    const runHls = vi.fn().mockResolvedValue({ fileName: 'hls.mp4', mimeType: 'video/mp4' });
+    const fetchText = vi
+      .fn()
+      .mockResolvedValue('#EXTM3U\n#EXT-X-TARGETDURATION:6\n#EXTINF:6,\nseg0.ts\n#EXT-X-ENDLIST');
+    const controller = createDownloadController({
+      downloadFile: vi.fn(),
+      runHls,
+      runDash: vi.fn(),
+      fetchText,
+    });
+    controller.updateSettings({ defaultQualityPolicy: 'lowest' });
+
+    await controller.start(
+      candidate({ protocol: 'hls', sourceUrl: undefined, manifestUrl: 'https://cdn.example.com/master.m3u8' }),
+      job(),
+      {
+        selection: { mode: 'custom', variantId: 'stale-ui-choice' },
+      },
+    );
+
+    expect(runHls).toHaveBeenCalledWith(
+      expect.objectContaining({
+        qualityPolicy: 'lowest',
+        job: expect.objectContaining({
+          selection: expect.objectContaining({ mode: 'smallest' }),
+        }),
+      }),
+    );
+  });
+
   test('threads concurrency settings through to runDash', async () => {
     const runDash = vi.fn().mockResolvedValue({ fileName: 'dash.mp4', mimeType: 'video/mp4' });
     const fetchText = vi

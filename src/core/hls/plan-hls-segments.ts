@@ -1,4 +1,5 @@
 import type { DownloadSelection, SegmentPlan } from '@/video_downloader_types_skeleton';
+import type { DefaultQualityPolicy } from '@/src/background/settings/settings-store';
 import { filterSegmentsByTrim } from '../download/filter-segments-by-trim';
 import type { ParsedHlsManifest } from './parse-hls-manifest';
 import { selectHlsVariant } from './select-hls-variant';
@@ -9,6 +10,7 @@ export type DiscontinuityPolicy = 'include-all' | 'skip-ads' | 'ask-user';
 export interface PlanHlsSegmentsOptions {
   jobId: string;
   selection?: DownloadSelection;
+  qualityPolicy?: DefaultQualityPolicy;
   discontinuityPolicy?: DiscontinuityPolicy;
 }
 
@@ -118,7 +120,9 @@ export function planHlsSegments(
     throw new Error('Protected HLS manifests cannot be planned by the generic HLS planner.');
   }
 
-  const variant = selectHlsVariant(manifest, options.selection);
+  const variant = selectHlsVariant(manifest, options.selection, {
+    qualityPolicy: options.qualityPolicy,
+  });
 
   if (manifest.playlistKind !== 'media') {
     throw new Error('HLS segment planning requires a media playlist.');

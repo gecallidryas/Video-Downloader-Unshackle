@@ -3,6 +3,7 @@ import type { DownloadJob, MediaCandidate } from '@/video_downloader_types_skele
 import { createJobStore } from '../job-store';
 import { runNativeExportJob } from '../native-export-runner';
 import type { NativeFfmpegClient } from '@/src/native/native-ffmpeg-client';
+import { createInMemorySubtitleStore } from '@/src/core/storage/subtitle-store';
 
 function candidate(overrides: Partial<MediaCandidate> = {}): MediaCandidate {
   return {
@@ -116,6 +117,83 @@ describe('runNativeExportJob', () => {
       protocol: 'dash',
       outputKind: 'audio-only',
     }));
+  });
+
+  test('chooses MKV output when selected subtitles are present', async () => {
+    const client = nativeClient();
+
+    await runNativeExportJob({
+      candidate: candidate({
+        protocol: 'hls',
+        displayName: 'Clear video.mp4',
+        sourceUrl: undefined,
+        manifestUrl: 'https://cdn.example.com/master.m3u8',
+        subtitleTracks: [
+          {
+            id: 'sub-en',
+            kind: 'subtitle',
+            language: 'en',
+            format: 'vtt',
+            url: 'https://cdn.example.com/subs/en.vtt',
+          },
+        ],
+      }),
+      job: job({
+        id: 'job-hls-subtitles',
+        selection: { mode: 'best', subtitleTrackIds: ['sub-en'] },
+      }),
+      nativeClient: client,
+    });
+
+    expect(client.exportMedia).toHaveBeenCalledWith(
+      expect.objectContaining({
+        outputKind: 'mkv',
+        outputName: 'Clear video.mkv',
+      }),
+    );
+  });
+
+  test('stores selected subtitle text before native export so sidecars survive mux failure', async () => {
+    const store = createInMemorySubtitleStore();
+    const client = nativeClient();
+    vi.mocked(client.exportMedia).mockRejectedValueOnce(new Error('mux failed'));
+
+    await expect(
+      runNativeExportJob({
+        candidate: candidate({
+          protocol: 'hls',
+          sourceUrl: undefined,
+          manifestUrl: 'https://cdn.example.com/master.m3u8',
+          subtitleTracks: [
+            {
+              id: 'sub-en',
+              kind: 'subtitle',
+              language: 'en',
+              format: 'vtt',
+              url: 'https://cdn.example.com/subs/en.vtt',
+            },
+          ],
+        }),
+        job: job({
+          id: 'job-subtitle-store',
+          selection: { mode: 'best', subtitleTrackIds: ['sub-en'] },
+        }),
+        nativeClient: client,
+        subtitleStore: store,
+        fetchText: vi.fn().mockResolvedValue('WEBVTT\n\n00:00.000 --> 00:01.000\nhello'),
+      }),
+    ).rejects.toThrow('mux failed');
+
+    await expect(store.listByJob('job-subtitle-store')).resolves.toEqual([
+      expect.objectContaining({
+        jobId: 'job-subtitle-store',
+        trackId: 'sub-en',
+        language: 'en',
+        format: 'vtt',
+        fileName: 'Clear video.en.vtt',
+        content: 'WEBVTT\n\n00:00.000 --> 00:01.000\nhello',
+      }),
+    ]);
   });
 
   test('rejects protected media before invoking the native helper', async () => {
