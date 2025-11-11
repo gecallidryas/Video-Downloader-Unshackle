@@ -356,6 +356,22 @@ export function extractFilePatternHost(
   };
 }
 
+export function extractUserload(context: DetectorPluginContext): HostMediaResult[] {
+  const text = htmlText(context.document!);
+  const match = text.match(/var\s+videolink\s*=\s*["']([^"']+)["']/);
+  const url = resolveUrl(match?.[1], context.url.href);
+
+  return url ? [{ url, source: 'userload-videolink', protocol: 'direct' }] : [];
+}
+
+export function extractVidlox(context: DetectorPluginContext): HostMediaResult[] {
+  const text = htmlText(context.document!);
+  const match = text.match(/sources\s*:\s*\["([^"]+)"\]/);
+  const url = resolveUrl(match?.[1], context.url.href);
+
+  return url ? [{ url, source: 'vidlox-sources', protocol: 'direct' }] : [];
+}
+
 // --- Packer-based extractors ---
 
 function extractPackedScript(text: string): string | undefined {

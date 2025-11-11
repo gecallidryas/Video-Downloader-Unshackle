@@ -46,8 +46,9 @@ export function helperOwnedPath(
   const dir = subdirPath(dirs, subdir);
   const sanitizedBase = sanitizeBaseName(unsafeName);
   const normalizedExtension = extension.startsWith('.') ? extension : `.${extension}`;
+  const pathApi = dir.includes('\\') ? path.win32 : path;
 
-  return path.join(dir, `${sanitizedBase}${normalizedExtension}`);
+  return pathApi.join(dir, `${sanitizedBase}${normalizedExtension}`);
 }
 
 export function sanitizeBaseName(value: string): string {

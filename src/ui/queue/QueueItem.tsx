@@ -1,3 +1,6 @@
+import { useMemo } from 'react';
+import { OverflowMenu, type MenuAction } from '@/src/ui/shared/OverflowMenu';
+
 export type QueueViewStatus = 'pending' | 'running' | 'completed' | 'failed' | 'paused';
 
 export interface QueueViewItem {
@@ -10,11 +13,23 @@ export interface QueueViewItem {
   outputLabel?: string;
 }
 
-export type QueueAction = 'cancel' | 'retry' | 'open' | 'pause' | 'resume';
+export type QueueAction =
+  | 'cancel'
+  | 'retry'
+  | 'open'
+  | 'pause'
+  | 'resume'
+  | 'resave'
+  | 'remove'
+  | 'copy-url'
+  | 'copy-filename'
+  | 'copy-command';
 
 interface QueueItemProps {
   item: QueueViewItem;
   onAction: (action: QueueAction, id: string) => void;
+  onCopyCommand?: (profileId: string, id: string) => void;
+  commandProfileIds?: string[];
 }
 
 function statusLabel(item: QueueViewItem): string {
@@ -29,8 +44,50 @@ function statusLabel(item: QueueViewItem): string {
   return item.status;
 }
 
-export function QueueItem({ item, onAction }: QueueItemProps) {
+const DEFAULT_PROFILE_IDS = ['yt-dlp', 'ffmpeg', 'streamlink', 'hlsdl', 'n_m3u8dl-re'];
+
+export function QueueItem({
+  item,
+  onAction,
+  onCopyCommand,
+  commandProfileIds,
+}: QueueItemProps) {
   const progress = Math.max(0, Math.min(100, Math.round(item.progressPct || 0)));
+
+  const menuActions = useMemo<MenuAction[]>(() => {
+    const items: MenuAction[] = [
+      { id: 'copy-url', label: 'Copy URL' },
+      { id: 'copy-filename', label: 'Copy filename' },
+    ];
+    if (item.status === 'completed') {
+      items.push({ id: 'resave', label: 'Save again' });
+    }
+    if (onCopyCommand) {
+      for (const profileId of commandProfileIds ?? DEFAULT_PROFILE_IDS) {
+        items.push({ id: `copy-command:${profileId}`, label: `Copy ${profileId} command` });
+      }
+    } else {
+      items.push({ id: 'copy-command', label: 'Copy command' });
+    }
+    items.push({
+      id: 'remove',
+      label: 'Remove from queue',
+      danger: true,
+      divider: true,
+    });
+    return items;
+  }, [item.status, onCopyCommand, commandProfileIds]);
+
+  function handleMenu(actionId: string) {
+    if (actionId.startsWith('copy-command:') && onCopyCommand) {
+      const [, profileId] = actionId.split(':');
+      if (profileId) {
+        onCopyCommand(profileId, item.id);
+        return;
+      }
+    }
+    onAction(actionId as QueueAction, item.id);
+  }
 
   return (
     <article className="queue-item">
@@ -89,6 +146,11 @@ export function QueueItem({ item, onAction }: QueueItemProps) {
             Open
           </button>
         ) : null}
+        <OverflowMenu
+          actions={menuActions}
+          onAction={handleMenu}
+          aria-label={`More actions for ${item.title}`}
+        />
       </div>
     </article>
   );

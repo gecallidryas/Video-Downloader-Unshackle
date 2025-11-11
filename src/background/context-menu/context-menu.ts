@@ -1,5 +1,6 @@
 import type { MediaCandidate } from '@/video_downloader_types_skeleton';
 import { getCandidateActionPolicy } from '@/src/core/policy/action-policy';
+import { getSelectedLinks } from '@/src/content/dom/collect-page-context';
 
 export interface ContextMenuSettings {
   enableContextMenu: boolean;
@@ -18,10 +19,19 @@ export interface ContextMenusLike {
   };
 }
 
+export interface ScriptingLike {
+  executeScript(injection: {
+    target: { tabId: number };
+    func: () => string[];
+  }): Promise<Array<{ result?: unknown }>>;
+}
+
 export interface ContextMenuManagerOptions {
   contextMenus?: ContextMenusLike;
+  scripting?: ScriptingLike;
   getSettings: () => ContextMenuSettings;
   startDownload: (candidate: MediaCandidate) => void | Promise<void>;
+  ingestCandidate?: (candidate: MediaCandidate) => void | Promise<void>;
   now?: () => number;
 }
 
@@ -84,9 +94,23 @@ function candidateFromContextUrl(
   };
 }
 
+function firstUrlFromText(value: string): string | undefined {
+  return value.match(/https?:\/\/[^\s"'<>]+/)?.[0]?.replace(/[),.;\]}]+$/, '');
+}
+
+function isHlsUrl(value: string): boolean {
+  try {
+    return new URL(value).pathname.toLowerCase().endsWith('.m3u8');
+  } catch {
+    return value.toLowerCase().includes('.m3u8');
+  }
+}
+
 export function createContextMenuManager(options: ContextMenuManagerOptions) {
   const contextMenus = options.contextMenus ?? chrome.contextMenus;
+  const scripting = options.scripting ?? chrome.scripting;
   const now = options.now ?? Date.now;
+  const ingestCandidate = options.ingestCandidate ?? options.startDownload;
 
   async function register(): Promise<void> {
     await new Promise<void>((resolve) => contextMenus.removeAll(resolve));
@@ -98,7 +122,7 @@ export function createContextMenuManager(options: ContextMenuManagerOptions) {
     contextMenus.create({
       id: 'unshackle-parent',
       title: 'Unshackle Video',
-      contexts: ['video', 'link', 'page'],
+      contexts: ['video', 'link', 'page', 'selection'],
     });
     contextMenus.create({
       id: 'unshackle-download-video',
@@ -118,15 +142,77 @@ export function createContextMenuManager(options: ContextMenuManagerOptions) {
       title: 'Scan Page for Videos',
       contexts: ['page'],
     });
+    contextMenus.create({
+      id: 'unshackle-extract-selected-links',
+      parentId: 'unshackle-parent',
+      title: 'Extract Selected Links',
+      contexts: ['selection'],
+    });
+    contextMenus.create({
+      id: 'unshackle-ingest-hls-url',
+      parentId: 'unshackle-parent',
+      title: 'Ingest HLS URL',
+      contexts: ['selection', 'link'],
+    });
     contextMenus.onClicked.addListener((info, tab) => {
       void handleClick(info, tab);
     });
+  }
+
+  async function ingestUrl(url: string, tab: chrome.tabs.Tab | undefined): Promise<void> {
+    const candidate = candidateFromContextUrl(url, tab, now());
+
+    await ingestCandidate(candidate);
+  }
+
+  async function ingestHlsUrl(
+    urlText: string,
+    tab?: chrome.tabs.Tab,
+  ): Promise<MediaCandidate | undefined> {
+    const url = firstUrlFromText(urlText.trim()) ?? urlText.trim();
+
+    if (!url || !isHlsUrl(url)) {
+      return undefined;
+    }
+
+    const candidate = candidateFromContextUrl(url, tab, now());
+    await ingestCandidate(candidate);
+
+    return candidate;
+  }
+
+  async function handleSelectedLinks(tab: chrome.tabs.Tab | undefined): Promise<void> {
+    if (tab?.id === undefined) {
+      return;
+    }
+
+    const results = await scripting.executeScript({
+      target: { tabId: tab.id },
+      func: getSelectedLinks,
+    });
+    const links = results.flatMap((item) =>
+      Array.isArray(item.result)
+        ? item.result.filter((url): url is string => typeof url === 'string')
+        : [],
+    );
+
+    await Promise.all(links.map((url) => ingestUrl(url, tab)));
   }
 
   async function handleClick(
     info: chrome.contextMenus.OnClickData,
     tab?: chrome.tabs.Tab,
   ): Promise<void> {
+    if (info.menuItemId === 'unshackle-extract-selected-links') {
+      await handleSelectedLinks(tab);
+      return;
+    }
+
+    if (info.menuItemId === 'unshackle-ingest-hls-url') {
+      await ingestHlsUrl(info.selectionText ?? info.linkUrl ?? '', tab);
+      return;
+    }
+
     if (
       info.menuItemId !== 'unshackle-download-video' &&
       info.menuItemId !== 'unshackle-download-link'
@@ -153,5 +239,6 @@ export function createContextMenuManager(options: ContextMenuManagerOptions) {
   return {
     register,
     handleClick,
+    ingestHlsUrl,
   };
 }

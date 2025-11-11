@@ -2,18 +2,27 @@ import type {
   DownloadJob,
   JobOutput,
   MediaCandidate,
+  SubtitleTrack,
 } from '@/video_downloader_types_skeleton';
 import type {
   NativeFfmpegClient,
 } from '@/src/native/native-ffmpeg-client';
 import type { NativeFfmpegOutputKind, NativeFfmpegProtocol } from '@/src/native/native-ffmpeg-contract';
 import type { JobStore } from './job-store';
+import { resolveOutputContainer } from '@/src/core/export/output-container';
+import {
+  deriveSubtitleFilename,
+  type SubtitleFormat,
+} from '@/src/core/naming/subtitle-filename';
+import type { SubtitleStore } from '@/src/core/storage/subtitle-store';
 
 export interface NativeExportRunnerInput {
   candidate: MediaCandidate;
   job: DownloadJob;
   nativeClient: NativeFfmpegClient;
   jobStore?: JobStore;
+  subtitleStore?: SubtitleStore;
+  fetchText?: (url: string, init?: RequestInit) => Promise<string>;
 }
 
 function isProtected(candidate: MediaCandidate): boolean {
@@ -45,22 +54,44 @@ function inputUrlFor(candidate: MediaCandidate): string {
   return inputUrl;
 }
 
-function outputKindFor(job: DownloadJob): NativeFfmpegOutputKind {
+function selectedSubtitleTracks(
+  candidate: MediaCandidate,
+  job: DownloadJob,
+): SubtitleTrack[] {
+  const selectedIds = new Set(job.selection.subtitleTrackIds ?? []);
+
+  if (selectedIds.size === 0) {
+    return [];
+  }
+
+  return candidate.subtitleTracks.filter((track) => selectedIds.has(track.id));
+}
+
+function outputKindFor(
+  candidate: MediaCandidate,
+  job: DownloadJob,
+): NativeFfmpegOutputKind {
   const outputKind = job.selection.outputKind;
 
   if (
     outputKind === 'original' ||
     outputKind === 'mp4' ||
+    outputKind === 'mkv' ||
     outputKind === 'webm' ||
     outputKind === 'audio-only'
   ) {
     return outputKind;
   }
 
-  return 'mp4';
+  return resolveOutputContainer({
+    hasSubtitles: selectedSubtitleTracks(candidate, job).length > 0,
+  }) as NativeFfmpegOutputKind;
 }
 
 function extensionFor(kind: NativeFfmpegOutputKind, candidate: MediaCandidate): string {
+  if (kind === 'mkv') {
+    return 'mkv';
+  }
   if (kind === 'webm') {
     return 'webm';
   }
@@ -76,13 +107,74 @@ function extensionFor(kind: NativeFfmpegOutputKind, candidate: MediaCandidate): 
 
 function outputNameFor(candidate: MediaCandidate, kind: NativeFfmpegOutputKind): string {
   const extension = extensionFor(kind, candidate);
+  const name = candidate.displayName.replace(/\.(?:mp4|mkv|webm|mp3|m4v|mov|ts)$/i, '');
   const hasExtension = candidate.displayName.toLowerCase().endsWith(`.${extension}`);
 
-  return hasExtension ? candidate.displayName : `${candidate.displayName}.${extension}`;
+  return hasExtension ? candidate.displayName : `${name}.${extension}`;
 }
 
 function fileNameFromPath(outputPath: string): string {
   return outputPath.split(/[\\/]/).pop() || outputPath;
+}
+
+function subtitleFormatFor(track: SubtitleTrack): SubtitleFormat {
+  if (track.format === 'srt' || track.format === 'ttml') {
+    return track.format;
+  }
+
+  return 'vtt';
+}
+
+async function defaultFetchText(url: string, init?: RequestInit): Promise<string> {
+  const response = await fetch(url, init);
+
+  if (!response.ok) {
+    throw new Error(`Failed to fetch subtitle: ${response.status}`);
+  }
+
+  return response.text();
+}
+
+async function preStoreSubtitles(input: {
+  candidate: MediaCandidate;
+  job: DownloadJob;
+  outputName: string;
+  subtitleStore?: SubtitleStore;
+  fetchText?: (url: string, init?: RequestInit) => Promise<string>;
+}): Promise<void> {
+  if (!input.subtitleStore) {
+    return;
+  }
+
+  const fetchText = input.fetchText ?? defaultFetchText;
+  const tracks = selectedSubtitleTracks(input.candidate, input.job).filter(
+    (track) => Boolean(track.url),
+  );
+
+  await Promise.all(
+    tracks.map(async (track) => {
+      const url = track.url;
+
+      if (!url) {
+        return;
+      }
+
+      const format = subtitleFormatFor(track);
+      await input.subtitleStore?.put({
+        jobId: input.job.id,
+        trackId: track.id,
+        ...(track.language ? { language: track.language } : {}),
+        format,
+        fileName: deriveSubtitleFilename({
+          videoFilename: input.outputName,
+          language: track.language,
+          trackName: track.label,
+          format,
+        }),
+        content: await fetchText(url, { credentials: 'include' }),
+      });
+    }),
+  );
 }
 
 export async function runNativeExportJob({
@@ -90,6 +182,8 @@ export async function runNativeExportJob({
   job,
   nativeClient,
   jobStore,
+  subtitleStore,
+  fetchText,
 }: NativeExportRunnerInput): Promise<JobOutput> {
   if (isProtected(candidate)) {
     throw new Error('Protected media cannot be exported by the native helper.');
@@ -97,12 +191,20 @@ export async function runNativeExportJob({
 
   jobStore?.update(job.id, { phase: 'preparing', progressPct: 5 });
 
-  const outputKind = outputKindFor(job);
+  const outputKind = outputKindFor(candidate, job);
+  const outputName = outputNameFor(candidate, outputKind);
+  await preStoreSubtitles({
+    candidate,
+    job,
+    outputName,
+    subtitleStore,
+    fetchText,
+  });
   const result = await nativeClient.exportMedia({
     jobId: job.id,
     inputUrl: inputUrlFor(candidate),
     protocol: nativeProtocol(candidate),
-    outputName: outputNameFor(candidate, outputKind),
+    outputName,
     outputKind,
     ...(job.selection.trim ? { trim: job.selection.trim } : {}),
   });

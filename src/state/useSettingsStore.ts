@@ -41,6 +41,11 @@ export interface SettingsState {
   remoteConfigSecurityMode: RemoteConfigSecurityMode;
   previewMode: PreviewMode;
   previewFormat: PreviewFormat;
+  captureRuleCustomExtensions: string[];
+  captureRuleCustomContentTypes: string[];
+  captureRuleUrlBlacklist: string[];
+  captureRuleMinSizeBytes: number;
+  captureRuleSizePredicate: string;
   setTheme: (theme: ThemeName) => void;
   setAutoScanEnabled: (enabled: boolean) => void;
   setNetworkCaptureEnabled: (enabled: boolean) => void;
@@ -56,6 +61,14 @@ export interface SettingsState {
   setPreferredQuality: (q: PreferredQuality) => void;
   setDefaultOutputFormat: (format: OutputFormat) => void;
   toggleContextMenu: () => void;
+  setCaptureRules: (rules: {
+    customExtensions?: string[];
+    customContentTypes?: string[];
+    urlBlacklist?: string[];
+    minSizeBytes?: number;
+    sizePredicate?: string;
+  }) => void;
+  resetCaptureRules: () => void;
 }
 
 export const useSettingsStore = create<SettingsState>((set) => ({
@@ -93,4 +106,28 @@ export const useSettingsStore = create<SettingsState>((set) => ({
   setDefaultOutputFormat: (format) => set({ defaultOutputFormat: format }),
   toggleContextMenu: () =>
     set((s) => ({ enableContextMenu: !s.enableContextMenu })),
+  setCaptureRules: (rules) =>
+    set({
+      ...(rules.customExtensions
+        ? { captureRuleCustomExtensions: rules.customExtensions }
+        : {}),
+      ...(rules.customContentTypes
+        ? { captureRuleCustomContentTypes: rules.customContentTypes }
+        : {}),
+      ...(rules.urlBlacklist ? { captureRuleUrlBlacklist: rules.urlBlacklist } : {}),
+      ...(rules.minSizeBytes !== undefined
+        ? { captureRuleMinSizeBytes: Math.max(0, Math.floor(rules.minSizeBytes)) }
+        : {}),
+      ...(rules.sizePredicate !== undefined
+        ? { captureRuleSizePredicate: rules.sizePredicate }
+        : {}),
+    }),
+  resetCaptureRules: () =>
+    set({
+      captureRuleCustomExtensions: [],
+      captureRuleCustomContentTypes: [],
+      captureRuleUrlBlacklist: [],
+      captureRuleMinSizeBytes: 0,
+      captureRuleSizePredicate: '',
+    }),
 }));

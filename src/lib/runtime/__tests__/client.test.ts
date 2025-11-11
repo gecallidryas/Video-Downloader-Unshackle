@@ -2,6 +2,36 @@ import { describe, expect, test, vi } from 'vitest';
 import { createRuntimeClient } from '../client';
 
 describe('RuntimeClient', () => {
+  test('sends manual HLS ingest payloads', async () => {
+    const transport = vi.fn().mockResolvedValue({
+      type: 'INGEST_MANUAL_HLS_RESULT',
+      requestId: 'response-manual',
+      payload: { candidates: [] },
+    });
+    const client = createRuntimeClient(transport);
+
+    await expect(
+      client.ingestManualHls({
+        tabId: 7,
+        pageUrl: 'https://example.com/watch',
+        input: '#EXTM3U\nseg-1.ts',
+        baseUrl: 'https://cdn.example.com/master.m3u8',
+      }),
+    ).resolves.toEqual([]);
+
+    expect(transport).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'INGEST_MANUAL_HLS',
+        payload: {
+          tabId: 7,
+          pageUrl: 'https://example.com/watch',
+          input: '#EXTM3U\nseg-1.ts',
+          baseUrl: 'https://cdn.example.com/master.m3u8',
+        },
+      }),
+    );
+  });
+
   test('sends selected variant, tracks, and trim in START_DOWNLOAD', async () => {
     const transport = vi.fn().mockResolvedValue({
       type: 'START_DOWNLOAD_RESULT',

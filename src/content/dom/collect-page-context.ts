@@ -84,3 +84,39 @@ export function collectPageContext(
     videoPosterCandidates,
   };
 }
+
+export function getSelectedLinks(): string[] {
+  try {
+    const selection = window.getSelection();
+
+    if (!selection || selection.rangeCount === 0) {
+      return [];
+    }
+
+    const seen = new Set<string>();
+    const links: string[] = [];
+
+    for (const anchor of Array.from(document.querySelectorAll<HTMLAnchorElement>('a[href]'))) {
+      const isSelected = Array.from({ length: selection.rangeCount }).some((_, index) => {
+        const range = selection.getRangeAt(index);
+
+        try {
+          return range.intersectsNode(anchor);
+        } catch {
+          return selection.containsNode(anchor, true);
+        }
+      });
+
+      if (!isSelected || !anchor.href || seen.has(anchor.href)) {
+        continue;
+      }
+
+      seen.add(anchor.href);
+      links.push(anchor.href);
+    }
+
+    return links;
+  } catch {
+    return [];
+  }
+}

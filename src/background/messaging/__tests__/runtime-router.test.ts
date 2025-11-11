@@ -179,6 +179,43 @@ test('INGEST_CONTENT_EVIDENCE stores DOM HLS manifests for the sender tab', asyn
   ]);
 });
 
+test('INGEST_MANUAL_HLS stores URL and raw-list candidates for the requested tab', async () => {
+  const { router } = buildRouter();
+
+  const response = await router.handleMessage(
+    createRuntimeRequest(
+      'INGEST_MANUAL_HLS',
+      {
+        tabId: 7,
+        pageUrl: 'http://127.0.0.1:4173/index.html',
+        pageTitle: 'Manual page',
+        input: 'seg-1.ts\nseg-2.ts',
+        baseUrl: 'http://127.0.0.1:4173/hls/master.m3u8',
+      },
+      'req-manual-hls',
+    ),
+  );
+
+  expect(response.type).toBe('INGEST_MANUAL_HLS_RESULT');
+  if (response.type !== 'INGEST_MANUAL_HLS_RESULT') {
+    return;
+  }
+
+  expect(response.payload.candidates).toEqual([
+    expect.objectContaining({
+      protocol: 'hls',
+      pageTitle: 'Manual page',
+      manifestUrl: expect.stringMatching(/^data:application\/vnd\.apple\.mpegurl/),
+      evidence: [
+        expect.objectContaining({
+          source: 'user',
+          notes: expect.arrayContaining(['manual-ingest:raw-ts-list']),
+        }),
+      ],
+    }),
+  ]);
+});
+
 test('START_DOWNLOAD can find a candidate loaded for the side panel without sender tab context', async () => {
   const candidateRegistry = createCandidateRegistry();
   const router = createRuntimeRouter({

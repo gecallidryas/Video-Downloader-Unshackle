@@ -1,0 +1,59 @@
+.segment-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px;
+  padding: 4px;
+  background: var(--surface-container-low);
+  border-radius: var(--radius-sm, 4px);
+  max-width: 100%;
+}
+
+.segment-grid__cell {
+  width: 10px;
+  height: 10px;
+  padding: 0;
+  border: none;
+  border-radius: 2px;
+  cursor: pointer;
+  background: var(--surface-variant);
+}
+
+.segment-grid__cell:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 1px;
+}
+
+.segment-grid__cell--pending {
+  background: var(--surface-variant);
+}
+
+.segment-grid__cell--downloading {
+  background: var(--primary);
+  animation: segment-pulse 1.4s ease-in-out infinite;
+}
+
+.segment-grid__cell--done {
+  background: var(--secondary);
+}
+
+.segment-grid__cell--failed {
+  background: var(--error);
+}
+
+.segment-grid__cell--skipped {
+  background: var(--outline);
+}
+
+.segment-grid__cell--selected {
+  box-shadow: 0 0 0 2px var(--primary-fixed-dim, var(--primary));
+}
+
+@keyframes segment-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.6;
+  }
+}

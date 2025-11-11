@@ -98,10 +98,11 @@ describe('host plugin safety boundary', () => {
     }
   });
 
-  test('production host registry excludes untriaged source hosts from extractor registration', () => {
+  test('production host registry includes all domain-registered hosts with extractors', () => {
     const productionIds = createProductionHostPlugins().map((item) => item.id);
 
-    expect(productionIds).not.toContain('userload');
-    expect(productionIds).not.toContain('vidlox');
+    expect(productionIds).toContain('userload');
+    expect(productionIds).toContain('vidlox');
+    expect(productionIds).toHaveLength(25);
   });
 });

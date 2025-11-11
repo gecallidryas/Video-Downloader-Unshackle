@@ -1,11 +1,24 @@
 import { useState } from 'react';
+import type { ReactNode } from 'react';
 import { createNativeFfmpegClient, NativeFfmpegClientError } from '@/src/native/native-ffmpeg-client';
+import { createCaptureRuleEngine } from '@/src/core/capture-rules/capture-rule-engine';
 import { useSettingsStore } from '@/src/state/useSettingsStore';
 import {
   NativeHelperStatus,
   type NativeHelperUiStatus,
 } from '@/src/ui/feedback/NativeHelperStatus';
 import './PopupApp.css';
+
+function linesToList(value: string): string[] {
+  return value
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+}
+
+function listToLines(value: string[]): string {
+  return value.join('\n');
+}
 
 function SettingsContent() {
   const [nativeHelperStatus, setNativeHelperStatus] =
@@ -38,6 +51,27 @@ function SettingsContent() {
   const setPreviewFormat = useSettingsStore((s) => s.setPreviewFormat);
   const enableContextMenu = useSettingsStore((s) => s.enableContextMenu);
   const toggleContextMenu = useSettingsStore((s) => s.toggleContextMenu);
+  const captureRuleCustomExtensions = useSettingsStore((s) => s.captureRuleCustomExtensions);
+  const captureRuleCustomContentTypes = useSettingsStore((s) => s.captureRuleCustomContentTypes);
+  const captureRuleUrlBlacklist = useSettingsStore((s) => s.captureRuleUrlBlacklist);
+  const captureRuleMinSizeBytes = useSettingsStore((s) => s.captureRuleMinSizeBytes);
+  const captureRuleSizePredicate = useSettingsStore((s) => s.captureRuleSizePredicate);
+  const setCaptureRules = useSettingsStore((s) => s.setCaptureRules);
+  const resetCaptureRules = useSettingsStore((s) => s.resetCaptureRules);
+  const [captureRulesJson, setCaptureRulesJson] = useState('');
+  const [captureRulesError, setCaptureRulesError] = useState<string | null>(null);
+  const [customExtensionsDraft, setCustomExtensionsDraft] = useState(
+    listToLines(captureRuleCustomExtensions),
+  );
+  const [customContentTypesDraft, setCustomContentTypesDraft] = useState(
+    listToLines(captureRuleCustomContentTypes),
+  );
+  const [urlBlacklistDraft, setUrlBlacklistDraft] = useState(
+    listToLines(captureRuleUrlBlacklist),
+  );
+  const [sizePredicateDraft, setSizePredicateDraft] = useState(
+    captureRuleSizePredicate,
+  );
 
   async function checkNativeHelper() {
     try {
@@ -49,6 +83,90 @@ function SettingsContent() {
           ? 'ffmpeg-missing'
           : 'missing',
       );
+    }
+  }
+
+  function updateCaptureRules(next: {
+    customExtensions?: string[];
+    customContentTypes?: string[];
+    urlBlacklist?: string[];
+    minSizeBytes?: number;
+    sizePredicate?: string;
+  }) {
+    const merged = {
+      customExtensions: next.customExtensions ?? captureRuleCustomExtensions,
+      customContentTypes: next.customContentTypes ?? captureRuleCustomContentTypes,
+      blacklist: next.urlBlacklist ?? captureRuleUrlBlacklist,
+      minSizeBytes: next.minSizeBytes ?? captureRuleMinSizeBytes,
+      sizePredicate: next.sizePredicate ?? captureRuleSizePredicate,
+    };
+
+    try {
+      createCaptureRuleEngine(merged);
+      setCaptureRules(next);
+      setCaptureRulesError(null);
+    } catch (error) {
+      setCaptureRulesError(error instanceof Error ? error.message : 'Invalid capture rule');
+    }
+  }
+
+  function exportCaptureRules() {
+    setCaptureRulesJson(
+      JSON.stringify(
+        {
+          customExtensions: captureRuleCustomExtensions,
+          customContentTypes: captureRuleCustomContentTypes,
+          urlBlacklist: captureRuleUrlBlacklist,
+          minSizeBytes: captureRuleMinSizeBytes,
+          sizePredicate: captureRuleSizePredicate,
+        },
+        null,
+        2,
+      ),
+    );
+    setCaptureRulesError(null);
+  }
+
+  function importCaptureRules() {
+    try {
+      const parsed = JSON.parse(captureRulesJson) as {
+        customExtensions?: unknown;
+        customContentTypes?: unknown;
+        urlBlacklist?: unknown;
+        minSizeBytes?: unknown;
+        sizePredicate?: unknown;
+      };
+      const rules = {
+        customExtensions: Array.isArray(parsed.customExtensions)
+          ? parsed.customExtensions.filter((value): value is string => typeof value === 'string')
+          : [],
+        customContentTypes: Array.isArray(parsed.customContentTypes)
+          ? parsed.customContentTypes.filter((value): value is string => typeof value === 'string')
+          : [],
+        urlBlacklist: Array.isArray(parsed.urlBlacklist)
+          ? parsed.urlBlacklist.filter((value): value is string => typeof value === 'string')
+          : [],
+        minSizeBytes:
+          typeof parsed.minSizeBytes === 'number' ? parsed.minSizeBytes : 0,
+        sizePredicate:
+          typeof parsed.sizePredicate === 'string' ? parsed.sizePredicate : '',
+      };
+
+      createCaptureRuleEngine({
+        customExtensions: rules.customExtensions,
+        customContentTypes: rules.customContentTypes,
+        blacklist: rules.urlBlacklist,
+        minSizeBytes: rules.minSizeBytes,
+        sizePredicate: rules.sizePredicate,
+      });
+      setCaptureRules(rules);
+      setCustomExtensionsDraft(listToLines(rules.customExtensions));
+      setCustomContentTypesDraft(listToLines(rules.customContentTypes));
+      setUrlBlacklistDraft(listToLines(rules.urlBlacklist));
+      setSizePredicateDraft(rules.sizePredicate);
+      setCaptureRulesError(null);
+    } catch (error) {
+      setCaptureRulesError(error instanceof Error ? error.message : 'Invalid capture rules JSON');
     }
   }
 
@@ -260,11 +378,244 @@ function SettingsContent() {
           className="popup__toggle"
         />
       </label>
+
+      <section className="capture-rules">
+        <span className="popup__label">Capture rules</span>
+        <label className="popup__row popup__row--stack">
+          <span className="popup__label">Custom extensions</span>
+          <textarea
+            aria-label="Custom extensions"
+            value={customExtensionsDraft}
+            onChange={(event) => {
+              setCustomExtensionsDraft(event.target.value);
+              updateCaptureRules({ customExtensions: linesToList(event.target.value) });
+            }}
+            className="popup__textarea"
+            rows={2}
+          />
+        </label>
+        <label className="popup__row popup__row--stack">
+          <span className="popup__label">Custom content types</span>
+          <textarea
+            aria-label="Custom content types"
+            value={customContentTypesDraft}
+            onChange={(event) => {
+              setCustomContentTypesDraft(event.target.value);
+              updateCaptureRules({ customContentTypes: linesToList(event.target.value) });
+            }}
+            className="popup__textarea"
+            rows={2}
+          />
+        </label>
+        <label className="popup__row popup__row--stack">
+          <span className="popup__label">URL blacklist</span>
+          <textarea
+            aria-label="URL blacklist"
+            value={urlBlacklistDraft}
+            onChange={(event) => {
+              setUrlBlacklistDraft(event.target.value);
+              updateCaptureRules({ urlBlacklist: linesToList(event.target.value) });
+            }}
+            className="popup__textarea"
+            rows={2}
+          />
+        </label>
+        <label className="popup__row popup__row--stack">
+          <span className="popup__label">Minimum size bytes</span>
+          <input
+            aria-label="Minimum size bytes"
+            type="number"
+            min={0}
+            value={captureRuleMinSizeBytes}
+            onChange={(event) =>
+              updateCaptureRules({ minSizeBytes: Number(event.target.value) })
+            }
+            className="popup__input"
+          />
+        </label>
+        <label className="popup__row popup__row--stack">
+          <span className="popup__label">Size predicate</span>
+          <input
+            aria-label="Size predicate"
+            value={sizePredicateDraft}
+            onChange={(event) => {
+              setSizePredicateDraft(event.target.value);
+              updateCaptureRules({ sizePredicate: event.target.value });
+            }}
+            className="popup__input"
+          />
+        </label>
+        <label className="popup__row popup__row--stack">
+          <span className="popup__label">Capture rules JSON</span>
+          <textarea
+            aria-label="Capture rules JSON"
+            value={captureRulesJson}
+            onChange={(event) => setCaptureRulesJson(event.target.value)}
+            className="popup__textarea"
+            rows={3}
+          />
+        </label>
+        {captureRulesError ? (
+          <p className="capture-rules__error">{captureRulesError}</p>
+        ) : null}
+        <div className="capture-rules__actions">
+          <button type="button" onClick={exportCaptureRules} className="capture-rules__button">
+            Export capture rules
+          </button>
+          <button type="button" onClick={importCaptureRules} className="capture-rules__button">
+            Import capture rules
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              resetCaptureRules();
+              setCustomExtensionsDraft('');
+              setCustomContentTypesDraft('');
+              setUrlBlacklistDraft('');
+              setSizePredicateDraft('');
+              setCaptureRulesError(null);
+            }}
+            className="capture-rules__button"
+          >
+            Reset capture rules
+          </button>
+        </div>
+      </section>
     </>
   );
 }
 
-export function PopupApp({ embedded = false }: { embedded?: boolean }) {
+export interface PopupJob {
+  id: string;
+  title: string;
+  status: 'pending' | 'running' | 'completed' | 'failed' | 'paused';
+  progressPct: number;
+  segmentsDone?: number;
+  segmentsFailed?: number;
+  speedKBps?: number;
+  elapsedSec?: number;
+  error?: string;
+}
+
+interface PopupAppProps {
+  embedded?: boolean;
+  jobs?: PopupJob[];
+}
+
+function KeyboardHintFooter(): ReactNode {
+  return (
+    <ul aria-label="Keyboard shortcuts" className="popup__shortcuts" style={{ listStyle: 'none', padding: 0, margin: 0, fontSize: 11, opacity: 0.7 }}>
+      <li>Pause all: Ctrl+Shift+P</li>
+      <li>Clear completed: Ctrl+Shift+X</li>
+      <li>Open side panel: Ctrl+Shift+D</li>
+    </ul>
+  );
+}
+
+function JobsList({ jobs, onSelect }: { jobs: PopupJob[]; onSelect: (id: string) => void }) {
+  if (jobs.length === 0) {
+    return <p className="popup__empty">No active downloads.</p>;
+  }
+  return (
+    <ul aria-label="Download jobs" className="popup__jobs" style={{ listStyle: 'none', padding: 0, margin: 0 }}>
+      {jobs.map((job) => (
+        <li key={job.id} style={{ borderBottom: '1px solid var(--outline-variant, #2a2a2a)' }}>
+          <button
+            type="button"
+            className="popup__job"
+            style={{
+              width: '100%',
+              textAlign: 'left',
+              background: 'transparent',
+              color: 'inherit',
+              border: 'none',
+              padding: '8px 4px',
+              cursor: 'pointer',
+            }}
+            onClick={() => onSelect(job.id)}
+          >
+            <strong>{job.title}</strong>
+            <span style={{ marginLeft: 8, opacity: 0.7 }}>
+              {job.status} · {Math.round(job.progressPct)}%
+            </span>
+          </button>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+function JobDetail({ job, onBack }: { job: PopupJob; onBack: () => void }) {
+  return (
+    <section aria-label={`Details for ${job.title}`}>
+      <button type="button" onClick={onBack} aria-label="Back to job list">
+        ← Back
+      </button>
+      <h2 style={{ fontSize: 14, margin: '8px 0' }}>{job.title}</h2>
+      <dl style={{ display: 'grid', gridTemplateColumns: 'auto 1fr', gap: '4px 12px', fontSize: 12 }}>
+        <dt>Progress</dt>
+        <dd>{Math.round(job.progressPct)}%</dd>
+        <dt>Status</dt>
+        <dd>{job.status}</dd>
+        {job.segmentsDone !== undefined ? (
+          <>
+            <dt>Segments done</dt>
+            <dd>{job.segmentsDone}</dd>
+          </>
+        ) : null}
+        {job.segmentsFailed !== undefined ? (
+          <>
+            <dt>Segments failed</dt>
+            <dd>{job.segmentsFailed}</dd>
+          </>
+        ) : null}
+        {job.speedKBps !== undefined ? (
+          <>
+            <dt>Speed</dt>
+            <dd>{job.speedKBps.toFixed(1)} KB/s</dd>
+          </>
+        ) : null}
+        {job.elapsedSec !== undefined ? (
+          <>
+            <dt>Elapsed</dt>
+            <dd>{job.elapsedSec.toFixed(0)} s</dd>
+          </>
+        ) : null}
+        {job.error ? (
+          <>
+            <dt>Error</dt>
+            <dd role="alert">{job.error}</dd>
+          </>
+        ) : null}
+      </dl>
+    </section>
+  );
+}
+
+export function PopupApp({ embedded = false, jobs }: PopupAppProps) {
+  const [selectedJobId, setSelectedJobId] = useState<string | null>(null);
+  const selectedJob = jobs?.find((job) => job.id === selectedJobId) ?? null;
+
+  if (jobs !== undefined) {
+    return (
+      <div className="popup">
+        <header className="popup__header">
+          <h1 className="popup__title">Downloads</h1>
+        </header>
+        <div className="popup__body">
+          {selectedJob ? (
+            <JobDetail job={selectedJob} onBack={() => setSelectedJobId(null)} />
+          ) : (
+            <JobsList jobs={jobs} onSelect={setSelectedJobId} />
+          )}
+        </div>
+        <footer className="popup__footer">
+          <KeyboardHintFooter />
+        </footer>
+      </div>
+    );
+  }
+
   if (embedded) {
     return (
       <>
@@ -276,6 +627,7 @@ export function PopupApp({ embedded = false }: { embedded?: boolean }) {
         </div>
         <div className="popup__footer">
           <span className="popup__version">Video Downloader — Unshackle v0.1.0</span>
+          <KeyboardHintFooter />
         </div>
       </>
     );
@@ -294,6 +646,7 @@ export function PopupApp({ embedded = false }: { embedded?: boolean }) {
       </div>
       <footer className="popup__footer">
         <span className="popup__version">Video Downloader — Unshackle v0.1.0</span>
+        <KeyboardHintFooter />
       </footer>
     </div>
   );

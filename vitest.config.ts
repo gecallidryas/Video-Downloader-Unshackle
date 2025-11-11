@@ -11,8 +11,10 @@ export default defineConfig({
       '**/node_modules/**',
       '**/.git/**',
       '**/.output/**',
+      '**/.claude/worktrees/**',
       'e2e/**',
       'UnifiedVideoDownloader/**',
+      'reference/**',
     ],
   },
 });

@@ -1,8 +1,42 @@
 import { describe, expect, test } from 'vitest';
-import { parseHlsManifest } from '../parse-hls-manifest';
+import { parseHlsManifest, type ParsedHlsManifest } from '../parse-hls-manifest';
 import { planHlsSegments } from '../plan-hls-segments';
 
 describe('planHlsSegments', () => {
+  test('applies default quality policy when no explicit variant is selected', () => {
+    const manifest: ParsedHlsManifest = {
+      id: 'policy-media',
+      protocol: 'hls',
+      sourceUrl: 'https://cdn.example.com/hls/vod/policy.m3u8',
+      playlistKind: 'media',
+      variants: [
+        { id: 'v360', height: 360, bitrate: 400_000 },
+        { id: 'v1080', height: 1080, bitrate: 5_000_000 },
+      ],
+      segments: [
+        {
+          id: 'hls-segment-1',
+          index: 1,
+          url: 'https://cdn.example.com/hls/vod/seg-1.ts',
+          durationSec: 6,
+        },
+      ],
+      audioTracks: [],
+      subtitleTracks: [],
+      closedCaptions: [],
+      protection: { kind: 'none' },
+      isLive: false,
+    };
+
+    const plan = planHlsSegments(manifest, {
+      jobId: 'job-policy',
+      selection: { mode: 'smallest' },
+      qualityPolicy: 'highest',
+    });
+
+    expect(plan.variantId).toBe('v1080');
+  });
+
   test('returns all segments when no trim is specified', () => {
     const manifest = parseHlsManifest({
       manifestUrl: 'https://cdn.example.com/hls/vod/notrim.m3u8',

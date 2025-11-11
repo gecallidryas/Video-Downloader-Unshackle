@@ -1,7 +1,9 @@
-import { useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { DetectedMedia } from '@/src/types/media';
 import type { ProviderPolicyResult } from '@/src/core/policy/evaluate-provider-policy';
 import { ProtectedActionGate } from '@/src/ui/protected/ProtectedActionGate';
+import { OverflowMenu, type MenuAction } from '@/src/ui/shared/OverflowMenu';
+import { DuplicateBadge } from './DuplicateBadge';
 import { TrackPicker } from './TrackPicker';
 import { TrimControls } from './TrimControls';
 import { VariantPicker } from './VariantPicker';
@@ -17,6 +19,13 @@ interface MediaCardProps {
   onSubtitleTrackChange?: (trackIds: string[]) => void;
   onTrimChange?: (trim: DetectedMedia['trim']) => void;
   onPreviewHover?: () => void;
+  onCopyUrl?: (url: string) => void;
+  onCopyFilename?: () => void;
+  onCopyAllUrls?: () => void;
+  remainingStorageBytes?: number;
+  duplicateCount?: number;
+  onDuplicateClick?: () => void;
+  outputFilename?: string;
   providerPolicy?: ProviderPolicyResult;
   onProtectedProceed?: (
     policy: Extract<ProviderPolicyResult, { kind: 'authorized-workflow' }>,
@@ -28,6 +37,28 @@ function selectedQualityLabel(media: DetectedMedia): string {
     media.qualities.find((quality) => quality.value === media.selectedQuality)?.label ??
     media.selectedQuality
   );
+}
+
+function formatEstimatedSize(bytes: number): string {
+  if (bytes >= 1_073_741_824) {
+    return `~${(bytes / 1_073_741_824).toFixed(2)} GB`;
+  }
+  if (bytes >= 1_048_576) {
+    return `~${Math.round(bytes / 1_048_576)} MB`;
+  }
+  if (bytes >= 1024) {
+    return `~${Math.round(bytes / 1024)} KB`;
+  }
+  return `~${bytes} B`;
+}
+
+function estimatedBytes(media: DetectedMedia): number | null {
+  if (typeof media.bitrate === 'number' && typeof media.durationSec === 'number') {
+    if (media.bitrate > 0 && media.durationSec > 0) {
+      return Math.round((media.bitrate / 8) * media.durationSec);
+    }
+  }
+  return null;
 }
 
 function protectionBadge(media: DetectedMedia): string | null {
@@ -52,6 +83,13 @@ export function MediaCard({
   onSubtitleTrackChange = () => {},
   onTrimChange = () => {},
   onPreviewHover = () => {},
+  onCopyUrl,
+  onCopyFilename,
+  onCopyAllUrls,
+  remainingStorageBytes,
+  duplicateCount,
+  onDuplicateClick,
+  outputFilename,
   providerPolicy,
   onProtectedProceed,
 }: MediaCardProps) {
@@ -65,6 +103,40 @@ export function MediaCard({
   const trimEnabled = media.protocol === 'hls' || media.protocol === 'dash';
   const [hoveringThumb, setHoveringThumb] = useState(false);
   const hoverRequested = useRef(false);
+  const [filenameTooltipVisible, setFilenameTooltipVisible] = useState(false);
+  const tooltipTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (tooltipTimer.current !== null) {
+        clearTimeout(tooltipTimer.current);
+      }
+    };
+  }, []);
+
+  function handleTitleEnter() {
+    if (tooltipTimer.current !== null) {
+      clearTimeout(tooltipTimer.current);
+    }
+    tooltipTimer.current = setTimeout(() => {
+      setFilenameTooltipVisible(true);
+    }, 300);
+  }
+
+  function handleTitleLeave() {
+    if (tooltipTimer.current !== null) {
+      clearTimeout(tooltipTimer.current);
+      tooltipTimer.current = null;
+    }
+    setFilenameTooltipVisible(false);
+  }
+
+  const estimateBytes = estimatedBytes(media);
+  const displaySize = estimateBytes !== null ? formatEstimatedSize(estimateBytes) : media.size;
+  const overStorage =
+    typeof remainingStorageBytes === 'number' &&
+    estimateBytes !== null &&
+    estimateBytes > remainingStorageBytes;
 
   function handleThumbEnter() {
     setHoveringThumb(true);
@@ -76,6 +148,59 @@ export function MediaCard({
 
   function handleThumbLeave() {
     setHoveringThumb(false);
+  }
+
+  const hasAudioUrl = (media.audioTracks ?? []).some((track) => !!track.url);
+  const hasSubtitleUrl = (media.subtitleTracks ?? []).some((track) => !!track.url);
+
+  const menuActions = useMemo<MenuAction[]>(() => {
+    const items: MenuAction[] = [];
+    if (media.url) {
+      items.push({ id: 'copy-video-url', label: 'Copy video URL' });
+    }
+    if (hasAudioUrl) {
+      items.push({ id: 'copy-audio-url', label: 'Copy audio URL' });
+    }
+    if (hasSubtitleUrl) {
+      items.push({ id: 'copy-subtitle-url', label: 'Copy subtitle URL' });
+    }
+    items.push({ id: 'copy-filename', label: 'Copy filename' });
+    items.push({ id: 'copy-all-urls', label: 'Copy all URLs' });
+    items.push({ id: 'remove', label: 'Remove', danger: true, divider: true });
+    return items;
+  }, [media.url, hasAudioUrl, hasSubtitleUrl]);
+
+  function handleMenuAction(actionId: string) {
+    switch (actionId) {
+      case 'copy-video-url':
+        if (media.url) {
+          onCopyUrl?.(media.url);
+        }
+        break;
+      case 'copy-audio-url': {
+        const url = (media.audioTracks ?? []).find((track) => !!track.url)?.url;
+        if (url) {
+          onCopyUrl?.(url);
+        }
+        break;
+      }
+      case 'copy-subtitle-url': {
+        const url = (media.subtitleTracks ?? []).find((track) => !!track.url)?.url;
+        if (url) {
+          onCopyUrl?.(url);
+        }
+        break;
+      }
+      case 'copy-filename':
+        onCopyFilename?.();
+        break;
+      case 'copy-all-urls':
+        onCopyAllUrls?.();
+        break;
+      case 'remove':
+        onRemove();
+        break;
+    }
   }
 
   return (
@@ -117,9 +242,38 @@ export function MediaCard({
         </div>
 
         <div className="media-card__info">
-          <span className="media-card__title truncate" title={media.title}>
+          {typeof duplicateCount === 'number' && duplicateCount > 0 ? (
+            <DuplicateBadge
+              count={duplicateCount}
+              onClick={onDuplicateClick ?? (() => {})}
+            />
+          ) : null}
+          <span
+            className="media-card__title truncate"
+            onMouseEnter={handleTitleEnter}
+            onMouseLeave={handleTitleLeave}
+            onFocus={handleTitleEnter}
+            onBlur={handleTitleLeave}
+            tabIndex={0}
+          >
             {media.title}
+            {filenameTooltipVisible ? (
+              <span
+                className="media-card__filename-tooltip"
+                role="tooltip"
+                data-testid="media-filename-tooltip"
+              >
+                <span className="media-card__filename-tooltip-name">{media.title}</span>
+                <span className="media-card__filename-tooltip-meta">
+                  {displaySize}
+                  {media.duration ? ` · ${media.duration}` : ''}
+                </span>
+              </span>
+            ) : null}
           </span>
+          {outputFilename && outputFilename !== media.title ? (
+            <span className="media-card__output-preview">{`→ ${outputFilename}`}</span>
+          ) : null}
           <div className="media-card__meta">
             <span className="media-card__chip">{media.format}</span>
             {media.selectedQuality ? (
@@ -132,7 +286,38 @@ export function MediaCard({
                 {protectedLabel}
               </span>
             ) : null}
-            <span className="media-card__size label-xs">{media.size}</span>
+            {typeof media.fps === 'number' ? (
+              <span className="media-card__chip media-card__chip--fps">
+                {media.fps}fps
+              </span>
+            ) : null}
+            {media.channels ? (
+              <span className="media-card__chip media-card__chip--channels">
+                {media.channels}ch
+              </span>
+            ) : null}
+            {media.default ? (
+              <span className="media-card__chip media-card__chip--default">default</span>
+            ) : null}
+            {media.autoselect ? (
+              <span className="media-card__chip media-card__chip--autoselect">
+                autoselect
+              </span>
+            ) : null}
+            <span className="media-card__size label-xs">
+              {displaySize}
+              {overStorage ? (
+                <span
+                  className="media-card__storage-warning"
+                  data-testid="media-storage-warning"
+                  aria-label="Estimated size exceeds remaining storage"
+                  title="Estimated size exceeds remaining storage"
+                >
+                  {' '}
+                  &#9888;
+                </span>
+              ) : null}
+            </span>
           </div>
         </div>
       </div>
@@ -175,16 +360,11 @@ export function MediaCard({
               <path d="M10 4.5C5.8 4.5 2.3 7.3 1 10c1.3 2.7 4.8 5.5 9 5.5s7.7-2.8 9-5.5c-1.3-2.7-4.8-5.5-9-5.5zm0 9a3.5 3.5 0 110-7 3.5 3.5 0 010 7zm0-5.5a2 2 0 100 4 2 2 0 000-4z" />
             </svg>
           </button>
-          <button
-            className="media-card__icon-btn media-card__icon-btn--danger"
-            onClick={onRemove}
-            aria-label="Remove"
-            title="Remove"
-          >
-            <svg viewBox="0 0 20 20" width="16" height="16" fill="currentColor">
-              <path d="M14.3 5.7a1 1 0 00-1.4 0L10 8.6 7.1 5.7a1 1 0 00-1.4 1.4L8.6 10l-2.9 2.9a1 1 0 101.4 1.4L10 11.4l2.9 2.9a1 1 0 001.4-1.4L11.4 10l2.9-2.9a1 1 0 000-1.4z" />
-            </svg>
-          </button>
+          <OverflowMenu
+            actions={menuActions}
+            onAction={handleMenuAction}
+            aria-label="More actions"
+          />
           <button
             className={`media-card__download-btn ${
               isBlocked ? 'media-card__download-btn--blocked' : ''

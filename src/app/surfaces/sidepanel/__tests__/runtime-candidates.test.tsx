@@ -52,6 +52,16 @@ function buildCandidate(
 function buildRuntimeClient(candidates: MediaCandidate[]): RuntimeClient {
   return {
     getCandidates: vi.fn().mockResolvedValue(candidates),
+    ingestManualHls: vi.fn().mockResolvedValue([
+      buildCandidate({
+        id: 'manual-hls',
+        protocol: 'hls',
+        status: 'partial',
+        displayName: 'manual.m3u8',
+        sourceUrl: undefined,
+        manifestUrl: 'https://cdn.example.com/manual.m3u8',
+      }),
+    ]),
     getQueueStats: vi.fn().mockResolvedValue({
       queued: 0,
       running: 0,
@@ -88,6 +98,7 @@ function buildRuntimeClient(candidates: MediaCandidate[]): RuntimeClient {
 }
 
 beforeEach(() => {
+  globalThis.localStorage?.removeItem('unshackle:sidepanel:activeTab');
   usePanelStore.setState({
     surfaceState: 'detecting',
     candidates: [],
@@ -114,6 +125,31 @@ test('loads side panel candidates from a typed runtime client', async () => {
 
   expect(await screen.findByText('Runtime clear candidate')).toBeInTheDocument();
   expect(screen.getByText('1 File')).toBeInTheDocument();
+});
+
+test('submits manual HLS text ingest from the current tab view', async () => {
+  const user = userEvent.setup();
+  const runtimeClient = buildRuntimeClient([]);
+
+  render(<SidePanelApp activeTabId={7} runtimeClient={runtimeClient} />);
+
+  await user.type(
+    screen.getByRole('textbox', { name: /manual hls input/i }),
+    'seg-1.ts\nseg-2.ts',
+  );
+  await user.type(
+    screen.getByRole('textbox', { name: /base url/i }),
+    'https://cdn.example.com/master.m3u8',
+  );
+  await user.click(screen.getByRole('button', { name: /ingest hls/i }));
+
+  expect(runtimeClient.ingestManualHls).toHaveBeenCalledWith({
+    tabId: 7,
+    pageUrl: '',
+    input: 'seg-1.ts\nseg-2.ts',
+    baseUrl: 'https://cdn.example.com/master.m3u8',
+  });
+  expect(await screen.findByText('manual.m3u8')).toBeInTheDocument();
 });
 
 test('renders clear candidates with a normal download action', async () => {

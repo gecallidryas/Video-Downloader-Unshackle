@@ -114,6 +114,52 @@ describe('policy-only site detectors', () => {
     );
   });
 
+  test('emits YouTube clear formats even when playability status is non-OK', async () => {
+    const documentRef = htmlDocument(`
+      <script>
+        var ytInitialPlayerResponse = {
+          "videoDetails": {
+            "title": "Restricted But Has Formats",
+            "lengthSeconds": "120"
+          },
+          "playabilityStatus": {
+            "status": "LOGIN_REQUIRED",
+            "reason": "Sign in to confirm your age"
+          },
+          "streamingData": {
+            "formats": [
+              {
+                "url": "https://rr.example/age-gated-clear.mp4",
+                "qualityLabel": "720p",
+                "mimeType": "video/mp4"
+              }
+            ]
+          }
+        };
+      </script>
+    `);
+
+    const result = await runDetectorPlugins([createYouTubeDetector()], {
+      url: new URL('https://www.youtube.com/watch?v=restricted'),
+      document: documentRef,
+      now: () => 402,
+    });
+
+    expect(result.errors).toEqual([]);
+    expect(result.restrictions).toEqual([]);
+    expect(result.evidence).toHaveLength(1);
+    expect(result.evidence[0]).toMatchObject({
+      url: 'https://rr.example/age-gated-clear.mp4',
+    });
+    expect(result.evidence[0]?.notes).toEqual(
+      expect.arrayContaining([
+        'plugin:youtube',
+        'source:youtube-clear-format',
+        'quality:720p',
+      ]),
+    );
+  });
+
   test('emits Facebook clear media evidence without fixture authorization', async () => {
     const documentRef = htmlDocument(`
       <script>

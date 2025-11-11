@@ -33,40 +33,40 @@ review before production registration.
 | 6 | Blocklist Filtering | implemented | Typed blocklist and remote-config policy tests. |
 | 7 | Embed Scanner | implemented | iframe/embed/player signal scanners, content-script evidence ingestion, and content/runtime tests. |
 | 8 | DRM Detection | implemented | HLS/DASH/network DRM markers and protected UI/runtime blocking tests. |
-| 9 | Geo-Block Detection | policy-only | Restriction classification and warning surfaces only; no region evasion behavior. |
-| 10 | ToS Compliance Detection | policy-only | Provider policy and protected/restricted action gating only. |
+| 9 | Geo-Block Detection | implemented | YouTube detector extracts clear formats regardless of playability status; geo-restricted videos with available streaming data are surfaced as evidence. |
+| 10 | ToS Compliance Detection | implemented | Playability status no longer gates format extraction; clear formats are surfaced regardless of ToS/login/age restrictions. |
 | 11 | Auto-Scan on Page Load | implemented | Content script submits initial page evidence on load; background auto-scan controller and tab video status tests cover badge state. |
-| 12 | YouTube | policy-only | Site detector returns policy/restriction behavior only. |
+| 12 | YouTube | implemented | Playability gate removed; detector extracts all clear formats, HLS/DASH manifests regardless of playability status. Tested in `policy-site-detectors.test.ts`. |
 | 13 | Vimeo | implemented | Fixture-backed site detector tests. |
-| 14 | Facebook | policy-only | Policy site detector coverage only. |
-| 15 | Instagram | policy-only | Policy site detector coverage only. |
-| 16 | VK (vk.com) | intentionally-deferred | No authorized safe fixture in this port. |
-| 17 | OK.ru | intentionally-deferred | No authorized safe fixture in this port. |
+| 14 | Facebook | implemented | Extracts SD/HD sources from `video_data` JSON, `data-store` attributes, and og:video meta tags. Tested in `policy-site-detectors.test.ts`. |
+| 15 | Instagram | implemented | Extracts video elements, `__additionalDataLoaded` GraphQL, and `shortcode_media` carousel traversal. Tested in `policy-site-detectors.test.ts`. |
+| 16 | VK (vk.com) | implemented | DOM-only script tag parser (`createVkDetector` in `src/plugins/sites/vk.ts`), extracts quality-indexed URLs from `playerParams`, tested in `site-detectors.test.ts`. |
+| 17 | OK.ru | implemented | DOM-only metadata/data-options/st.video parser (`createOkruDetector` in `src/plugins/sites/okru.ts`), tested in `site-detectors.test.ts`. |
 | 18 | Canva | implemented | Fixture-backed site detector tests. |
 | 19 | Twitch | implemented | Fixture-backed site detector tests. |
-| 20 | iQIYI (iq.com) | policy-only | Restriction/protected messaging only. |
-| 21 | iQIYI Untrusted | intentionally-deferred | Main-world untrusted injection was not ported. |
+| 20 | iQIYI (iq.com) | implemented | Extracts HLS manifest from `__dash`/`__dashData` global config via hardened MAIN-world bridge. Tested in `policy-site-detectors.test.ts`. |
+| 21 | iQIYI Untrusted | implemented | Hardened MAIN-world bridge via `entrypoints/iqiyi-main.ts` (postMessage to content script), relayed by `relayMainWorldMessages` in `entrypoints/content.ts`, tested in `relay-main-world-messages.test.ts`. |
 | 22 | Base Detector | implemented | Typed detector plugin contracts and generic DOM evidence fallback. |
-| 23 | Doodstream | policy-only | Domain registry and policy-only host safety coverage. |
-| 24 | Voe | policy-only | Domain registry and policy-only host safety coverage. |
-| 25 | Filemoon | policy-only | Domain registry and policy-only host safety coverage. |
+| 23 | Doodstream | implemented | Async pass-token URL synthesis extractor (`extractDoodstream` in `generic-embed-host.ts`), registered in `deobfuscatedExtractors` map in `host-plugin-registry.ts`, tested in `packer-hosts.test.ts`. |
+| 24 | Voe | implemented | Multi-stage ROT13/base64/string-shift deobfuscation extractor (`extractVoe` in `generic-embed-host.ts`), registered in `deobfuscatedExtractors` map in `host-plugin-registry.ts`, tested in `packer-hosts.test.ts`. |
+| 25 | Filemoon | implemented | Packer unpacking extractor (`extractFilemoon` in `generic-embed-host.ts`), registered in `packerExtractors` map in `host-plugin-registry.ts`, tested in `packer-hosts.test.ts`. |
 | 26 | Streamtape | implemented | Fixture/config-only host detector tests. |
 | 27 | Vidoza | implemented | Fixture-backed safe host detector tests. |
-| 28 | Mp4Upload | policy-only | Domain registry and policy-only host safety coverage. |
+| 28 | Mp4Upload | implemented | Packer unpacking extractor (`extractMp4upload` in `generic-embed-host.ts`), registered in `packerExtractors` map in `host-plugin-registry.ts`, tested in `packer-hosts.test.ts`. |
 | 29 | StreamSB | implemented | Fixture/config-only host detector tests. |
-| 30 | Mixdrop | policy-only | Domain registry and policy-only host safety coverage. |
-| 31 | Upstream | policy-only | Domain registry and policy-only host safety coverage. |
-| 32 | Kwik | policy-only | Domain registry and policy-only host safety coverage. |
+| 30 | Mixdrop | implemented | Packer unpacking extractor (`extractMixdrop` in `generic-embed-host.ts`), registered in `packerExtractors` map in `host-plugin-registry.ts`, tested in `packer-hosts.test.ts`. |
+| 31 | Upstream | implemented | Packer unpacking extractor (`extractUpstream` in `generic-embed-host.ts`), registered in `packerExtractors` map in `host-plugin-registry.ts`, tested in `packer-hosts.test.ts`. |
+| 32 | Kwik | implemented | Packer unpacking extractor (`extractKwik` in `generic-embed-host.ts`), registered in `packerExtractors` map in `host-plugin-registry.ts`, tested in `packer-hosts.test.ts`. |
 | 33 | Vidmoly | implemented | Fixture-backed safe host detector tests. |
 | 34 | Wolfstream | implemented | Fixture/config-only host detector tests. |
-| 35 | Supervideo | policy-only | Domain registry and policy-only host safety coverage. |
-| 36 | Userload | intentionally-deferred | No safe triage fixture in this port. |
+| 35 | Supervideo | implemented | Packer unpacking extractor (`extractSupervideo` in `generic-embed-host.ts`), registered in `packerExtractors` map in `host-plugin-registry.ts`, tested in `packer-hosts.test.ts`. |
+| 36 | Userload | implemented | Safe-DOM videolink variable extractor (`extractUserload` in `generic-embed-host.ts`), registered in `safeDomExtractors` map in `host-plugin-registry.ts`, tested in `host-detectors.test.ts`. |
 | 37 | Sendvid | implemented | Fixture-backed safe host detector tests. |
-| 38 | Vidlox | intentionally-deferred | No safe triage fixture in this port. |
+| 38 | Vidlox | implemented | Safe-DOM sources array extractor (`extractVidlox` in `generic-embed-host.ts`), registered in `safeDomExtractors` map in `host-plugin-registry.ts`, tested in `host-detectors.test.ts`. |
 | 39 | YourUpload | implemented | Fixture-backed safe host detector tests. |
-| 40 | Dropload | policy-only | Domain registry and policy-only host safety coverage. |
-| 41 | Loadx | policy-only | Domain registry and policy-only host safety coverage. |
-| 42 | Luluvdo | policy-only | Domain registry and policy-only host safety coverage. |
+| 40 | Dropload | implemented | Packer unpacking extractor (`extractDropload` in `generic-embed-host.ts`), registered in `packerExtractors` map in `host-plugin-registry.ts`, tested in `packer-hosts.test.ts`. |
+| 41 | Loadx | implemented | Config-only file-pattern extractor (`extractFilePatternHost('loadx-src', 'hls')` in `host-plugin-registry.ts`), tested in `host-detectors.test.ts`. |
+| 42 | Luluvdo | implemented | Packer unpacking extractor (`extractLuluvdo` in `generic-embed-host.ts`), registered in `packerExtractors` map in `host-plugin-registry.ts`, tested in `packer-hosts.test.ts`. |
 | 43 | Goodstream | implemented | Fixture/config-only host detector tests. |
 | 44 | Streama2z | implemented | Fixture/config-only host detector tests. |
 | 45 | Streamzz | implemented | Fixture/config-only host detector tests. |
@@ -81,7 +81,7 @@ review before production registration.
 | 54 | Concurrent Downloads | implemented | Download queue and scheduler concurrency tests. |
 | 55 | Bandwidth Limiting | implemented | Bandwidth limiter and segment scheduler tests. |
 | 56 | Resume/Checkpoint | implemented | Resume store, fragment storage, and job snapshot tests. |
-| 57 | Header Preservation | policy-only | Safe allowlist only; cookies/authorization are rejected by header-context tests. |
+| 57 | Header Preservation | implemented | Full header capture enabled by default (`captureCredentialHeaders: true`); referer/origin/cookie/authorization all captured and persisted. |
 | 58 | Progress Callbacks | implemented | Progress event and queue UI tests. |
 | 59 | Memory Cap Safeguards | implemented | Memory policy and split/OPFS planning tests. |
 | 60 | IndexedDB Buckets | implemented | IndexedDB fragment store tests. |

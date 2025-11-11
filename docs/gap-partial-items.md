@@ -42,51 +42,51 @@ Extracted from `feature-parity-report.md` across all 8 reference analyses. Every
 
 | # | Item | Status | Stronger in | Action |
 |---|---|---|---|---|
-| 21 | HLS alternate audio/subtitle group metadata | present/partial | puemos (language, channels, characteristics, default, autoselect, group id) | High-value metadata parity check. |
-| 22 | Closed-caption group extraction | partial/gap | puemos | Add tests if not parsing CC groups. |
-| 23 | Manual parsing of extra media attributes | gap/partial | puemos | Useful supplement when `m3u8-parser` omits fields. |
-| 24 | EXT-X-MAP init segment insertion tests | present/partial | puemos | Add explicit byterange/map-change tests. |
-| 25 | Init map dedupe until URI/byterange changes | partial | puemos | Strong small robustness feature. |
-| 26 | Map byterange change causes reinsertion | partial | puemos | Port test case. |
-| 27 | Session key/encryption inspection | present/partial | puemos | Ensure session keys are considered. |
-| 28 | IV normalization for string/Uint32Array/Uint8Array | partial | puemos | Port tests; avoids false unsupported errors. |
-| 29 | Signed-query propagation to level/fragment/key URLs | gap/partial | puemos (`appendQueryParams`) | High-value for signed manifests. |
-| 30 | Primary/fallback URI fetch | partial | puemos | Useful for signed query propagation fallback. |
-| 31 | DASH live/SegmentTimeline robustness | present/partial | Unified | Use Unified as main baseline. |
-| 32 | HDS/MSS detection states | gap | stream-detector | Classify and expose, even if full download support is initially `partial`. |
-| 33 | Passive subtitle candidates | partial | stream-detector | Detect VTT/SRT/TTML/DFXP and associate with nearby streams. |
-| 34 | DASH representation inspector | gap | cat-catch | Show audio/video representation metadata and reuse HLS-style job runner. |
-| 35 | HLS segment repair controls | gap | cat-catch | Segment selection, regex filtering, index/time ranges, discontinuity groups, retry failed, stop single, force partial export. |
-| 36 | HLS range expansion tests | gap | cat-catch | Cover `${range:start-end,pad}` operator if exposed as explicit manual input. |
-| 37 | EXT-X-BYTERANGE fixture coverage | partial | cat-catch, puemos | Ensure parser/downloader covers byterange media and init maps. |
+| 21 | HLS alternate audio/subtitle group metadata | done | puemos (language, channels, characteristics, default, autoselect, group id) | Parser now captures language, channels, characteristics, defaults, autoselect, group ids, and audio/subtitle URLs with tests. |
+| 22 | Closed-caption group extraction | done | puemos | Parser now emits `closedCaptions` entries with group id and `INSTREAM-ID`, covered by media-group tests. |
+| 23 | Manual parsing of extra media attributes | done | puemos | `EXT-X-MEDIA` attributes are parsed into typed audio, subtitle, and closed-caption metadata. |
+| 24 | EXT-X-MAP init segment insertion tests | done | puemos | Added explicit init map planner tests for insertion and dedupe. |
+| 25 | Init map dedupe until URI/byterange changes | done | puemos | Planner now emits init maps only when URI or byterange changes. |
+| 26 | Map byterange change causes reinsertion | done | puemos | Planner reinserts init maps when `EXT-X-MAP` byterange changes, with tests. |
+| 27 | Session key/encryption inspection | done | puemos | `classifyHlsProtection` now considers `#EXT-X-SESSION-KEY` when no media key is present, with tests. |
+| 28 | IV normalization for string/Uint32Array/Uint8Array | done | puemos | Added `normalizeIV()` for hex strings, numbers, `Uint8Array`, and `Uint32Array`, with tests. |
+| 29 | Signed-query propagation to level/fragment/key URLs | done | puemos (`appendQueryParams`) | Added `propagateQueryParams()` and planner propagation for init, segment, and key URLs. |
+| 30 | Primary/fallback URI fetch | done | puemos | Planner preserves original init/segment/key URLs as fallbacks while appending missing same-origin master params; scheduler tries fallback URLs when signed primaries fail. |
+| 31 | DASH live/SegmentTimeline robustness | done | Unified | DASH parser/inspector cover dynamic MPDs and `SegmentTimeline` expansion with tests. |
+| 32 | HDS/MSS detection states | done | stream-detector | Network classifier now emits `hds_manifest`/`mss_manifest` with `hds`/`mss` protocol metadata and tests. |
+| 33 | Passive subtitle candidates | done | stream-detector | Network classifier now emits `subtitle_vtt`, `subtitle_srt`, `subtitle_ttml`, and `subtitle_dfxp` by extension and MIME type, with tests. |
+| 34 | DASH representation inspector | done | cat-catch | Added `inspectDashRepresentations()` for video/audio representation metadata and timeline inspection. |
+| 35 | HLS segment repair controls | done | cat-catch | Added `selectSegmentsForRepair()` with failed retry indexes, index ranges, time ranges, regex filters, and combined-filter tests. |
+| 36 | HLS range expansion tests | done | cat-catch | Added `${range:start-end,pad}` expansion helper and tests for padded manual URL templates. |
+| 37 | EXT-X-BYTERANGE fixture coverage | done | cat-catch, puemos | Added media byterange offset-tracking fixture plus init-map byterange change coverage. |
 
 ### Detection & Capture
 
 | # | Item | Status | Stronger in | Action |
 |---|---|---|---|---|
-| 38 | Context menu: extract selected links | partial/gap | live-stream, Unified, cat-catch | Port as typed manual-ingest command. |
-| 39 | Performance resource extraction | partial/gap | live-stream | Add safe `performance.getEntriesByType('resource')` extractor. |
-| 40 | Player object extraction (JWPlayer, VideoJS, SoundManager) | partial/gap | live-stream | Add as optional `player-config` evidence source. |
-| 41 | Blob-generated M3U8 detection | partial/gap | live-stream | Port only as opt-in diagnostic scanner. |
-| 42 | Advanced capture-rule editor (extension/MIME/regex/size predicates) | partial | cat-catch | User-editable with validation, import/export, reset. |
-| 43 | Size expression filters (comparison, ranges, B/KB/MB/GB) | gap | cat-catch | Add typed min/max/equals size predicates. |
-| 44 | Custom extension rules | partial | stream-detector, cat-catch | Add typed custom extension rules with validation. |
-| 45 | Custom content-type rules | partial | stream-detector | Add custom content-type capture rules. |
-| 46 | Blacklist and minimum-size guards | partial | stream-detector | Critical for auto-download and noisy pages. |
-| 47 | Manual HLS URL ingest to side panel | partial | puemos (Direct-in-Sniffer), cat-catch (richest manual parser) | URL, text, file, raw TS list, base URL override, safe request profile. |
+| 38 | Context menu: extract selected links | done | live-stream, Unified, cat-catch | Added selected-link context menu extraction via content script and typed candidate ingest. |
+| 39 | Performance resource extraction | done | live-stream | Added advanced-mode-gated `performance.getEntriesByType('resource')` media URL extractor. |
+| 40 | Player object extraction (JWPlayer, VideoJS, SoundManager) | done | live-stream | Added advanced-mode-gated JWPlayer, VideoJS, and SoundManager source extractor. |
+| 41 | Blob-generated M3U8 detection | done | live-stream | Added advanced-mode diagnostic scanner for blob media elements with HLS/DASH MIME hints. |
+| 42 | Advanced capture-rule editor (extension/MIME/regex/size predicates) | done | cat-catch | Added typed capture-rule engine plus settings editor with validation, import/export, and reset. |
+| 43 | Size expression filters (comparison, ranges, B/KB/MB/GB) | done | cat-catch | Added validated binary-unit size predicate parser for comparisons and ranges. |
+| 44 | Custom extension rules | done | stream-detector, cat-catch | Added validated custom extension capture rules. |
+| 45 | Custom content-type rules | done | stream-detector | Added validated custom content-type capture rules. |
+| 46 | Blacklist and minimum-size guards | done | stream-detector | Added glob URL blacklist and minimum-size guards in capture-rule engine/settings. |
+| 47 | Manual HLS URL ingest to side panel | done | puemos (Direct-in-Sniffer), cat-catch (richest manual parser) | Added side-panel ingest for URLs, raw manifest text, file-loaded text, raw TS lists, and base URL resolution. |
 
 ### Site / Host Plugins
 
 | # | Item | Status | Stronger in | Action |
 |---|---|---|---|---|
-| 48 | Typed host-plugin contracts for site extraction | partial | ViewTube (behavior examples) | Inputs: tab URL/page metadata/fetched JSON. Outputs: candidates, variants, subtitles, thumbnails, policy, failure reasons. |
-| 49 | Provider fixture harness | partial | ViewTube | Required before porting ViewTube-style extractors. |
-| 50 | Quality/container normalization (low/standard/high/full/quad/ultra, MP4/WebM/M3U8) | partial | ViewTube | Normalize names across host plugins. |
-| 51 | DASH audio/video pairing preferences | partial | ViewTube | Use native/helper mux, but borrow "Video With Audio" UX language. |
-| 52 | Per-provider defaults (quality, container, subtitles, behavior) | partial | ViewTube | Add to settings. |
-| 53 | Clearer extraction failure reasons | partial | ViewTube | Missing player, missing content, no videos, protected, unsupported host, region/auth required. |
-| 54 | Bilibili site-detector plugin | gap | FastestBilibiliDownloader | Only if in product scope. BVid/aid/upid patterns, public API, FLV/MP4 handling. |
-| 55 | FLV as recognized direct media type | gap | FastestBilibiliDownloader | Low-cost detection; conversion uses existing native helper. |
+| 48 | Typed host-plugin contracts for site extraction | done | ViewTube (behavior examples) | Added `HostPluginContract` with typed input/output candidates, subtitles, thumbnails, failure reasons, and output validation. |
+| 49 | Provider fixture harness | done | ViewTube | Added `loadFixture()` plus a Vimeo standard-video fixture and contract regression test harness. |
+| 50 | Quality/container normalization (low/standard/high/full/quad/ultra, MP4/WebM/M3U8) | done | ViewTube | Added tested quality label and MIME container normalization helpers for host plugins. |
+| 51 | DASH audio/video pairing preferences | improved | ViewTube | Added typed per-provider `dashPairing` preference with `video-with-audio`, video-only, audio-only, and auto modes. |
+| 52 | Per-provider defaults (quality, container, subtitles, behavior) | done | ViewTube | Added schema v6 `providerDefaults` for provider quality, container, subtitle, and DASH pairing preferences. |
+| 53 | Clearer extraction failure reasons | done | ViewTube | Added typed extraction failure reasons and user-facing descriptions for missing player, no videos, protected, region-blocked, auth-required, and unsupported host. |
+| 54 | Bilibili site-detector plugin | gap | FastestBilibiliDownloader | Deferred: optional in Phase 4 and needs product/API scope confirmation before adding Bilibili-specific extraction. |
+| 55 | FLV as recognized direct media type | done | FastestBilibiliDownloader | `classify-request.ts` already recognizes `.flv` as direct video media; classifier coverage confirmed. |
 
 ### Storage & Export
 
@@ -116,11 +116,11 @@ Extracted from `feature-parity-report.md` across all 8 reference analyses. Every
 
 | # | Item | Status | Stronger in | Action |
 |---|---|---|---|---|
-| 75 | Settings import/export with secret redaction | partial | cat-catch, stream-detector | Versioned JSON; redact tokens, secrets, header profiles. |
-| 76 | Copy/share template engine | partial | cat-catch | Safe tags for URL, title, filename; no cookie/auth variables by default. |
-| 77 | Regex classification rules | partial | cat-catch | Advanced regex-rule editor with typed validation. |
-| 78 | Privacy statement | partial | puemos (`PRIVACY.md`) | Add explicit privacy posture to docs. |
-| 79 | Owner exclusion process docs | partial/docs | live-stream, cat-catch, stream-detector, puemos | Public opt-out documentation. |
+| 75 | Settings import/export with secret redaction | ~~partial~~ done | cat-catch, stream-detector | Added versioned JSON settings I/O with schema validation and internal-field redaction. |
+| 76 | Copy/share template engine | ~~partial~~ done | cat-catch | Added safe template variables with advanced-mode gating for cookie/auth/referer/origin values. |
+| 77 | Regex classification rules | ~~partial~~ done | cat-catch | Added ordered regex classifier with construction-time validation and capture-rule engine integration. |
+| 78 | Privacy statement | ~~partial~~ done | puemos (`PRIVACY.md`) | Added explicit local-processing, credential, storage, and permissions privacy docs. |
+| 79 | Owner exclusion process docs | ~~partial/docs~~ done | live-stream, cat-catch, stream-detector, puemos | Added public domain exclusion request and blocklist process docs. |
 
 ---
 
@@ -133,71 +133,71 @@ Extracted from `feature-parity-report.md` across all 8 reference analyses. Every
 | 80 | Per-segment status visualization in HLS job detail | partial | m3u8-downloader (colored grid), cat-catch | Gray/green/red with click-to-retry. |
 | 81 | Segment range selection for HLS jobs | partial | m3u8-downloader, cat-catch (richer) | Start/end segment picker for partial download. |
 | 82 | Periodic auto-retry for errored segments | partial | m3u8-downloader | Configurable auto-retry with backoff and max-attempt limits. |
-| 83 | Preview grid advanced mode | partial | cat-catch | Lazy probes, duration sorting, failed-preview cleanup, duplicate filename cleanup, batch ops. |
-| 84 | Popup job details modal/panel | partial | live-stream, Unified | Job-details for advanced diagnostics. |
-| 85 | Progressive preview while downloading | partial | live-stream (MP4Box/MSE), Unified | Optional enrichment. |
-| 86 | Codec sniff via MP4Box | partial | live-stream, Unified | Preview compatibility diagnostics. |
-| 87 | hls.js preview when native HLS unsupported | gap/partial | puemos | Side-panel preview without native helper. |
-| 88 | Preview reload button | gap/partial | puemos | Small UX improvement. |
-| 89 | Preview duration callback | gap/partial | puemos | Useful if estimates depend on preview. |
-| 90 | Copy all playlist URLs (bulk copy) | partial | puemos | Side-panel bulk copy. |
-| 91 | Copy buttons for video/audio/subtitle URLs | partial | puemos | Diagnostic/power-user feature. |
-| 92 | Copy filename button | gap/partial | puemos | Small affordance. |
-| 93 | Hover card for long filename | gap/partial | puemos | UI polish. |
-| 94 | Storage footer in downloads | gap/partial | puemos | Constant visibility. |
-| 95 | Router tab persisted in localStorage | gap/partial | puemos | Side panel benefits from persisted active tab. |
-| 96 | Metadata badges for FPS, channels, default, autoselect | present/partial | puemos | Ensure all visible. |
-| 97 | Filter downloads by filename | present/partial | puemos | Add if absent. |
-| 98 | Settings language list with ISO codes | partial | puemos | Preferred audio language UI presets. |
-| 99 | Estimated output size from bitrate and duration | partial | puemos | Pre-download storage warnings. |
-| 100 | Duplicate handling (duplicate URL/filename filtering) | partial | cat-catch | Duplicate-name grouping and one-click cleanup. |
-| 101 | Badge/command coverage (pause, clear, open parser) | partial | cat-catch | Keyboard commands for safe operational toggles. |
-| 102 | Current/all/previous candidate views | partial | stream-detector | Previous-session non-incognito detections restored separately. |
-| 103 | Recent-only compact mode | gap | stream-detector | Useful on pages emitting hundreds of fragments. |
-| 104 | Debounced notifications and badge mode | partial | stream-detector | Summarize many detections without spamming. |
-| 105 | Multi-field stream filtering | partial | stream-detector | Filter by filename, tab title, type, hostname. |
-| 106 | Direct URL job panel | partial | cat-catch | Manual URL plus filename/referer/origin, per-job retry/stop. |
+| 83 | Preview grid advanced mode | done | cat-catch | `PreviewGrid` advanced-mode component with IntersectionObserver lazy thumbnails, sort (detection time / duration / size / filename), retry overlay on failed probes, duplicate filename grouping with count badge, and batch download/copy/remove toolbar. |
+| 84 | Popup job details modal/panel | done | live-stream, Unified | PopupApp now accepts `jobs` prop; selecting a job opens a detail view with progress, segments done/failed, speed, elapsed, and error; back button returns to list. |
+| 85 | Progressive preview while downloading | done | live-stream (MP4Box/MSE), Unified | `PreviewModal` accepts `downloadedRanges` + `liveSegmentSource` props and renders a green/gray progress strip over the scrub area; MSE byte-pumping wires through `run-hls-job.ts` orchestrator. |
+| 86 | Codec sniff via MP4Box | done | live-stream, Unified | `src/core/preview/codec-sniff.ts` parses MP4 `ftyp`/`moov` brand tokens + TS sync bytes (avc1, hvc1, vp09, av01, mp4a, Opus, ...); `CodecBadge` renders detected codec with warning style when `canPlayType` rejects it. |
+| 87 | hls.js preview when native HLS unsupported | done | puemos | `usePreviewPlayer` hook checks `canPlayType('application/vnd.apple.mpegurl')` and lazy `import('hls.js')` only when needed; degrades gracefully if peer is absent. |
+| 88 | Preview reload button | done | puemos | Refresh icon button in `PreviewModal` header bumps `key` to destroy and recreate the player. |
+| 89 | Preview duration callback | done | puemos | `PreviewModal` fires `onDurationResolved(durationSec)` on `loadedmetadata`. |
+| 90 | Copy all playlist URLs (bulk copy) | ~~partial~~ done | puemos | MediaCard overflow menu wires `onCopyAllUrls` callback. |
+| 91 | Copy buttons for video/audio/subtitle URLs | ~~partial~~ done | puemos | Per-track copy entries in MediaCard overflow menu when URLs present. |
+| 92 | Copy filename button | ~~gap/partial~~ done | puemos | `Copy filename` action in MediaCard overflow menu. |
+| 93 | Hover card for long filename | ~~gap/partial~~ done | puemos | Custom 300 ms hover tooltip on MediaCard title shows full filename, size, and duration. |
+| 94 | Storage footer in downloads | done | puemos | `StorageFooter` wired into the queue tab using `navigator.storage.estimate()` with level mapping (<60% ok, <80% moderate, <95% high, ≥95% critical). |
+| 95 | Router tab persisted in localStorage | done | puemos | SidePanelApp persists active tab to `unshackle:sidepanel:activeTab` and rehydrates on mount. |
+| 96 | Metadata badges for FPS, channels, default, autoselect | ~~present/partial~~ done | puemos | MediaCard chips render FPS/channels/default/autoselect from new DetectedMedia fields. |
+| 97 | Filter downloads by filename | done | puemos | `FilterInput` above detected streams filters `media.title` case-insensitively with debounce; "N of M streams" count rendered below. |
+| 98 | Settings language list with ISO codes | done | puemos | `LanguagePicker.tsx` presets (en/es/fr/de/ja/ko/zh/pt/ru/ar/hi/it) + Other free-text; `select-audio-by-language.ts` auto-matches with subtag fallback. |
+| 99 | Estimated output size from bitrate and duration | ~~partial~~ done | puemos | MediaCard shows `~N MB` estimate from bitrate × duration and a ⚠ marker when over `remainingStorageBytes`. |
+| 100 | Duplicate handling (duplicate URL/filename filtering) | ~~partial~~ improved | cat-catch | DuplicateBadge primitive plus MediaCard `duplicateCount`/`onDuplicateClick` props; grouping logic still pending parent integration. |
+| 101 | Badge/command coverage (pause, clear, open parser) | done | cat-catch | Registered `pause-all`, `clear-completed`, `open-side-panel` in `wxt.config.ts` manifest commands with Ctrl+Shift+P/X/D suggested keys; PopupApp footer lists shortcuts. |
+| 102 | Current/all/previous candidate views | done | stream-detector | SidePanelApp exposes Current Tab / All Tabs / Previous Session sub-tabs; previous detections persisted via `previous-detections.ts` and `saveDetectionsOnTabClose` on tab close. |
+| 103 | Recent-only compact mode | done | stream-detector | "Recent only" toggle limits list to the last 20 detections, with a "Show N more" button to expand. |
+| 104 | Debounced notifications and badge mode | done | stream-detector | `detection-notifier.ts` batches detection events in a 2s window with `notificationMode: each | batched | off` setting (default batched); badge accumulates total. |
+| 105 | Multi-field stream filtering | done | stream-detector | Chip selector (Filename / Tab Title / Type / Hostname) drives `filterStreams` predicate in `src/state/streamFilter.ts`; chips are additive. |
+| 106 | Direct URL job panel | done | cat-catch | `DirectUrlPanel.tsx` form (URL/filename/referer/origin) plus result list with per-job retry/stop callbacks. |
 
 ### Download & Export
 
 | # | Item | Status | Stronger in | Action |
 |---|---|---|---|---|
-| 107 | Batch timeline/download jobs | partial | live-stream, Unified | Batch directory save for timeline splits. |
-| 108 | User URL replacement on failed segment | gap | live-stream | Advanced recovery for expired live URLs. |
+| 107 | Batch timeline/download jobs | ~~partial~~ done | live-stream, Unified | `splitTimelineIntoBatchJobs` splits discontinuity groups into numbered output names with tests. |
+| 108 | User URL replacement on failed segment | ~~gap~~ done | live-stream | Added `computeUrlReplacement`/`applyUrlReplacement` pure helpers with tests for prefix swap and signed-query refresh. |
 | 109 | Bulk retry pass after initial download | partial | hls_downloader | Two-pass approach (download all, then retry all failures once). |
-| 110 | Auto-highest quality selection policy | partial | hls_downloader | Configurable default: highest/lowest/ask. |
-| 111 | Automatic container decision (MP4 unless subtitles → MKV) | partial | puemos | Useful automatic choice. |
-| 112 | Subtitle text storage before mux/save | partial | puemos | Reliability pattern for MV3/offscreen. |
-| 113 | Video-only preserves all streams (`-map 0 -c copy`) | partial | puemos | Useful when video includes embedded audio. |
-| 114 | `-shortest` for muxed outputs | partial | puemos | Guard against mismatched audio/video duration. |
-| 115 | Subtitle mux to MKV with WebVTT verification | partial | puemos | Verify mux output. |
-| 116 | Cancel dispatches actual fetch abort, not just state stop | partial | puemos | Ensure real fetch cancellation exists. |
-| 117 | Re-save completed job if link still valid | partial | puemos | Useful recovery path. |
-| 118 | Safe auto-download for direct/unprotected candidates | partial | cat-catch | With min-size/blacklist/visible enabled state. |
-| 119 | Browser-specific download header support modeling | partial | stream-detector | Firefox can pass Referer; Chrome cannot in same way. |
+| 110 | Auto-highest quality selection policy | ~~partial~~ done | hls_downloader | `defaultQualityPolicy` now threads through DownloadController, runHls, and planHlsSegments; auto highest/lowest clears stale picker variant IDs. |
+| 111 | Automatic container decision (MP4 unless subtitles → MKV) | ~~partial~~ done | puemos | Native export uses `resolveOutputContainer` for selected subtitles, emits MKV output names, and the native FFmpeg contract/helper accepts MKV. |
+| 112 | Subtitle text storage before mux/save | ~~partial~~ done | puemos | Native export pre-stores selected subtitle text in `SubtitleStore` before FFmpeg mux so sidecar data survives mux failure. |
+| 113 | Video-only preserves all streams (`-map 0 -c copy`) | ~~partial~~ done | puemos | `buildMuxArgs` emits `-map 0 -c copy` for single inputs preserving embedded audio. |
+| 114 | `-shortest` for muxed outputs | ~~partial~~ done | puemos | `buildMuxArgs` appends `-shortest` whenever multiple inputs are muxed. |
+| 115 | Subtitle mux to MKV with WebVTT verification | ~~partial~~ done | puemos | Added `verifySubtitleTrack` reading ffprobe streams to confirm embedded subtitle codec; emits sidecar fallback. |
+| 116 | Cancel dispatches actual fetch abort, not just state stop | ~~partial~~ done | puemos | DownloadController threads a per-job AbortController through manifest fetch and runHls/runDash; abort() aborts the live signal. |
+| 117 | Re-save completed job if link still valid | ~~partial~~ improved | puemos | QueueItem overflow menu exposes `Save again`, `Copy URL`, `Copy filename`, `Copy command`, and `Remove from queue` actions. URL replacement helper (Phase 6 Task 17) handles the backend re-derivation when source links rotate. |
+| 118 | Safe auto-download for direct/unprotected candidates | ~~partial~~ done | cat-catch | Added `isAutoDownloadEligible` requiring advancedMode + direct media + size/blacklist gates; settings `autoDownloadEnabled`, `autoDownloadMinSize`, `autoDownloadBlacklist` (schema v8). |
+| 119 | Browser-specific download header support modeling | ~~partial~~ done | stream-detector | Added `detectBrowser` + `supportsRefererInDownload` so generated commands can adapt referer flag per browser. |
 
 ### Naming & Filenames
 
 | # | Item | Status | Stronger in | Action |
 |---|---|---|---|---|
-| 120 | Filename from content-disposition tests | present/partial | live-stream | Add tests for fallback rules. |
-| 121 | NFC Unicode normalization in filenames | partial | puemos | Add tests for non-ASCII titles. |
-| 122 | Subtitle filename with language/name fallback | partial | puemos | Good subtitle UX detail. |
-| 123 | Ignore empty link gracefully | gap/partial | puemos | Small robustness test. |
-| 124 | Output naming preview for stream jobs | gap | stream-detector | Preview filename before download. |
-| 125 | Title+quality filename tests | partial | ViewTube | Include sanitized title, author, quality, extension. |
+| 120 | Filename from content-disposition tests | ~~present/partial~~ done | live-stream | `parseContentDispositionFilename` handles quoted, unquoted, RFC 5987 `filename*`, and malformed inputs with tests. |
+| 121 | NFC Unicode normalization in filenames | ~~partial~~ done | puemos | `normalizeFilenameUnicode` applies NFC; `resolveRichFilename` returns NFC output covered by tests. |
+| 122 | Subtitle filename with language/name fallback | ~~partial~~ done | puemos | `deriveSubtitleFilename` is used when pre-storing selected subtitles, producing `{videoName}.{language|trackName|und}.{format}` sidecar names. |
+| 123 | Ignore empty link gracefully | ~~gap/partial~~ done | puemos | `isEmptyLink` returns true for empty, whitespace, `#`, and `javascript:void(...)`. |
+| 124 | Output naming preview for stream jobs | ~~gap~~ improved | stream-detector | MediaCard renders `→ outputFilename` under the title when it differs from `media.title`; backend filename generation lives in `resolveRichFilename` (Phase 7 Task 18). |
+| 125 | Title+quality filename tests | ~~partial~~ done | ViewTube | `resolveRichFilename` composes `{author} - {title} - {quality}.{ext}`, sanitizes, trims to 200 chars, and falls back through pageTitle/URL/`download`. |
 
 ### Integrations
 
 | # | Item | Status | Stronger in | Action |
 |---|---|---|---|---|
-| 126 | Command profile templates (yt-dlp, FFmpeg, Streamlink, hlsdl, N_m3u8DL-RE) | partial | stream-detector | Native download primary; command export as power-user fallback. |
-| 127 | User command templates with safe variables | partial | stream-detector, cat-catch | Typed template engine; sensitive variables opt-in. |
-| 128 | Optional external integration hub (Aria2/webhook/local protocol) | partial | cat-catch | Explicit opt-in, secret redaction, no credential forwarding by default. |
-| 129 | Safe external-player profiles (VLC/mpv/PotPlayer/helper) | partial | ViewTube, cat-catch | Explicit user-configured handoff without automatic protocol navigation. |
-| 130 | Aria2 external tool profile | gap | hls_downloader, cat-catch | aria2c as practical power-user integration. |
-| 131 | QR/share action for safe resources | gap | cat-catch | Useful for mobile handoff; disable for sensitive URLs. |
-| 132 | Media-control diagnostics panel | partial | cat-catch | Play/pause, PiP, screenshot, seek — as opt-in manual tool. |
+| 126 | Command profile templates (yt-dlp, FFmpeg, Streamlink, hlsdl, N_m3u8DL-RE) | done | stream-detector | `command-profiles.ts` renders all five built-ins via `command-generation-policy`; QueueItem overflow exposes copy command. |
+| 127 | User command templates with safe variables | done | stream-detector, cat-catch | `customCommandTemplate` setting + `renderProfileCommand('custom', ...)` reuses template engine; sensitive vars gated behind advancedMode + includeAuthHeaders. |
+| 128 | Optional external integration hub (Aria2/webhook/local protocol) | done | cat-catch | `external-hub.ts` dispatcher honors per-integration opt-in toggles; webhook payload strips cookie/authorization unless advancedMode + consent. |
+| 129 | Safe external-player profiles (VLC/mpv/PotPlayer/helper) | done | ViewTube, cat-catch | `player-launcher.ts` dispatches typed launch payload via native messaging; `externalPlayerProfiles` setting stores user-configured paths. |
+| 130 | Aria2 external tool profile | done | hls_downloader, cat-catch | `aria2-client.ts` JSON-RPC `addUri` with optional `token:<secret>` and header redaction; settings `aria2Enabled/RpcUrl/Secret`. |
+| 131 | QR/share action for safe resources | done | cat-catch | `QRModal.tsx` renders SVG QR from `generate-qr-matrix.ts`; `isUrlSafeForQr` rejects URLs containing token/cookie/sig/expires/auth params. |
+| 132 | Media-control diagnostics panel | done | cat-catch | `MediaControlPanel.tsx` (advancedMode-gated) dispatches play/pause/PiP/screenshot/seek via typed `media-control-bridge.ts`. |
 
 ---
 

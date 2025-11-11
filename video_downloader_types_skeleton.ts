@@ -6,7 +6,7 @@
  */
 
 export type MediaKind = 'video' | 'audio' | 'subtitle' | 'image';
-export type StreamProtocol = 'direct' | 'hls' | 'dash' | 'blob' | 'unknown';
+export type StreamProtocol = 'direct' | 'hls' | 'dash' | 'hds' | 'mss' | 'blob' | 'unknown';
 export type ProtectionKind = 'none' | 'aes-128' | 'sample-aes' | 'drm' | 'unknown';
 export type CandidateStatus = 'ready' | 'partial' | 'protected' | 'unsupported' | 'error';
 export type DetectionSource = 'dom' | 'network' | 'player-config' | 'blob-correlation' | 'user';
@@ -30,6 +30,7 @@ export interface BaseTrack {
   label?: string;
   default?: boolean;
   autoselect?: boolean;
+  characteristics?: string[];
 }
 
 export interface AudioTrack extends BaseTrack {
@@ -38,6 +39,7 @@ export interface AudioTrack extends BaseTrack {
   codec?: string;
   bitrate?: number;
   groupId?: string;
+  url?: string;
 }
 
 export interface SubtitleTrack extends BaseTrack {
@@ -45,6 +47,12 @@ export interface SubtitleTrack extends BaseTrack {
   format?: 'vtt' | 'ttml' | 'srt' | 'unknown';
   url?: string;
   groupId?: string;
+}
+
+export interface ClosedCaptionTrack extends BaseTrack {
+  kind: 'closed-caption';
+  groupId?: string;
+  instreamId?: string;
 }
 
 export interface MediaVariant {
@@ -59,6 +67,7 @@ export interface MediaVariant {
   codecs?: string[];
   audioGroupId?: string;
   subtitleGroupId?: string;
+  closedCaptionGroupId?: string;
   isDefault?: boolean;
 }
 
@@ -141,6 +150,7 @@ export interface NormalizedManifestBase {
   variants: MediaVariant[];
   audioTracks: AudioTrack[];
   subtitleTracks: SubtitleTrack[];
+  closedCaptions?: ClosedCaptionTrack[];
 }
 
 export interface HlsManifest extends NormalizedManifestBase {
@@ -161,13 +171,16 @@ export interface SegmentDescriptor {
   index: number;
   mediaSequence?: number;
   url: string;
+  fallbackUrls?: string[];
   initSegment?: boolean;
   byteRange?: { start: number; end: number };
   trackType?: 'video' | 'audio' | 'text';
   durationSec?: number;
+  discontinuity?: boolean;
   encryption?: {
     method?: string;
     keyUri?: string;
+    fallbackKeyUris?: string[];
     iv?: string;
   };
 }
@@ -213,7 +226,7 @@ export interface DownloadSelection {
   variantId?: string;
   audioTrackIds?: string[];
   subtitleTrackIds?: string[];
-  outputKind?: 'original' | 'audio-only' | 'mp4' | 'webm' | 'subtitle-only';
+  outputKind?: 'auto' | 'original' | 'audio-only' | 'mp4' | 'mkv' | 'webm' | 'subtitle-only';
   action?: 'download' | 'download_as' | 'download_audio' | 'copy' | 'record_live';
   saveAs?: boolean;
   liveRecording?: boolean;
@@ -370,6 +383,7 @@ export interface MessageEnvelope<TType extends string, TPayload> {
 export type RuntimeRequest =
   | MessageEnvelope<'SCAN_ACTIVE_TAB', { tabId: number }>
   | MessageEnvelope<'INGEST_CONTENT_EVIDENCE', { pageUrl: string; pageTitle?: string; evidence: DetectionEvidence[]; pageContext?: PageContext }>
+  | MessageEnvelope<'INGEST_MANUAL_HLS', { tabId: number; pageUrl: string; pageTitle?: string; input: string; baseUrl?: string }>
   | MessageEnvelope<'INGEST_IQIYI_CONFIG', { pageUrl: string; title: string; m3u8Urls: string[] }>
   | MessageEnvelope<'DRM_DETECTED', { drmName: string; trigger: string; url: string }>
   | MessageEnvelope<'GET_CANDIDATES', { tabId: number }>
@@ -389,6 +403,7 @@ export type RuntimeRequest =
 export type RuntimeResponse =
   | MessageEnvelope<'SCAN_ACTIVE_TAB_RESULT', { candidates: MediaCandidate[] }>
   | MessageEnvelope<'INGEST_CONTENT_EVIDENCE_RESULT', { candidates: MediaCandidate[] }>
+  | MessageEnvelope<'INGEST_MANUAL_HLS_RESULT', { candidates: MediaCandidate[] }>
   | MessageEnvelope<'INGEST_IQIYI_CONFIG_RESULT', { candidates: MediaCandidate[] }>
   | MessageEnvelope<'DRM_DETECTED_RESULT', { ok: boolean }>
   | MessageEnvelope<'GET_CANDIDATES_RESULT', { candidates: MediaCandidate[] }>

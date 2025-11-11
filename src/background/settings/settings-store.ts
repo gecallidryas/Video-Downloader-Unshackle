@@ -16,7 +16,14 @@ export type ThemeName =
   | 'dark'
   | 'system';
 export type PreferredQuality = 'highest' | 'best' | 'smallest' | 'ask' | '1080p' | '720p' | '480p' | '360p';
+export type DefaultQualityPolicy = 'highest' | 'lowest' | 'ask';
 export type OutputFormat = 'auto' | 'mp4' | 'mkv' | 'mp3' | 'webm';
+export type ProviderContainerPreference = 'auto' | 'mp4' | 'webm' | 'm3u8' | 'mpd';
+export type ProviderDashPairingPreference =
+  | 'auto'
+  | 'video-with-audio'
+  | 'video-only'
+  | 'audio-only';
 export type RemoteConfigSecurityMode = 'strict' | 'warn' | 'disabled';
 export type PreviewMode = 'none' | 'image' | 'video';
 export type PreviewFormat = 'webm' | 'mp4' | 'gif';
@@ -26,6 +33,20 @@ export type DefaultDownloadAction =
   | 'download_audio'
   | 'copy'
   | 'record_live';
+export type NotificationMode = 'each' | 'batched' | 'off';
+
+export interface ProviderDefaultSettings {
+  quality: PreferredQuality;
+  container: ProviderContainerPreference;
+  subtitles: boolean;
+  dashPairing: ProviderDashPairingPreference;
+}
+
+export interface ExternalPlayerProfile {
+  id: string;
+  name: string;
+  path: string;
+}
 
 export interface UnifiedSettings {
   theme: ThemeName;
@@ -38,13 +59,16 @@ export interface UnifiedSettings {
   segmentTimeoutMs: number;
   maxBandwidthPerHostKBps: number;
   preferredQuality: PreferredQuality;
+  defaultQualityPolicy: DefaultQualityPolicy;
   defaultOutputFormat: OutputFormat;
+  providerDefaults: Record<string, ProviderDefaultSettings>;
   saveAsPrompt: boolean;
   preferredAudioLanguage: string;
   downloadSubtitles: boolean;
   showNotifications: boolean;
   notifyOnComplete: boolean;
   notifyOnError: boolean;
+  notificationMode: NotificationMode;
   historyRetentionDays: number;
   namingTemplate: string;
   namingUseSiteRules: boolean;
@@ -57,7 +81,22 @@ export interface UnifiedSettings {
   previewFormat: PreviewFormat;
   suppressProtectedDownloads: boolean;
   captureCredentialHeaders: boolean;
+  captureRuleCustomExtensions: string[];
+  captureRuleCustomContentTypes: string[];
+  captureRuleUrlBlacklist: string[];
+  captureRuleMinSizeBytes: number;
+  captureRuleSizePredicate: string;
   advancedMode: boolean;
+  autoDownloadEnabled: boolean;
+  autoDownloadMinSize: number;
+  autoDownloadBlacklist: string[];
+  customCommandTemplate: string;
+  aria2Enabled: boolean;
+  aria2RpcUrl: string;
+  aria2Secret: string;
+  webhookEnabled: boolean;
+  webhookUrl: string;
+  externalPlayerProfiles: ExternalPlayerProfile[];
   _schemaVersion: number;
 }
 
@@ -72,13 +111,16 @@ export const DEFAULT_SETTINGS: UnifiedSettings = {
   segmentTimeoutMs: 30_000,
   maxBandwidthPerHostKBps: 0,
   preferredQuality: 'highest',
+  defaultQualityPolicy: 'ask',
   defaultOutputFormat: 'auto',
+  providerDefaults: {},
   saveAsPrompt: true,
   preferredAudioLanguage: 'en',
   downloadSubtitles: false,
   showNotifications: true,
   notifyOnComplete: true,
   notifyOnError: true,
+  notificationMode: 'batched',
   historyRetentionDays: 30,
   namingTemplate: '{title}_{quality}_{date}_{time}',
   namingUseSiteRules: true,
@@ -91,8 +133,23 @@ export const DEFAULT_SETTINGS: UnifiedSettings = {
   previewFormat: 'webm',
   suppressProtectedDownloads: true,
   captureCredentialHeaders: false,
+  captureRuleCustomExtensions: [],
+  captureRuleCustomContentTypes: [],
+  captureRuleUrlBlacklist: [],
+  captureRuleMinSizeBytes: 0,
+  captureRuleSizePredicate: '',
   advancedMode: false,
-  _schemaVersion: 5,
+  autoDownloadEnabled: false,
+  autoDownloadMinSize: 102_400,
+  autoDownloadBlacklist: [],
+  customCommandTemplate: '',
+  aria2Enabled: false,
+  aria2RpcUrl: 'http://localhost:6800/jsonrpc',
+  aria2Secret: '',
+  webhookEnabled: false,
+  webhookUrl: '',
+  externalPlayerProfiles: [],
+  _schemaVersion: 9,
 };
 
 export interface SettingsStorageAdapter {
@@ -115,9 +172,80 @@ export interface SettingsStore {
 function cloneSettings(settings: UnifiedSettings): UnifiedSettings {
   return {
     ...settings,
+    providerDefaults: Object.fromEntries(
+      Object.entries(settings.providerDefaults).map(([providerId, defaults]) => [
+        providerId,
+        { ...defaults },
+      ]),
+    ),
     namingSiteRules: { ...settings.namingSiteRules },
     defaultActionPerHost: { ...settings.defaultActionPerHost },
+    captureRuleCustomExtensions: [...settings.captureRuleCustomExtensions],
+    captureRuleCustomContentTypes: [...settings.captureRuleCustomContentTypes],
+    captureRuleUrlBlacklist: [...settings.captureRuleUrlBlacklist],
+    autoDownloadBlacklist: [...settings.autoDownloadBlacklist],
+    externalPlayerProfiles: settings.externalPlayerProfiles.map((profile) => ({ ...profile })),
   };
+}
+
+function normalizeExternalPlayerProfiles(value: unknown): ExternalPlayerProfile[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  const result: ExternalPlayerProfile[] = [];
+  for (const entry of value) {
+    if (typeof entry !== 'object' || entry === null) continue;
+    const item = entry as Partial<ExternalPlayerProfile>;
+    if (
+      typeof item.id === 'string' &&
+      typeof item.name === 'string' &&
+      typeof item.path === 'string'
+    ) {
+      result.push({ id: item.id, name: item.name, path: item.path });
+    }
+  }
+  return result;
+}
+
+function normalizeProviderDefaults(
+  value: unknown,
+): Record<string, ProviderDefaultSettings> {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    return {};
+  }
+
+  const result: Record<string, ProviderDefaultSettings> = {};
+
+  for (const [providerId, defaults] of Object.entries(value)) {
+    if (typeof defaults !== 'object' || defaults === null || Array.isArray(defaults)) {
+      continue;
+    }
+
+    const item = defaults as Partial<ProviderDefaultSettings>;
+    result[providerId] = {
+      quality: ['highest', 'best', 'smallest', 'ask', '1080p', '720p', '480p', '360p'].includes(
+        String(item.quality),
+      )
+        ? (item.quality as PreferredQuality)
+        : DEFAULT_SETTINGS.preferredQuality,
+      container: ['auto', 'mp4', 'webm', 'm3u8', 'mpd'].includes(
+        String(item.container),
+      )
+        ? (item.container as ProviderContainerPreference)
+        : 'auto',
+      subtitles: Boolean(item.subtitles),
+      dashPairing: [
+        'auto',
+        'video-with-audio',
+        'video-only',
+        'audio-only',
+      ].includes(String(item.dashPairing))
+        ? (item.dashPairing as ProviderDashPairingPreference)
+        : 'auto',
+    };
+  }
+
+  return result;
 }
 
 function normalizeSettings(value: unknown): UnifiedSettings {
@@ -129,13 +257,76 @@ function normalizeSettings(value: unknown): UnifiedSettings {
   return {
     ...DEFAULT_SETTINGS,
     ...incoming,
+    providerDefaults: normalizeProviderDefaults(incoming.providerDefaults),
     namingSiteRules: { ...(incoming.namingSiteRules ?? {}) },
     defaultActionPerHost: { ...(incoming.defaultActionPerHost ?? {}) },
+    captureRuleCustomExtensions: Array.isArray(incoming.captureRuleCustomExtensions)
+      ? incoming.captureRuleCustomExtensions.filter((value): value is string => typeof value === 'string')
+      : DEFAULT_SETTINGS.captureRuleCustomExtensions,
+    captureRuleCustomContentTypes: Array.isArray(incoming.captureRuleCustomContentTypes)
+      ? incoming.captureRuleCustomContentTypes.filter((value): value is string => typeof value === 'string')
+      : DEFAULT_SETTINGS.captureRuleCustomContentTypes,
+    captureRuleUrlBlacklist: Array.isArray(incoming.captureRuleUrlBlacklist)
+      ? incoming.captureRuleUrlBlacklist.filter((value): value is string => typeof value === 'string')
+      : DEFAULT_SETTINGS.captureRuleUrlBlacklist,
+    captureRuleMinSizeBytes:
+      Number.isInteger(incoming.captureRuleMinSizeBytes) &&
+      Number(incoming.captureRuleMinSizeBytes) >= 0
+        ? Number(incoming.captureRuleMinSizeBytes)
+        : DEFAULT_SETTINGS.captureRuleMinSizeBytes,
+    captureRuleSizePredicate:
+      typeof incoming.captureRuleSizePredicate === 'string'
+        ? incoming.captureRuleSizePredicate
+        : DEFAULT_SETTINGS.captureRuleSizePredicate,
     remoteConfigSecurityMode: ['strict', 'warn', 'disabled'].includes(
       String(incoming.remoteConfigSecurityMode),
     )
       ? (incoming.remoteConfigSecurityMode as RemoteConfigSecurityMode)
       : DEFAULT_SETTINGS.remoteConfigSecurityMode,
+    defaultQualityPolicy: ['highest', 'lowest', 'ask'].includes(
+      String(incoming.defaultQualityPolicy),
+    )
+      ? (incoming.defaultQualityPolicy as DefaultQualityPolicy)
+      : DEFAULT_SETTINGS.defaultQualityPolicy,
+    notificationMode: ['each', 'batched', 'off'].includes(
+      String(incoming.notificationMode),
+    )
+      ? (incoming.notificationMode as NotificationMode)
+      : DEFAULT_SETTINGS.notificationMode,
+    autoDownloadEnabled: typeof incoming.autoDownloadEnabled === 'boolean'
+      ? incoming.autoDownloadEnabled
+      : DEFAULT_SETTINGS.autoDownloadEnabled,
+    autoDownloadMinSize:
+      Number.isInteger(incoming.autoDownloadMinSize) &&
+      Number(incoming.autoDownloadMinSize) >= 0
+        ? Number(incoming.autoDownloadMinSize)
+        : DEFAULT_SETTINGS.autoDownloadMinSize,
+    autoDownloadBlacklist: Array.isArray(incoming.autoDownloadBlacklist)
+      ? incoming.autoDownloadBlacklist.filter((value): value is string => typeof value === 'string')
+      : DEFAULT_SETTINGS.autoDownloadBlacklist,
+    customCommandTemplate:
+      typeof incoming.customCommandTemplate === 'string'
+        ? incoming.customCommandTemplate
+        : DEFAULT_SETTINGS.customCommandTemplate,
+    aria2Enabled: typeof incoming.aria2Enabled === 'boolean'
+      ? incoming.aria2Enabled
+      : DEFAULT_SETTINGS.aria2Enabled,
+    aria2RpcUrl:
+      typeof incoming.aria2RpcUrl === 'string' && incoming.aria2RpcUrl.length > 0
+        ? incoming.aria2RpcUrl
+        : DEFAULT_SETTINGS.aria2RpcUrl,
+    aria2Secret:
+      typeof incoming.aria2Secret === 'string'
+        ? incoming.aria2Secret
+        : DEFAULT_SETTINGS.aria2Secret,
+    webhookEnabled: typeof incoming.webhookEnabled === 'boolean'
+      ? incoming.webhookEnabled
+      : DEFAULT_SETTINGS.webhookEnabled,
+    webhookUrl:
+      typeof incoming.webhookUrl === 'string'
+        ? incoming.webhookUrl
+        : DEFAULT_SETTINGS.webhookUrl,
+    externalPlayerProfiles: normalizeExternalPlayerProfiles(incoming.externalPlayerProfiles),
     _schemaVersion: DEFAULT_SETTINGS._schemaVersion,
   };
 }

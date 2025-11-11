@@ -1,13 +1,16 @@
 import type { DownloadSelection, SegmentPlan } from '@/video_downloader_types_skeleton';
+import type { DefaultQualityPolicy } from '@/src/background/settings/settings-store';
 import { filterSegmentsByTrim } from '../download/filter-segments-by-trim';
 import type { ParsedHlsManifest } from './parse-hls-manifest';
 import { selectHlsVariant } from './select-hls-variant';
+import { propagateQueryParams } from './signed-query';
 
 export type DiscontinuityPolicy = 'include-all' | 'skip-ads' | 'ask-user';
 
 export interface PlanHlsSegmentsOptions {
   jobId: string;
   selection?: DownloadSelection;
+  qualityPolicy?: DefaultQualityPolicy;
   discontinuityPolicy?: DiscontinuityPolicy;
 }
 
@@ -50,6 +53,62 @@ function applyDiscontinuityPolicy(
   return longest?.segments ?? segments;
 }
 
+function initMapKey(
+  url: string,
+  byteRange: { start: number; end: number } | undefined,
+): string {
+  return `${url}|${byteRange?.start ?? ''}-${byteRange?.end ?? ''}`;
+}
+
+function buildSegmentsWithInitMaps(
+  segments: ParsedHlsManifest['segments'],
+  manifest: ParsedHlsManifest,
+): SegmentPlan['segments'] {
+  const planned: SegmentPlan['segments'] = [];
+  let lastInitMapKey: string | undefined;
+  let initMapCount = 0;
+
+  for (const segment of segments) {
+    const initSegmentUrl = segment.initSegmentUrl ?? manifest.initSegmentUrl;
+    const initSegmentByteRange =
+      segment.initSegmentByteRange ?? manifest.initSegmentByteRange;
+
+    if (initSegmentUrl) {
+      const key = initMapKey(initSegmentUrl, initSegmentByteRange);
+
+      if (key !== lastInitMapKey) {
+        planned.push({
+          id: `hls-init-${initMapCount}`,
+          index: 0,
+          url: propagateQueryParams(initSegmentUrl, manifest.sourceUrl),
+          initSegment: true,
+          byteRange: initSegmentByteRange,
+          trackType: 'video',
+        });
+        lastInitMapKey = key;
+        initMapCount += 1;
+      }
+    }
+
+    planned.push({
+      ...segment,
+      url: propagateQueryParams(segment.url, manifest.sourceUrl),
+      encryption:
+        segment.encryption?.keyUri
+          ? {
+              ...segment.encryption,
+              keyUri: propagateQueryParams(
+                segment.encryption.keyUri,
+                manifest.sourceUrl,
+              ),
+            }
+          : segment.encryption,
+    });
+  }
+
+  return planned;
+}
+
 export function planHlsSegments(
   manifest: ParsedHlsManifest,
   options: PlanHlsSegmentsOptions,
@@ -61,24 +120,13 @@ export function planHlsSegments(
     throw new Error('Protected HLS manifests cannot be planned by the generic HLS planner.');
   }
 
-  const variant = selectHlsVariant(manifest, options.selection);
+  const variant = selectHlsVariant(manifest, options.selection, {
+    qualityPolicy: options.qualityPolicy,
+  });
 
   if (manifest.playlistKind !== 'media') {
     throw new Error('HLS segment planning requires a media playlist.');
   }
-
-  const initSegment = manifest.initSegmentUrl
-    ? [
-        {
-          id: 'hls-init-0',
-          index: 0,
-          url: manifest.initSegmentUrl,
-          initSegment: true,
-          byteRange: manifest.initSegmentByteRange,
-          trackType: 'video' as const,
-        },
-      ]
-    : [];
 
   const mediaSegments = applyDiscontinuityPolicy(
     manifest.segments,
@@ -93,7 +141,7 @@ export function planHlsSegments(
     selectedAudioTrackIds: options.selection?.audioTrackIds ?? [],
     selectedSubtitleTrackIds: options.selection?.subtitleTrackIds ?? [],
     segments: filterSegmentsByTrim(
-      [...initSegment, ...mediaSegments],
+      buildSegmentsWithInitMaps(mediaSegments, manifest),
       options.selection?.trim,
     ),
   };

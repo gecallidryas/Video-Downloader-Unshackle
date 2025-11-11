@@ -62,22 +62,6 @@ function formatIsEncrypted(format: YouTubeFormat): boolean {
   return Boolean(format.signatureCipher || format.cipher);
 }
 
-function playabilityRestrictionCode(status: string | undefined, reason: string | undefined) {
-  if (status === 'LOGIN_REQUIRED') {
-    return 'login-required' as const;
-  }
-
-  if (status === 'CONTENT_CHECK_REQUIRED') {
-    return 'age-restricted' as const;
-  }
-
-  if (status === 'UNPLAYABLE' && /country|region/i.test(reason ?? '')) {
-    return 'geo-restricted' as const;
-  }
-
-  return 'tos-restricted' as const;
-}
-
 export function createYouTubeDetector(): DetectorPlugin {
   return {
     id: pluginId,
@@ -108,25 +92,6 @@ export function createYouTubeDetector(): DetectorPlugin {
         response.streamingData?.hlsManifestUrl,
         response.streamingData?.dashManifestUrl,
       ].filter((url): url is string => Boolean(url));
-      const playabilityStatus = response.playabilityStatus;
-      const playable = !playabilityStatus || playabilityStatus.status === 'OK';
-
-      if (!playable) {
-        const reason =
-          playabilityStatus?.reason || playabilityStatus?.messages?.[0] || 'Playback restricted.';
-
-        return {
-          kind: 'restriction',
-          restriction: createPolicyRestriction(context, {
-            status: 'unsupported',
-            code: playabilityRestrictionCode(playabilityStatus?.status, reason),
-            message: `${title ?? 'This video'}: ${reason}`,
-            sourcePluginId: pluginId,
-            details: { title, rawStatus: playabilityStatus?.status },
-          }),
-        };
-      }
-
       const outputs: PluginDetectionOutput[] = clearFormats.map((format) => ({
         kind: 'evidence',
         evidence: createMediaEvidence(context, {

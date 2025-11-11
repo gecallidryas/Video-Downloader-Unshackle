@@ -1,6 +1,7 @@
 import type { ProtectionInfo } from '@/video_downloader_types_skeleton';
 
 type HlsAttributeMap = Record<string, string>;
+export type HlsIvInput = string | number | Uint8Array | Uint32Array | undefined;
 
 function parseAttributes(value: string): HlsAttributeMap {
   const attributes: HlsAttributeMap = {};
@@ -13,6 +14,44 @@ function parseAttributes(value: string): HlsAttributeMap {
   }
 
   return attributes;
+}
+
+export function normalizeIV(value: HlsIvInput): Uint8Array | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+
+  if (value instanceof Uint8Array) {
+    return value;
+  }
+
+  const normalized = new Uint8Array(16);
+  const view = new DataView(normalized.buffer);
+
+  if (typeof value === 'number') {
+    view.setUint32(12, value);
+    return normalized;
+  }
+
+  if (value instanceof Uint32Array) {
+    const words = Array.from(value).slice(-4);
+    const offset = 4 - words.length;
+
+    for (let index = 0; index < words.length; index += 1) {
+      view.setUint32((offset + index) * 4, words[index] ?? 0);
+    }
+
+    return normalized;
+  }
+
+  const hex = value.replace(/^0x/i, '').padStart(32, '0').slice(-32);
+
+  for (let index = 0; index < normalized.length; index += 1) {
+    const byte = Number.parseInt(hex.slice(index * 2, index * 2 + 2), 16);
+    normalized[index] = Number.isFinite(byte) ? byte : 0;
+  }
+
+  return normalized;
 }
 
 function protectionFromKeyAttributes(attributes: HlsAttributeMap): ProtectionInfo {
@@ -55,12 +94,22 @@ function protectionFromKeyAttributes(attributes: HlsAttributeMap): ProtectionInf
 
 export function classifyHlsProtection(lines: string[]): ProtectionInfo {
   const keyLine = lines.find((line) => line.startsWith('#EXT-X-KEY:'));
+  const sessionKeyLine = lines.find((line) =>
+    line.startsWith('#EXT-X-SESSION-KEY:'),
+  );
+  const line = keyLine ?? sessionKeyLine;
 
-  if (!keyLine) {
+  if (!line) {
     return { kind: 'none' };
   }
 
   return protectionFromKeyAttributes(
-    parseAttributes(keyLine.slice('#EXT-X-KEY:'.length)),
+    parseAttributes(
+      line.slice(
+        line.startsWith('#EXT-X-KEY:')
+          ? '#EXT-X-KEY:'.length
+          : '#EXT-X-SESSION-KEY:'.length,
+      ),
+    ),
   );
 }

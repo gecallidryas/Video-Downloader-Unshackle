@@ -80,6 +80,58 @@ describe('safe DOM host extractors', () => {
     });
   });
 
+  test('ports Userload videolink variable extraction', async () => {
+    const result = await runHost(
+      'https://userload.co/embed/abc',
+      '<script>var videolink = "https://userload.co/stream/video.mp4";</script>',
+    );
+
+    expect(result.errors).toEqual([]);
+    expect(result.evidence[0]).toMatchObject({
+      url: 'https://userload.co/stream/video.mp4',
+    });
+    expect(result.evidence[0]?.notes).toEqual(
+      expect.arrayContaining([
+        'plugin:userload',
+        'source:userload-videolink',
+        'protocol:direct',
+      ]),
+    );
+  });
+
+  test('ports Vidlox sources array extraction', async () => {
+    const result = await runHost(
+      'https://vidlox.me/embed/abc',
+      '<script>player.setup({ sources: ["https://vidlox.me/stream/video.mp4"] });</script>',
+    );
+
+    expect(result.errors).toEqual([]);
+    expect(result.evidence[0]).toMatchObject({
+      url: 'https://vidlox.me/stream/video.mp4',
+    });
+    expect(result.evidence[0]?.notes).toEqual(
+      expect.arrayContaining([
+        'plugin:vidlox',
+        'source:vidlox-sources',
+        'protocol:direct',
+      ]),
+    );
+  });
+
+  test('returns empty evidence for userload and vidlox with no matching patterns', async () => {
+    const userloadEmpty = await runHost(
+      'https://userload.co/embed/abc',
+      '<div>No video here</div>',
+    );
+    const vidloxEmpty = await runHost(
+      'https://vidlox.me/embed/abc',
+      '<div>No video here</div>',
+    );
+
+    expect(userloadEmpty.evidence).toEqual([]);
+    expect(vidloxEmpty.evidence).toEqual([]);
+  });
+
   test('ports Vidoza, YourUpload, and Vidmoly accessible config patterns', async () => {
     const vidoza = await runHost(
       'https://vidoza.net/embed-a.html',
@@ -203,6 +255,8 @@ describe('policy-only host extractors', () => {
       'vidoza',
       'yourupload',
       'vidmoly',
+      'userload',
+      'vidlox',
     ]);
     expect(createConfigOnlyHostPlugins().map((plugin) => plugin.id)).toEqual([
       'streamtape',

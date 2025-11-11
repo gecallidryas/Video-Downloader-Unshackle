@@ -9,16 +9,70 @@ import { HistoryApp } from '@/src/app/surfaces/history/HistoryApp';
 import { PopupApp } from '@/src/app/surfaces/popup/PopupApp';
 import { PreviewModal } from '@/src/ui/preview/PreviewModal';
 import { QueueView, type QueueViewItem } from '@/src/ui/queue/QueueView';
+import { FilterInput } from '@/src/ui/shared/FilterInput';
+import { StorageFooter, type StorageLevel } from '@/src/ui/shared/StorageFooter';
 import {
   createRuntimeClient,
   type RuntimeClient,
 } from '@/src/lib/runtime/client';
 import { resolveActiveTabIdFromChrome } from './resolve-active-tab-id';
 import { evaluateProviderPolicy } from '@/src/core/policy/evaluate-provider-policy';
-import type { DownloadJob, DownloadPhase, GeneratedAssetResult } from '@/video_downloader_types_skeleton';
+import {
+  STREAM_FILTER_FIELDS,
+  STREAM_FILTER_FIELD_LABELS,
+  filterStreams,
+  type StreamFilterField,
+} from '@/src/state/streamFilter';
+import {
+  PREVIOUS_DETECTIONS_KEY,
+  loadPreviousDetections,
+} from '@/src/background/state/previous-detections';
+import { toDetectedMedia } from '@/src/shared/adapters/media-card';
+import type { DetectedMedia } from '@/src/types/media';
+import type {
+  DownloadJob,
+  DownloadPhase,
+  GeneratedAssetResult,
+  MediaCandidate,
+} from '@/video_downloader_types_skeleton';
 import './SidePanelApp.css';
 
 type PanelTab = 'history' | 'current' | 'queue' | 'settings';
+type DetectionView = 'current' | 'all' | 'previous';
+
+const ACTIVE_TAB_STORAGE_KEY = 'unshackle:sidepanel:activeTab';
+const RECENT_LIMIT = 20;
+
+function readPersistedTab(): PanelTab | null {
+  try {
+    const raw = globalThis.localStorage?.getItem(ACTIVE_TAB_STORAGE_KEY);
+    if (raw === 'history' || raw === 'current' || raw === 'queue' || raw === 'settings') {
+      return raw;
+    }
+  } catch {
+    // ignore storage errors
+  }
+  return null;
+}
+
+function persistTab(tab: PanelTab) {
+  try {
+    globalThis.localStorage?.setItem(ACTIVE_TAB_STORAGE_KEY, tab);
+  } catch {
+    // ignore
+  }
+}
+
+function computeStorageLevel(usage: number, quota: number): StorageLevel {
+  if (quota <= 0) {
+    return 'ok';
+  }
+  const pct = (usage / quota) * 100;
+  if (pct >= 95) return 'critical';
+  if (pct >= 80) return 'high';
+  if (pct >= 60) return 'moderate';
+  return 'ok';
+}
 
 interface DetectionViewProps {
   activeTabId?: number;
@@ -28,7 +82,34 @@ interface DetectionViewProps {
 function DetectionView({ activeTabId, runtimeClient }: DetectionViewProps) {
   const surfaceState = usePanelStore((s) => s.surfaceState);
   const candidates = usePanelStore((s) => s.candidates);
-  const mediaItems = usePanelStore((s) => s.mediaItems);
+  const liveMediaItems = usePanelStore((s) => s.mediaItems);
+  const [detectionView, setDetectionView] = useState<DetectionView>('current');
+  const [recentOnly, setRecentOnly] = useState(false);
+  const [showAllRecent, setShowAllRecent] = useState(false);
+  const [filterQuery, setFilterQuery] = useState('');
+  const [filterFields, setFilterFields] = useState<StreamFilterField[]>([
+    'filename',
+  ]);
+  const [previousCandidates, setPreviousCandidates] = useState<MediaCandidate[]>([]);
+
+  useEffect(() => {
+    if (detectionView !== 'previous') return;
+    let cancelled = false;
+    void loadPreviousDetections().then((items) => {
+      if (!cancelled) setPreviousCandidates(items);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [detectionView]);
+
+  const viewCandidates =
+    detectionView === 'previous' ? previousCandidates : candidates;
+  const viewMediaItems =
+    detectionView === 'previous'
+      ? previousCandidates.map(toDetectedMedia)
+      : liveMediaItems;
+  const mediaItems = viewMediaItems;
   const errorMessage = usePanelStore((s) => s.errorMessage);
   const loadCandidates = usePanelStore((s) => s.loadCandidates);
   const removeItem = usePanelStore((s) => s.removeItem);
@@ -39,6 +120,7 @@ function DetectionView({ activeTabId, runtimeClient }: DetectionViewProps) {
   const getDownloadSelection = usePanelStore((s) => s.getDownloadSelection);
   const upsertQueueJob = usePanelStore((s) => s.upsertQueueJob);
   const downloadItem = usePanelStore((s) => s.downloadItem);
+  const setCandidates = usePanelStore((s) => s.setCandidates);
   const setErrorMessage = usePanelStore((s) => s.setErrorMessage);
   const fileCount = mediaItems.length;
   const fileLabel = `${fileCount} ${fileCount === 1 ? 'File' : 'Files'}`;
@@ -46,11 +128,33 @@ function DetectionView({ activeTabId, runtimeClient }: DetectionViewProps) {
   const [previewCandidateId, setPreviewCandidateId] = useState<string | null>(null);
   const [previewAssets, setPreviewAssets] = useState<Record<string, GeneratedAssetResult>>({});
   const [previewLoadingIds, setPreviewLoadingIds] = useState<Set<string>>(new Set());
+  const [manualHlsInput, setManualHlsInput] = useState('');
+  const [manualHlsBaseUrl, setManualHlsBaseUrl] = useState('');
 
   const candidateById = useMemo(
-    () => new Map(candidates.map((candidate) => [candidate.id, candidate])),
-    [candidates],
+    () => new Map(viewCandidates.map((candidate) => [candidate.id, candidate])),
+    [viewCandidates],
   );
+
+  const filteredItems = useMemo(
+    () =>
+      filterStreams(mediaItems, viewCandidates, {
+        query: filterQuery,
+        fields: filterFields,
+      }),
+    [mediaItems, viewCandidates, filterQuery, filterFields],
+  );
+
+  const recentVisibleItems = useMemo(() => {
+    if (!recentOnly || showAllRecent) {
+      return filteredItems;
+    }
+    return filteredItems.slice(0, RECENT_LIMIT);
+  }, [filteredItems, recentOnly, showAllRecent]);
+
+  const hiddenCount = recentOnly && !showAllRecent
+    ? Math.max(0, filteredItems.length - RECENT_LIMIT)
+    : 0;
 
   useEffect(() => {
     if (activeTabId === undefined || !runtimeClient) {
@@ -157,6 +261,33 @@ function DetectionView({ activeTabId, runtimeClient }: DetectionViewProps) {
     }
   }
 
+  async function ingestManualHls() {
+    if (!runtimeClient || activeTabId === undefined) {
+      return;
+    }
+
+    try {
+      const ingested = await runtimeClient.ingestManualHls({
+        tabId: activeTabId,
+        pageUrl: '',
+        input: manualHlsInput,
+        ...(manualHlsBaseUrl.trim() ? { baseUrl: manualHlsBaseUrl.trim() } : {}),
+      });
+      setCandidates(ingested);
+      setManualHlsInput('');
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : 'Unable to ingest HLS input');
+    }
+  }
+
+  async function loadManualHlsFile(file: File | undefined) {
+    if (!file) {
+      return;
+    }
+
+    setManualHlsInput(await file.text());
+  }
+
   const previewCandidate = previewCandidateId ? candidateById.get(previewCandidateId) : undefined;
   const previewMedia = previewCandidateId ? mediaItems.find((item) => item.id === previewCandidateId) : undefined;
   const previewSourceUrl =
@@ -170,10 +301,110 @@ function DetectionView({ activeTabId, runtimeClient }: DetectionViewProps) {
         <span className="heading-caps">Detected Media</span>
         <span className="side-panel__badge label-xs">{fileLabel}</span>
       </div>
-      {showResults ? (
+      <form
+        className="manual-hls"
+        onSubmit={(event) => {
+          event.preventDefault();
+          void ingestManualHls();
+        }}
+      >
+        <label className="manual-hls__field">
+          <span className="label-xs">Manual HLS input</span>
+          <textarea
+            aria-label="Manual HLS input"
+            value={manualHlsInput}
+            onChange={(event) => setManualHlsInput(event.target.value)}
+            className="manual-hls__textarea"
+            rows={3}
+          />
+        </label>
+        <label className="manual-hls__field">
+          <span className="label-xs">Base URL</span>
+          <input
+            aria-label="Base URL"
+            value={manualHlsBaseUrl}
+            onChange={(event) => setManualHlsBaseUrl(event.target.value)}
+            className="manual-hls__input"
+          />
+        </label>
+        <div className="manual-hls__actions">
+          <input
+            aria-label="Manual HLS file"
+            type="file"
+            accept=".m3u8,.m3u,.txt,text/plain,application/vnd.apple.mpegurl"
+            onChange={(event) => void loadManualHlsFile(event.currentTarget.files?.[0])}
+            className="manual-hls__file"
+          />
+          <button
+            type="submit"
+            className="manual-hls__button"
+            disabled={!manualHlsInput.trim()}
+          >
+            Ingest HLS
+          </button>
+        </div>
+      </form>
+      <div className="side-panel__view-tabs" role="tablist" aria-label="Detection scope">
+        {(['current', 'all', 'previous'] as const).map((view) => (
+          <button
+            key={view}
+            role="tab"
+            aria-selected={detectionView === view}
+            className={`side-panel__view-tab ${detectionView === view ? 'side-panel__view-tab--active' : ''}`}
+            onClick={() => setDetectionView(view)}
+          >
+            {view === 'current' ? 'Current Tab' : view === 'all' ? 'All Tabs' : 'Previous Session'}
+          </button>
+        ))}
+      </div>
+      <div className="side-panel__filter">
+        <FilterInput
+          value={filterQuery}
+          onChange={setFilterQuery}
+          placeholder="Filter streams"
+          aria-label="Filter streams"
+        />
+        <div className="side-panel__filter-chips" role="group" aria-label="Filter fields">
+          {STREAM_FILTER_FIELDS.map((field) => {
+            const active = filterFields.includes(field);
+            return (
+              <button
+                key={field}
+                type="button"
+                className={`side-panel__chip ${active ? 'side-panel__chip--active' : ''}`}
+                aria-pressed={active}
+                onClick={() =>
+                  setFilterFields((current) =>
+                    active
+                      ? current.filter((f) => f !== field)
+                      : [...current, field],
+                  )
+                }
+              >
+                {STREAM_FILTER_FIELD_LABELS[field]}
+              </button>
+            );
+          })}
+        </div>
+        <div className="side-panel__filter-count">
+          {filteredItems.length} of {mediaItems.length} streams
+        </div>
+        <label className="side-panel__compact-toggle">
+          <input
+            type="checkbox"
+            checked={recentOnly}
+            onChange={(event) => {
+              setRecentOnly(event.target.checked);
+              setShowAllRecent(false);
+            }}
+          />
+          Recent only
+        </label>
+      </div>
+      {showResults || detectionView === 'previous' ? (
         <div className="side-panel__list">
-          <ProtectedWarning items={mediaItems} />
-          {mediaItems.map((item) => (
+          <ProtectedWarning items={recentVisibleItems} />
+          {recentVisibleItems.map((item) => (
             <MediaCard
               key={item.id}
               media={{
@@ -201,6 +432,15 @@ function DetectionView({ activeTabId, runtimeClient }: DetectionViewProps) {
               }}
             />
           ))}
+          {hiddenCount > 0 ? (
+            <button
+              type="button"
+              className="side-panel__show-more"
+              onClick={() => setShowAllRecent(true)}
+            >
+              Show {hiddenCount} more
+            </button>
+          ) : null}
           {previewCandidate && previewMedia ? (
             <PreviewModal
               open
@@ -261,6 +501,29 @@ function QueuePanel() {
   const mediaItems = usePanelStore((s) => s.mediaItems);
   const queueJobs = usePanelStore((s) => s.queueJobs);
   const downloadingIds = usePanelStore((s) => s.downloadingIds);
+  const [storage, setStorage] = useState<{ usage: number; quota: number }>({
+    usage: 0,
+    quota: 0,
+  });
+
+  useEffect(() => {
+    let cancelled = false;
+    const estimate = globalThis.navigator?.storage?.estimate;
+    if (typeof estimate !== 'function') {
+      return;
+    }
+    void estimate.call(globalThis.navigator.storage).then((result) => {
+      if (cancelled) return;
+      setStorage({
+        usage: typeof result.usage === 'number' ? result.usage : 0,
+        quota: typeof result.quota === 'number' ? result.quota : 0,
+      });
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   const queueItems = useMemo<QueueViewItem[]>(
     () => {
       const mediaById = new Map(mediaItems.map((item) => [item.id, item]));
@@ -293,7 +556,16 @@ function QueuePanel() {
     [downloadingIds, mediaItems, queueJobs],
   );
 
-  return <QueueView items={queueItems} onAction={() => {}} />;
+  return (
+    <>
+      <QueueView items={queueItems} onAction={() => {}} />
+      <StorageFooter
+        usageBytes={storage.usage}
+        quotaBytes={storage.quota}
+        level={computeStorageLevel(storage.usage, storage.quota)}
+      />
+    </>
+  );
 }
 
 interface SidePanelAppProps {
@@ -305,7 +577,13 @@ export function SidePanelApp({
   activeTabId,
   runtimeClient,
 }: SidePanelAppProps = {}) {
-  const [activeTab, setActiveTab] = useState<PanelTab>('current');
+  const [activeTab, setActiveTabState] = useState<PanelTab>(
+    () => readPersistedTab() ?? 'current',
+  );
+  const setActiveTab = (tab: PanelTab) => {
+    setActiveTabState(tab);
+    persistTab(tab);
+  };
   const [resolvedActiveTabId, setResolvedActiveTabId] = useState(activeTabId);
   const resolvedRuntimeClient = useMemo(
     () => runtimeClient ?? createRuntimeClient(),

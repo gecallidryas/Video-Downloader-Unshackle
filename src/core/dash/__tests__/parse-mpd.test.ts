@@ -155,6 +155,50 @@ describe('parseMpd', () => {
     });
   });
 
+  test('handles negative r (repeat-until-next) in SegmentTimeline', () => {
+    const manifest = parseMpd({
+      manifestUrl: 'https://cdn.example.com/dash/live.mpd',
+      content: `
+        <MPD type="dynamic">
+          <Period>
+            <AdaptationSet contentType="video" mimeType="video/mp4">
+              <SegmentTemplate timescale="1000" media="chunk-$Time$.m4s">
+                <SegmentTimeline>
+                  <S t="0" d="2000" r="-1" />
+                  <S t="10000" d="4000" />
+                </SegmentTimeline>
+              </SegmentTemplate>
+              <Representation id="v1" bandwidth="900000" />
+            </AdaptationSet>
+          </Period>
+        </MPD>
+      `,
+    });
+
+    const timeline = manifest.representations[0]?.timeline;
+    expect(timeline).toHaveLength(6);
+    expect(timeline![0]).toEqual({ time: 0, durationSec: 2 });
+    expect(timeline![4]).toEqual({ time: 8000, durationSec: 2 });
+    expect(timeline![5]).toEqual({ time: 10000, durationSec: 4 });
+  });
+
+  test('parses ISO 8601 durations with days', () => {
+    const manifest = parseMpd({
+      manifestUrl: 'https://cdn.example.com/dash/long.mpd',
+      content: `
+        <MPD mediaPresentationDuration="P1DT2H30M15S">
+          <Period>
+            <AdaptationSet contentType="video" mimeType="video/mp4">
+              <Representation id="v1" bandwidth="1000" />
+            </AdaptationSet>
+          </Period>
+        </MPD>
+      `,
+    });
+
+    expect(manifest.durationSec).toBe(86400 + 7200 + 1800 + 15);
+  });
+
   test('classifies Widevine, PlayReady, and unknown ContentProtection', () => {
     expect(
       classifyDashProtection(`

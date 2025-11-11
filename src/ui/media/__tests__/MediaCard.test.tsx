@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { vi } from 'vitest';
 import { MediaCard } from '../MediaCard';
@@ -92,7 +92,7 @@ test('disables quality selector when only one quality option', () => {
   expect(select).toBeDisabled();
 });
 
-test('renders preview, remove, and download action buttons', () => {
+test('renders preview, overflow menu trigger, and download action buttons', () => {
   render(
     <MediaCard
       media={mockVideo}
@@ -103,8 +103,275 @@ test('renders preview, remove, and download action buttons', () => {
     />,
   );
   expect(screen.getByRole('button', { name: /preview/i })).toBeInTheDocument();
-  expect(screen.getByRole('button', { name: /remove/i })).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: /more actions/i })).toBeInTheDocument();
   expect(screen.getByRole('button', { name: /download/i })).toBeInTheDocument();
+});
+
+test('overflow menu Remove action calls onRemove', async () => {
+  const user = userEvent.setup();
+  const onRemove = vi.fn();
+  render(
+    <MediaCard
+      media={mockVideo}
+      onPreview={noop}
+      onRemove={onRemove}
+      onDownload={noop}
+      onQualityChange={noop}
+    />,
+  );
+
+  await user.click(screen.getByRole('button', { name: /more actions/i }));
+  await user.click(screen.getByRole('menuitem', { name: /^remove$/i }));
+
+  expect(onRemove).toHaveBeenCalledTimes(1);
+});
+
+test('overflow menu Copy video URL action fires onCopyUrl with media.url', async () => {
+  const user = userEvent.setup();
+  const onCopyUrl = vi.fn();
+  render(
+    <MediaCard
+      media={{ ...mockVideo, url: 'https://example.com/video.m3u8' }}
+      onPreview={noop}
+      onRemove={noop}
+      onDownload={noop}
+      onQualityChange={noop}
+      onCopyUrl={onCopyUrl}
+    />,
+  );
+
+  await user.click(screen.getByRole('button', { name: /more actions/i }));
+  await user.click(screen.getByRole('menuitem', { name: /copy video url/i }));
+
+  expect(onCopyUrl).toHaveBeenCalledWith('https://example.com/video.m3u8');
+});
+
+test('overflow menu shows Copy audio URL only when audioTracks have a URL', async () => {
+  const user = userEvent.setup();
+  render(
+    <MediaCard
+      media={{
+        ...mockVideo,
+        audioTracks: [
+          { id: 'a1', label: 'English', url: 'https://example.com/audio.m4a' },
+        ],
+      }}
+      onPreview={noop}
+      onRemove={noop}
+      onDownload={noop}
+      onQualityChange={noop}
+    />,
+  );
+
+  await user.click(screen.getByRole('button', { name: /more actions/i }));
+  expect(screen.getByRole('menuitem', { name: /copy audio url/i })).toBeInTheDocument();
+});
+
+test('overflow menu hides Copy audio URL when no audio track has a URL', async () => {
+  const user = userEvent.setup();
+  render(
+    <MediaCard
+      media={{
+        ...mockVideo,
+        audioTracks: [{ id: 'a1', label: 'English' }],
+      }}
+      onPreview={noop}
+      onRemove={noop}
+      onDownload={noop}
+      onQualityChange={noop}
+    />,
+  );
+
+  await user.click(screen.getByRole('button', { name: /more actions/i }));
+  expect(screen.queryByRole('menuitem', { name: /copy audio url/i })).not.toBeInTheDocument();
+});
+
+test('overflow menu Copy filename calls onCopyFilename', async () => {
+  const user = userEvent.setup();
+  const onCopyFilename = vi.fn();
+  render(
+    <MediaCard
+      media={mockVideo}
+      onPreview={noop}
+      onRemove={noop}
+      onDownload={noop}
+      onQualityChange={noop}
+      onCopyFilename={onCopyFilename}
+    />,
+  );
+
+  await user.click(screen.getByRole('button', { name: /more actions/i }));
+  await user.click(screen.getByRole('menuitem', { name: /copy filename/i }));
+  expect(onCopyFilename).toHaveBeenCalledTimes(1);
+});
+
+test('renders DuplicateBadge when duplicateCount > 0', () => {
+  render(
+    <MediaCard
+      media={mockVideo}
+      onPreview={noop}
+      onRemove={noop}
+      onDownload={noop}
+      onQualityChange={noop}
+      duplicateCount={3}
+    />,
+  );
+
+  expect(screen.getByRole('button', { name: /3 duplicates/i })).toBeInTheDocument();
+});
+
+test('does not render DuplicateBadge when duplicateCount is 0', () => {
+  render(
+    <MediaCard
+      media={mockVideo}
+      onPreview={noop}
+      onRemove={noop}
+      onDownload={noop}
+      onQualityChange={noop}
+      duplicateCount={0}
+    />,
+  );
+
+  expect(screen.queryByText(/duplicate/i)).not.toBeInTheDocument();
+});
+
+test('shows output filename preview when outputFilename differs from title', () => {
+  render(
+    <MediaCard
+      media={mockVideo}
+      onPreview={noop}
+      onRemove={noop}
+      onDownload={noop}
+      onQualityChange={noop}
+      outputFilename="Creator - Ocean Sunset - 1080p.mp4"
+    />,
+  );
+
+  expect(
+    screen.getByText('→ Creator - Ocean Sunset - 1080p.mp4'),
+  ).toBeInTheDocument();
+});
+
+test('hides output filename preview when it equals media.title', () => {
+  render(
+    <MediaCard
+      media={mockVideo}
+      onPreview={noop}
+      onRemove={noop}
+      onDownload={noop}
+      onQualityChange={noop}
+      outputFilename={mockVideo.title}
+    />,
+  );
+
+  expect(screen.queryByText(/^→/)).not.toBeInTheDocument();
+});
+
+test('renders FPS, channels, default, and autoselect chips when data is present', () => {
+  render(
+    <MediaCard
+      media={{
+        ...mockVideo,
+        fps: 60,
+        channels: '5.1',
+        default: true,
+        autoselect: true,
+      }}
+      onPreview={noop}
+      onRemove={noop}
+      onDownload={noop}
+      onQualityChange={noop}
+    />,
+  );
+
+  expect(screen.getByText('60fps')).toBeInTheDocument();
+  expect(screen.getByText('5.1ch')).toBeInTheDocument();
+  expect(screen.getByText(/^default$/i)).toBeInTheDocument();
+  expect(screen.getByText(/^autoselect$/i)).toBeInTheDocument();
+});
+
+test('renders estimated size when bitrate and durationSec are present', () => {
+  render(
+    <MediaCard
+      media={{
+        ...mockVideo,
+        size: '',
+        bitrate: 5_000_000,
+        durationSec: 600,
+      }}
+      onPreview={noop}
+      onRemove={noop}
+      onDownload={noop}
+      onQualityChange={noop}
+    />,
+  );
+
+  expect(screen.getByText(/^~/)).toBeInTheDocument();
+});
+
+test('shows storage warning when estimated size exceeds remainingStorageBytes', () => {
+  render(
+    <MediaCard
+      media={{
+        ...mockVideo,
+        bitrate: 8_000_000,
+        durationSec: 3600,
+      }}
+      onPreview={noop}
+      onRemove={noop}
+      onDownload={noop}
+      onQualityChange={noop}
+      remainingStorageBytes={100_000_000}
+    />,
+  );
+
+  expect(screen.getByTestId('media-storage-warning')).toBeInTheDocument();
+});
+
+test('shows custom filename hover card after delay', () => {
+  vi.useFakeTimers();
+  try {
+    render(
+      <MediaCard
+        media={mockVideo}
+        onPreview={noop}
+        onRemove={noop}
+        onDownload={noop}
+        onQualityChange={noop}
+      />,
+    );
+
+    const title = screen.getByText('Ocean Sunset Timelapse - 4K Nature');
+    fireEvent.mouseEnter(title);
+    act(() => {
+      vi.advanceTimersByTime(350);
+    });
+    expect(screen.getByTestId('media-filename-tooltip')).toBeInTheDocument();
+
+    fireEvent.mouseLeave(title);
+    expect(screen.queryByTestId('media-filename-tooltip')).not.toBeInTheDocument();
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+test('overflow menu Copy all URLs calls onCopyAllUrls', async () => {
+  const user = userEvent.setup();
+  const onCopyAllUrls = vi.fn();
+  render(
+    <MediaCard
+      media={mockVideo}
+      onPreview={noop}
+      onRemove={noop}
+      onDownload={noop}
+      onQualityChange={noop}
+      onCopyAllUrls={onCopyAllUrls}
+    />,
+  );
+
+  await user.click(screen.getByRole('button', { name: /more actions/i }));
+  await user.click(screen.getByRole('menuitem', { name: /copy all urls/i }));
+  expect(onCopyAllUrls).toHaveBeenCalledTimes(1);
 });
 
 test('renders thumbnail, protocol, quality, and protection badges without changing the flat card role', () => {

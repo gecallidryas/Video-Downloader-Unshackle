@@ -105,7 +105,7 @@ function parseDuration(value: string | undefined): number | undefined {
     return undefined;
   }
 
-  const match = /^PT(?:(\d+(?:\.\d+)?)H)?(?:(\d+(?:\.\d+)?)M)?(?:(\d+(?:\.\d+)?)S)?$/i.exec(
+  const match = /^P(?:(\d+(?:\.\d+)?)D)?(?:T(?:(\d+(?:\.\d+)?)H)?(?:(\d+(?:\.\d+)?)M)?(?:(\d+(?:\.\d+)?)S)?)?$/i.exec(
     value,
   );
 
@@ -114,9 +114,10 @@ function parseDuration(value: string | undefined): number | undefined {
   }
 
   return (
-    Number(match[1] ?? 0) * 3600 +
-    Number(match[2] ?? 0) * 60 +
-    Number(match[3] ?? 0)
+    Number(match[1] ?? 0) * 86400 +
+    Number(match[2] ?? 0) * 3600 +
+    Number(match[3] ?? 0) * 60 +
+    Number(match[4] ?? 0)
   );
 }
 
@@ -272,7 +273,10 @@ function parseSegmentTimeline(
   const segments: DashTimelineSegment[] = [];
   let currentTime = 0;
 
-  for (const item of childrenByTag(timeline, 'S')) {
+  const sElements = childrenByTag(timeline, 'S');
+
+  for (let si = 0; si < sElements.length; si += 1) {
+    const item = sElements[si]!;
     const duration = numberAttr(item, 'd');
     const explicitTime = numberAttr(item, 't');
     const repeat = numberAttr(item, 'r') ?? 0;
@@ -285,12 +289,27 @@ function parseSegmentTimeline(
       currentTime = explicitTime;
     }
 
-    for (let index = 0; index <= repeat; index += 1) {
-      segments.push({
-        time: currentTime,
-        durationSec: duration / Math.max(timescale, 1),
-      });
-      currentTime += duration;
+    if (repeat >= 0) {
+      for (let index = 0; index <= repeat; index += 1) {
+        segments.push({
+          time: currentTime,
+          durationSec: duration / Math.max(timescale, 1),
+        });
+        currentTime += duration;
+      }
+    } else {
+      const nextTime = si + 1 < sElements.length
+        ? numberAttr(sElements[si + 1]!, 't')
+        : undefined;
+      const boundary = nextTime ?? currentTime + duration;
+
+      while (currentTime < boundary) {
+        segments.push({
+          time: currentTime,
+          durationSec: duration / Math.max(timescale, 1),
+        });
+        currentTime += duration;
+      }
     }
   }
 

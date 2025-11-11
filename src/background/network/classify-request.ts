@@ -8,8 +8,14 @@ export type RequestCategory =
   | 'direct_media'
   | 'hls_manifest'
   | 'dash_manifest'
+  | 'hds_manifest'
+  | 'mss_manifest'
   | 'license'
   | 'subtitle'
+  | 'subtitle_vtt'
+  | 'subtitle_srt'
+  | 'subtitle_ttml'
+  | 'subtitle_dfxp'
   | 'segment'
   | 'ignored'
   | 'unknown';
@@ -53,6 +59,12 @@ const dashMimeTypes = new Set([
   'application/dash+xml',
   'video/vnd.mpeg.dash.mpd',
 ]);
+const hdsMimeTypes = new Set([
+  'application/f4m+xml',
+]);
+const mssMimeTypes = new Set([
+  'application/vnd.ms-sstr+xml',
+]);
 const videoMimePrefix = 'video/';
 const audioMimePrefix = 'audio/';
 const subtitleMimeTypes = new Set([
@@ -61,11 +73,23 @@ const subtitleMimeTypes = new Set([
   'application/ttml+xml',
   'application/ttaf+xml',
 ]);
+const subtitleCategoryByExtension = new Map<string, RequestCategory>([
+  ['vtt', 'subtitle_vtt'],
+  ['srt', 'subtitle_srt'],
+  ['ttml', 'subtitle_ttml'],
+  ['dfxp', 'subtitle_dfxp'],
+]);
+const subtitleCategoryByMimeType = new Map<string, RequestCategory>([
+  ['text/vtt', 'subtitle_vtt'],
+  ['application/x-subrip', 'subtitle_srt'],
+  ['application/ttml+xml', 'subtitle_ttml'],
+  ['application/ttaf+xml', 'subtitle_dfxp'],
+]);
 
-const videoExtensions = new Set(['mp4', 'm4v', 'webm', 'mkv', 'mov']);
-const audioExtensions = new Set(['mp3', 'm4a', 'aac', 'flac', 'ogg', 'opus', 'wav']);
+const videoExtensions = new Set(['mp4', 'm4v', 'webm', 'mkv', 'mov', 'ogv', 'flv']);
+const audioExtensions = new Set(['mp3', 'm4a', 'aac', 'flac', 'ogg', 'opus', 'wav', 'oga', 'weba']);
 const subtitleExtensions = new Set(['vtt', 'srt', 'ttml', 'dfxp']);
-const segmentExtensions = new Set(['m4s', 'cmfv', 'cmfa', 'm2ts', 'ts']);
+const segmentExtensions = new Set(['m4s', 'cmfv', 'cmfa', 'm2ts', 'm2t', 'ts']);
 const segmentMimeTypes = new Set(['video/mp2t']);
 const licenseUrlPatterns = [
   /widevine/i,
@@ -140,6 +164,15 @@ function isAdaptiveComponentUrl(url: string): boolean {
     );
   } catch {
     return false;
+  }
+}
+
+function isMssManifestPath(url: string): boolean {
+  try {
+    const pathname = new URL(url).pathname.toLowerCase();
+    return /\.ism\/manifest/i.test(pathname);
+  } catch {
+    return /\.ism\/manifest/i.test(url.toLowerCase());
   }
 }
 
@@ -218,6 +251,14 @@ export function classifyRequest(request: RequestLike): RequestClassification {
     if (isLicenseRequest(request.url)) {
       extraNotes = getDrmSystemsFromUrl(request.url).map((system) => `drm:${system}`);
     }
+  } else if (extension === 'f4m' || (mimeType && hdsMimeTypes.has(mimeType))) {
+    category = 'hds_manifest';
+    protocol = 'hds';
+    mediaKind = 'video';
+  } else if (isMssManifestPath(request.url) || (mimeType && mssMimeTypes.has(mimeType))) {
+    category = 'mss_manifest';
+    protocol = 'mss';
+    mediaKind = 'video';
   } else if (isLicenseRequest(request.url)) {
     category = 'license';
     extraNotes = [
@@ -228,7 +269,10 @@ export function classifyRequest(request: RequestLike): RequestClassification {
     (extension && subtitleExtensions.has(extension)) ||
     (mimeType && subtitleMimeTypes.has(mimeType))
   ) {
-    category = 'subtitle';
+    category =
+      (extension ? subtitleCategoryByExtension.get(extension) : undefined) ??
+      (mimeType ? subtitleCategoryByMimeType.get(mimeType) : undefined) ??
+      'subtitle';
     protocol = 'direct';
     mediaKind = 'subtitle';
   } else if (

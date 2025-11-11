@@ -16,9 +16,14 @@ import { parseHlsManifest, type ParsedHlsManifest } from '@/src/core/hls/parse-h
 import { parseMpd, type ParsedDashManifest } from '@/src/core/dash/parse-mpd';
 import { runHlsJob } from '@/src/core/hls/run-hls-job';
 import { runDashJob } from '@/src/core/dash/run-dash-job';
+import type {
+  DefaultQualityPolicy,
+  OutputFormat,
+} from '@/src/background/settings/settings-store';
 
 export interface DownloadControllerSettings {
-  defaultOutputFormat?: DownloadSelection['outputKind'];
+  defaultOutputFormat?: OutputFormat;
+  defaultQualityPolicy?: DefaultQualityPolicy;
   maxConcurrentSegments?: number;
   maxConcurrentSegmentsPerHost?: number;
   segmentTimeoutMs?: number;
@@ -37,6 +42,8 @@ export type RunHlsControllerJob = (input: {
   concurrency?: number;
   maxConcurrentPerHost?: number;
   segmentTimeoutMs?: number;
+  qualityPolicy?: DefaultQualityPolicy;
+  signal?: AbortSignal;
 }) => Promise<JobOutput>;
 
 export type RunDashControllerJob = (input: {
@@ -46,6 +53,7 @@ export type RunDashControllerJob = (input: {
   concurrency?: number;
   maxConcurrentPerHost?: number;
   segmentTimeoutMs?: number;
+  signal?: AbortSignal;
 }) => Promise<JobOutput>;
 
 export type RunNativeExportControllerJob = (input: {
@@ -106,11 +114,27 @@ function selectionForJob(
   job: DownloadJob,
   options: DownloadControllerStartOptions,
 ): DownloadSelection {
-  return {
+  const selection: DownloadSelection = {
     ...job.selection,
-    outputKind: options.settings?.defaultOutputFormat ?? job.selection.outputKind,
     ...options.selection,
   };
+  const defaultOutputFormat = options.settings?.defaultOutputFormat;
+
+  if (selection.outputKind === undefined && defaultOutputFormat && defaultOutputFormat !== 'auto') {
+    selection.outputKind = defaultOutputFormat === 'mp3' ? 'audio-only' : defaultOutputFormat;
+  }
+
+  if (options.settings?.defaultQualityPolicy === 'highest') {
+    const { variantId: _variantId, ...rest } = selection;
+    return { ...rest, mode: 'best' };
+  }
+
+  if (options.settings?.defaultQualityPolicy === 'lowest') {
+    const { variantId: _variantId, ...rest } = selection;
+    return { ...rest, mode: 'smallest' };
+  }
+
+  return selection;
 }
 
 function hasTrim(selection: DownloadSelection): boolean {
@@ -131,6 +155,34 @@ export function createDownloadController(options: DownloadControllerOptions) {
       await chrome.downloads.cancel(downloadId);
     });
   let suppressProtectedDownloads = options.suppressProtectedDownloads;
+  let controllerSettings: DownloadControllerSettings = {};
+  const activeAbortControllers = new Map<string, AbortController>();
+
+  function registerSignal(
+    jobId: string,
+    externalSignal?: AbortSignal,
+  ): AbortSignal {
+    const controller = new AbortController();
+    activeAbortControllers.set(jobId, controller);
+
+    if (externalSignal) {
+      if (externalSignal.aborted) {
+        controller.abort(externalSignal.reason);
+      } else {
+        externalSignal.addEventListener(
+          'abort',
+          () => controller.abort(externalSignal.reason),
+          { once: true },
+        );
+      }
+    }
+
+    return controller.signal;
+  }
+
+  function releaseSignal(jobId: string): void {
+    activeAbortControllers.delete(jobId);
+  }
 
   async function start(
     candidate: MediaCandidate,
@@ -143,84 +195,99 @@ export function createDownloadController(options: DownloadControllerOptions) {
       throw new Error('Protected media cannot be downloaded by the generic pipeline.');
     }
 
-    const selection = selectionForJob(job, startOptions);
+    const settings = {
+      ...controllerSettings,
+      ...startOptions.settings,
+    };
+    const selection = selectionForJob(job, {
+      ...startOptions,
+      settings,
+    });
     const controllerJob: DownloadJob = {
       ...job,
       selection,
     };
+    const jobSignal = registerSignal(controllerJob.id, startOptions.signal);
 
-    if (candidate.protocol === 'direct') {
-      if (hasTrim(selection) && options.nativeExport) {
-        return options.nativeExport({ candidate, job: controllerJob });
+    try {
+      if (candidate.protocol === 'direct') {
+        if (hasTrim(selection) && options.nativeExport) {
+          return await options.nativeExport({ candidate, job: controllerJob });
+        }
+
+        const output = await options.downloadFile(candidate, controllerJob);
+
+        return {
+          ...output,
+          ...(hasTrim(selection)
+            ? {
+                notes: [
+                  'Trim is not supported for direct downloads yet; downloaded the full file.',
+                ],
+              }
+            : {}),
+        };
       }
 
-      const output = await options.downloadFile(candidate, controllerJob);
+      const manifestUrl = candidate.manifestUrl ?? candidate.sourceUrl;
 
-      return {
-        ...output,
-        ...(hasTrim(selection)
-          ? {
-              notes: [
-                'Trim is not supported for direct downloads yet; downloaded the full file.',
-              ],
-            }
-          : {}),
-      };
-    }
+      if (!manifestUrl) {
+        throw new Error('Missing manifest URL.');
+      }
 
-    const manifestUrl = candidate.manifestUrl ?? candidate.sourceUrl;
+      if (options.nativeExport) {
+        return await options.nativeExport({ candidate, job: controllerJob });
+      }
 
-    if (!manifestUrl) {
-      throw new Error('Missing manifest URL.');
-    }
-
-    if (options.nativeExport) {
-      return options.nativeExport({ candidate, job: controllerJob });
-    }
-
-    const manifestText = await fetchText(manifestUrl, {
-      cache: 'no-store',
-      credentials: 'include',
-      signal: startOptions.signal,
-    });
-
-    const concurrencyFields: {
-      concurrency?: number;
-      maxConcurrentPerHost?: number;
-      segmentTimeoutMs?: number;
-    } = {};
-
-    if (startOptions.settings?.maxConcurrentSegments !== undefined) {
-      concurrencyFields.concurrency = startOptions.settings.maxConcurrentSegments;
-    }
-
-    if (startOptions.settings?.maxConcurrentSegmentsPerHost !== undefined) {
-      concurrencyFields.maxConcurrentPerHost = startOptions.settings.maxConcurrentSegmentsPerHost;
-    }
-
-    if (startOptions.settings?.segmentTimeoutMs !== undefined) {
-      concurrencyFields.segmentTimeoutMs = startOptions.settings.segmentTimeoutMs;
-    }
-
-    if (candidate.protocol === 'hls') {
-      return options.runHls({
-        job: controllerJob,
-        manifest: parseHlsManifest({ manifestUrl, content: manifestText }),
-        allowProtected,
-        ...concurrencyFields,
+      const manifestText = await fetchText(manifestUrl, {
+        cache: 'no-store',
+        credentials: 'include',
+        signal: jobSignal,
       });
-    }
 
-    if (candidate.protocol === 'dash') {
-      return options.runDash({
-        job: controllerJob,
-        manifest: parseMpd({ manifestUrl, content: manifestText }),
-        allowProtected,
-        ...concurrencyFields,
-      });
-    }
+      const concurrencyFields: {
+        concurrency?: number;
+        maxConcurrentPerHost?: number;
+        segmentTimeoutMs?: number;
+      } = {};
 
-    throw new Error(`Unsupported protocol: ${candidate.protocol}`);
+      if (settings.maxConcurrentSegments !== undefined) {
+        concurrencyFields.concurrency = settings.maxConcurrentSegments;
+      }
+
+      if (settings.maxConcurrentSegmentsPerHost !== undefined) {
+        concurrencyFields.maxConcurrentPerHost = settings.maxConcurrentSegmentsPerHost;
+      }
+
+      if (settings.segmentTimeoutMs !== undefined) {
+        concurrencyFields.segmentTimeoutMs = settings.segmentTimeoutMs;
+      }
+
+      if (candidate.protocol === 'hls') {
+        return await options.runHls({
+          job: controllerJob,
+          manifest: parseHlsManifest({ manifestUrl, content: manifestText }),
+          allowProtected,
+          signal: jobSignal,
+          qualityPolicy: settings.defaultQualityPolicy,
+          ...concurrencyFields,
+        });
+      }
+
+      if (candidate.protocol === 'dash') {
+        return await options.runDash({
+          job: controllerJob,
+          manifest: parseMpd({ manifestUrl, content: manifestText }),
+          allowProtected,
+          signal: jobSignal,
+          ...concurrencyFields,
+        });
+      }
+
+      throw new Error(`Unsupported protocol: ${candidate.protocol}`);
+    } finally {
+      releaseSignal(controllerJob.id);
+    }
   }
 
   async function runManaged(
@@ -270,6 +337,13 @@ export function createDownloadController(options: DownloadControllerOptions) {
       return { cancelled: false };
     }
 
+    const activeController = activeAbortControllers.get(jobId);
+
+    if (activeController) {
+      activeController.abort(new DOMException('Cancelled by user', 'AbortError'));
+      activeAbortControllers.delete(jobId);
+    }
+
     if (typeof downloadId === 'number') {
       await cancelDownload(downloadId);
     }
@@ -290,11 +364,30 @@ export function createDownloadController(options: DownloadControllerOptions) {
   }
 
   function updateSettings(
-    patch: Pick<DownloadControllerOptions, 'suppressProtectedDownloads'>,
+    patch: Pick<DownloadControllerOptions, 'suppressProtectedDownloads'> &
+      Partial<DownloadControllerSettings>,
   ): void {
     if (patch.suppressProtectedDownloads !== undefined) {
       suppressProtectedDownloads = patch.suppressProtectedDownloads;
     }
+    controllerSettings = {
+      ...controllerSettings,
+      ...(patch.defaultOutputFormat !== undefined
+        ? { defaultOutputFormat: patch.defaultOutputFormat }
+        : {}),
+      ...(patch.defaultQualityPolicy !== undefined
+        ? { defaultQualityPolicy: patch.defaultQualityPolicy }
+        : {}),
+      ...(patch.maxConcurrentSegments !== undefined
+        ? { maxConcurrentSegments: patch.maxConcurrentSegments }
+        : {}),
+      ...(patch.maxConcurrentSegmentsPerHost !== undefined
+        ? { maxConcurrentSegmentsPerHost: patch.maxConcurrentSegmentsPerHost }
+        : {}),
+      ...(patch.segmentTimeoutMs !== undefined
+        ? { segmentTimeoutMs: patch.segmentTimeoutMs }
+        : {}),
+    };
   }
 
   return {

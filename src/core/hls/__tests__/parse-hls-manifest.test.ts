@@ -176,6 +176,41 @@ describe('parseHlsManifest', () => {
     ]);
   });
 
+  test('detects EXT-X-SESSION-KEY in master playlists', () => {
+    const manifest = parseHlsManifest({
+      manifestUrl: 'https://cdn.example.com/hls/master.m3u8',
+      content: [
+        '#EXTM3U',
+        '#EXT-X-SESSION-KEY:METHOD=AES-128,URI="https://keys.example.com/session-key"',
+        '#EXT-X-STREAM-INF:BANDWIDTH=800000',
+        'video.m3u8',
+      ].join('\n'),
+    });
+
+    expect(manifest.protection).toEqual(
+      expect.objectContaining({
+        kind: 'aes-128',
+        method: 'AES-128',
+        keyUri: 'https://keys.example.com/session-key',
+      }),
+    );
+  });
+
+  test('EXT-X-KEY takes precedence over EXT-X-SESSION-KEY', () => {
+    const manifest = parseHlsManifest({
+      manifestUrl: 'https://cdn.example.com/hls/master.m3u8',
+      content: [
+        '#EXTM3U',
+        '#EXT-X-SESSION-KEY:METHOD=AES-128,URI="https://keys.example.com/session"',
+        '#EXT-X-KEY:METHOD=SAMPLE-AES,KEYFORMAT="com.apple.streamingkeydelivery",URI="skd://drm"',
+        '#EXT-X-STREAM-INF:BANDWIDTH=800000',
+        'video.m3u8',
+      ].join('\n'),
+    });
+
+    expect(manifest.protection.kind).toBe('sample-aes');
+  });
+
   test('classifies AES-128 clear-key and DRM-style HLS protection separately', () => {
     expect(
       classifyHlsProtection([

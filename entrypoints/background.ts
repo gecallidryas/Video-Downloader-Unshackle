@@ -1,4 +1,5 @@
 import { defineBackground } from 'wxt/utils/define-background';
+import type { MediaCandidate } from '@/video_downloader_types_skeleton';
 import { createCandidateRegistry } from '@/src/background/candidates/candidate-registry';
 import { createContextMenuManager } from '@/src/background/context-menu/context-menu';
 import { createDownloadController } from '@/src/background/jobs/download-controller';
@@ -6,6 +7,8 @@ import { createDownloadQueue } from '@/src/background/jobs/download-queue';
 import { createHistoryStore } from '@/src/background/jobs/history-store';
 import { createJobStore } from '@/src/background/jobs/job-store';
 import { createNotificationManager } from '@/src/background/notifications/notification-manager';
+import { createDetectionNotifier } from '@/src/background/notifications/detection-notifier';
+import { saveDetectionsOnTabClose } from '@/src/background/state/previous-detections';
 import { createSettingsStore } from '@/src/background/settings/settings-store';
 import { runNativeExportJob } from '@/src/background/jobs/native-export-runner';
 import {
@@ -126,30 +129,70 @@ export function initializeBackgroundShell() {
     action: chrome.action,
   });
   const notificationManager = createNotificationManager(chrome.runtime);
+  const detectionNotifier = createDetectionNotifier({
+    emit: ({ count, hostname }) => {
+      void chrome.runtime
+        .sendMessage({
+          type: 'SHOW_WARNING',
+          payload: {
+            text: `${count} new ${count === 1 ? 'stream' : 'streams'} detected on ${hostname}`,
+            warningType: 'info',
+            autoHideMs: 4500,
+          },
+        })
+        .catch(() => undefined);
+    },
+    setBadge: (text) => {
+      chrome.action?.setBadgeText?.({ text }).catch?.(() => undefined);
+    },
+  });
+  const ingestContextCandidate = (candidate: MediaCandidate) => {
+    candidateRegistry.set(candidate.tabId, [
+      ...candidateRegistry.get(candidate.tabId),
+      candidate,
+    ]);
+  };
   const contextMenuManager = createContextMenuManager({
     getSettings: () => ({ enableContextMenu: settingsStore.get('enableContextMenu') }),
     startDownload: (candidate) => {
-      candidateRegistry.set(candidate.tabId, [
-        ...candidateRegistry.get(candidate.tabId),
-        candidate,
-      ]);
+      ingestContextCandidate(candidate);
       downloadQueue.enqueue(candidate, { mode: 'best' });
       void downloadQueue.drain();
     },
+    ingestCandidate: ingestContextCandidate,
   });
 
   chrome.sidePanel.setPanelBehavior(getSidePanelBehavior());
   void settingsStore.load().then((settings) => {
     // Apply settings that require the store to be fully loaded first.
     headerContext.updateOptions({
-      captureCredentialHeaders: settings.captureCredentialHeaders,
+      captureCredentialHeaders: settings.advancedMode && settings.captureCredentialHeaders,
+    });
+    downloadController.updateSettings({
+      suppressProtectedDownloads: settings.suppressProtectedDownloads,
+      defaultOutputFormat: settings.defaultOutputFormat,
+      defaultQualityPolicy: settings.defaultQualityPolicy,
+      maxConcurrentSegments: settings.maxConcurrentSegments,
+      maxConcurrentSegmentsPerHost: settings.maxConcurrentSegmentsPerHost,
+      segmentTimeoutMs: settings.segmentTimeoutMs,
     });
     notificationManager.applySettings(settings);
+    detectionNotifier.configure(settings);
     return contextMenuManager.register();
   });
   registerPassiveRequestJournal(requestJournal, undefined, headerContext);
   registerRuntimeRouter(runtimeRouter);
-  chrome.tabs?.onRemoved?.addListener((tabId) => autoScan.handleTabRemoved(tabId));
+  chrome.tabs?.onRemoved?.addListener((tabId, removeInfo) => {
+    autoScan.handleTabRemoved(tabId);
+    const candidates = candidateRegistry.get(tabId);
+    if (candidates.length > 0) {
+      void saveDetectionsOnTabClose({
+        tabId,
+        incognito: Boolean(removeInfo?.isWindowClosing) ? false : false,
+        candidates,
+      });
+    }
+  });
   chrome.tabs?.onUpdated?.addListener((tabId, changeInfo) => {
     if (changeInfo.status === 'loading') {
       candidateRegistry.clear(tabId);
@@ -170,6 +213,7 @@ export function initializeBackgroundShell() {
     downloadQueue,
     downloadController,
     notificationManager,
+    detectionNotifier,
     contextMenuManager,
     runtimeRouter,
     autoScan,
