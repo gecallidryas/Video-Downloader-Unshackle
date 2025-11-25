@@ -10,6 +10,7 @@ import { createNotificationManager } from '@/src/background/notifications/notifi
 import { createDetectionNotifier } from '@/src/background/notifications/detection-notifier';
 import { saveDetectionsOnTabClose } from '@/src/background/state/previous-detections';
 import { createSettingsStore } from '@/src/background/settings/settings-store';
+import { runBrowserDashExportJob } from '@/src/background/jobs/browser-dash-runner';
 import { runBrowserHlsExportJob } from '@/src/background/jobs/browser-hls-runner';
 import { runNativeExportJob } from '@/src/background/jobs/native-export-runner';
 import {
@@ -70,10 +71,20 @@ export function initializeBackgroundShell() {
         candidate,
       });
     },
-    runDash: async () => ({
-      fileName: 'dash-output.mp4',
-      mimeType: 'video/mp4',
-    }),
+    runDash: (input) => {
+      const candidate = candidateRegistry
+        .get(input.job.tabId)
+        .find((item) => item.id === input.job.candidateId);
+
+      if (!candidate) {
+        throw new Error(`Candidate not found: ${input.job.candidateId}`);
+      }
+
+      return runBrowserDashExportJob({
+        ...input,
+        candidate,
+      });
+    },
     nativeExport: ({ candidate, job }) =>
       runNativeExportJob({
         candidate,
