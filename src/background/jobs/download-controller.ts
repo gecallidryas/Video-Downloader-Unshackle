@@ -16,6 +16,7 @@ import { parseHlsManifest, type ParsedHlsManifest } from '@/src/core/hls/parse-h
 import { parseMpd, type ParsedDashManifest } from '@/src/core/dash/parse-mpd';
 import { runHlsJob } from '@/src/core/hls/run-hls-job';
 import { runDashJob } from '@/src/core/dash/run-dash-job';
+import { isNativeFfmpegUnavailableError } from '@/src/native/native-ffmpeg-client';
 import type {
   DefaultQualityPolicy,
   OutputFormat,
@@ -36,6 +37,7 @@ export interface DownloadControllerStartOptions {
 }
 
 export type RunHlsControllerJob = (input: {
+  candidate: MediaCandidate;
   job: DownloadJob;
   manifest: ParsedHlsManifest;
   allowProtected?: boolean;
@@ -47,6 +49,7 @@ export type RunHlsControllerJob = (input: {
 }) => Promise<JobOutput>;
 
 export type RunDashControllerJob = (input: {
+  candidate: MediaCandidate;
   job: DownloadJob;
   manifest: ParsedDashManifest;
   allowProtected?: boolean;
@@ -91,9 +94,14 @@ function isProtected(candidate: MediaCandidate): boolean {
 function failureFromError(error: unknown): JobFailure {
   const message = error instanceof Error ? error.message : 'Download failed';
   const protectedMedia = /protected media|drm|sample-aes/i.test(message);
+  const assemblyFailure = /assembl|blob|raw .*export/i.test(message);
 
   return {
-    code: protectedMedia ? 'PROTECTED_MEDIA' : 'NETWORK_ERROR',
+    code: protectedMedia
+      ? 'PROTECTED_MEDIA'
+      : assemblyFailure
+        ? 'ASSEMBLY_ERROR'
+        : 'NETWORK_ERROR',
     message,
     retryable: !protectedMedia,
     detail: error,
@@ -212,7 +220,13 @@ export function createDownloadController(options: DownloadControllerOptions) {
     try {
       if (candidate.protocol === 'direct') {
         if (hasTrim(selection) && options.nativeExport) {
-          return await options.nativeExport({ candidate, job: controllerJob });
+          try {
+            return await options.nativeExport({ candidate, job: controllerJob });
+          } catch (error) {
+            if (!isNativeFfmpegUnavailableError(error)) {
+              throw error;
+            }
+          }
         }
 
         const output = await options.downloadFile(candidate, controllerJob);
@@ -236,7 +250,13 @@ export function createDownloadController(options: DownloadControllerOptions) {
       }
 
       if (options.nativeExport) {
-        return await options.nativeExport({ candidate, job: controllerJob });
+        try {
+          return await options.nativeExport({ candidate, job: controllerJob });
+        } catch (error) {
+          if (!isNativeFfmpegUnavailableError(error)) {
+            throw error;
+          }
+        }
       }
 
       const manifestText = await fetchText(manifestUrl, {
@@ -265,6 +285,7 @@ export function createDownloadController(options: DownloadControllerOptions) {
 
       if (candidate.protocol === 'hls') {
         return await options.runHls({
+          candidate,
           job: controllerJob,
           manifest: parseHlsManifest({ manifestUrl, content: manifestText }),
           allowProtected,
@@ -276,6 +297,7 @@ export function createDownloadController(options: DownloadControllerOptions) {
 
       if (candidate.protocol === 'dash') {
         return await options.runDash({
+          candidate,
           job: controllerJob,
           manifest: parseMpd({ manifestUrl, content: manifestText }),
           allowProtected,

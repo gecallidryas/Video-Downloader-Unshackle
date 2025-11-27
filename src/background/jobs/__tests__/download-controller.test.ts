@@ -3,6 +3,7 @@ import type { DownloadJob, JobOutput, MediaCandidate } from '@/video_downloader_
 import { createHistoryStore } from '../history-store';
 import { createJobStore } from '../job-store';
 import { createDownloadController } from '../download-controller';
+import { NativeFfmpegClientError } from '@/src/native/native-ffmpeg-client';
 
 function candidate(overrides: Partial<MediaCandidate> = {}): MediaCandidate {
   return {
@@ -117,6 +118,168 @@ describe('download controller decision flow', () => {
 
     expect(nativeExport).toHaveBeenCalledTimes(2);
     expect(fetchText).not.toHaveBeenCalled();
+  });
+
+  test('falls back to the browser HLS runner when the native helper is unavailable', async () => {
+    const nativeExport = vi.fn().mockRejectedValue(
+      new NativeFfmpegClientError(
+        'NATIVE_UNAVAILABLE',
+        'Native messaging API is unavailable.',
+      ),
+    );
+    const runHls = vi.fn().mockResolvedValue({ fileName: 'hls.mp4', mimeType: 'video/mp4' });
+    const fetchText = vi
+      .fn()
+      .mockResolvedValue('#EXTM3U\n#EXTINF:1,\nseg.ts\n#EXT-X-ENDLIST');
+    const controller = createDownloadController({
+      downloadFile: vi.fn(),
+      runHls,
+      runDash: vi.fn(),
+      fetchText,
+      nativeExport,
+    });
+
+    const output = await controller.start(
+      candidate({ protocol: 'hls', sourceUrl: undefined, manifestUrl: 'https://cdn.example.com/master.m3u8' }),
+      job(),
+      { selection: { mode: 'best' } },
+    );
+
+    expect(nativeExport).toHaveBeenCalledTimes(1);
+    expect(fetchText).toHaveBeenCalledWith('https://cdn.example.com/master.m3u8', expect.any(Object));
+    expect(runHls).toHaveBeenCalledWith(
+      expect.objectContaining({
+        candidate: expect.objectContaining({ protocol: 'hls' }),
+      }),
+    );
+    expect(output).toEqual({ fileName: 'hls.mp4', mimeType: 'video/mp4' });
+  });
+
+  test('falls back to a full direct download with a trim note when native trim is unavailable', async () => {
+    const nativeExport = vi.fn().mockRejectedValue(
+      new NativeFfmpegClientError(
+        'NATIVE_UNAVAILABLE',
+        'Native messaging API is unavailable.',
+      ),
+    );
+    const downloadFile = vi.fn().mockResolvedValue({
+      fileName: 'direct-video.mp4',
+      mimeType: 'video/mp4',
+      downloadId: 44,
+    } satisfies JobOutput);
+    const controller = createDownloadController({
+      downloadFile,
+      runHls: vi.fn(),
+      runDash: vi.fn(),
+      nativeExport,
+    });
+
+    const output = await controller.start(candidate(), job(), {
+      selection: { mode: 'best', trim: { startSec: 5, endSec: 10 } },
+    });
+
+    expect(nativeExport).toHaveBeenCalledOnce();
+    expect(downloadFile).toHaveBeenCalledOnce();
+    expect(output).toMatchObject({
+      fileName: 'direct-video.mp4',
+      notes: [
+        'Trim is not supported for direct downloads yet; downloaded the full file.',
+      ],
+    });
+  });
+
+  test('falls back to the browser DASH runner when the native helper is unavailable and passes candidate', async () => {
+    const nativeExport = vi.fn().mockRejectedValue(
+      new NativeFfmpegClientError(
+        'NATIVE_UNAVAILABLE',
+        'Native messaging API is unavailable.',
+      ),
+    );
+    const runDash = vi.fn().mockResolvedValue({ fileName: 'dash.bin', mimeType: 'application/octet-stream' });
+    const fetchText = vi
+      .fn()
+      .mockResolvedValue(
+        '<MPD mediaPresentationDuration="PT1S"><Period><AdaptationSet contentType="video"><Representation id="v1"><BaseURL>video.mp4</BaseURL></Representation></AdaptationSet></Period></MPD>',
+      );
+    const controller = createDownloadController({
+      downloadFile: vi.fn(),
+      runHls: vi.fn(),
+      runDash,
+      fetchText,
+      nativeExport,
+    });
+
+    const output = await controller.start(
+      candidate({
+        protocol: 'dash',
+        sourceUrl: undefined,
+        manifestUrl: 'https://cdn.example.com/manifest.mpd',
+      }),
+      job(),
+      { selection: { mode: 'best' } },
+    );
+
+    expect(runDash).toHaveBeenCalledWith(
+      expect.objectContaining({
+        candidate: expect.objectContaining({ protocol: 'dash' }),
+      }),
+    );
+    expect(output).toEqual({ fileName: 'dash.bin', mimeType: 'application/octet-stream' });
+  });
+
+  test('records browser runner assembly errors with a useful failure message', async () => {
+    const jobStore = createJobStore(() => 200);
+    const historyStore = createHistoryStore(() => 200);
+    const runHls = vi.fn().mockRejectedValue(new Error('Blob assembly failed for raw HLS export.'));
+    const fetchText = vi
+      .fn()
+      .mockResolvedValue('#EXTM3U\n#EXTINF:1,\nseg.ts\n#EXT-X-ENDLIST');
+    const controller = createDownloadController({
+      downloadFile: vi.fn(),
+      runHls,
+      runDash: vi.fn(),
+      fetchText,
+    });
+    const hlsCandidate = candidate({
+      protocol: 'hls',
+      sourceUrl: undefined,
+      manifestUrl: 'https://cdn.example.com/master.m3u8',
+    });
+    const queuedJob = jobStore.create(hlsCandidate, { mode: 'best' });
+
+    await expect(
+      controller.runManaged(hlsCandidate, queuedJob, {
+        jobStore,
+        historyStore,
+      }),
+    ).rejects.toThrow('Blob assembly failed for raw HLS export.');
+
+    expect(jobStore.get(queuedJob.id)).toMatchObject({
+      phase: 'failed',
+      failure: {
+        code: 'ASSEMBLY_ERROR',
+        message: 'Blob assembly failed for raw HLS export.',
+      },
+    });
+  });
+
+  test('does not fall back when native export fails for a real processing error', async () => {
+    const nativeExport = vi.fn().mockRejectedValue(new Error('FFmpeg exited with code 1.'));
+    const downloadFile = vi.fn();
+    const controller = createDownloadController({
+      downloadFile,
+      runHls: vi.fn(),
+      runDash: vi.fn(),
+      nativeExport,
+    });
+
+    await expect(
+      controller.start(candidate(), job(), {
+        selection: { mode: 'best', trim: { startSec: 5, endSec: 10 } },
+      }),
+    ).rejects.toThrow('FFmpeg exited with code 1.');
+
+    expect(downloadFile).not.toHaveBeenCalled();
   });
 
   test('fetches and parses HLS and DASH manifests when only manifest URLs are available', async () => {
