@@ -3,6 +3,7 @@ export interface RecordPreviewOptions {
   startSec: number;
   durationSec: number;
   timeoutMs: number;
+  maxDurationSec?: number;
 }
 
 export interface PreviewClipResult {
@@ -12,6 +13,13 @@ export interface PreviewClipResult {
 
 export function recordPreviewClip(options: RecordPreviewOptions): Promise<PreviewClipResult> {
   const { url, startSec, durationSec, timeoutMs } = options;
+  const maxDurationSec = options.maxDurationSec;
+
+  if (maxDurationSec !== undefined && durationSec > maxDurationSec) {
+    return Promise.reject(
+      new Error(`Browser recording is limited to ${maxDurationSec} seconds.`),
+    );
+  }
 
   return new Promise<PreviewClipResult>((resolve, reject) => {
     const video = document.createElement('video');

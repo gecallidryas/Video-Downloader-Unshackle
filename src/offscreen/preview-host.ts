@@ -27,6 +27,7 @@ export type PreviewHostMessage =
       url: string;
       startSec: number;
       durationSec: number;
+      maxDurationSec?: number;
     };
 
 export interface PreviewHostResponse {
@@ -86,6 +87,7 @@ export function createPreviewHost(): PreviewHost {
           url: message.url,
           startSec: message.startSec,
           durationSec: message.durationSec,
+          maxDurationSec: message.maxDurationSec,
           timeoutMs: 15_000,
         }).then((clip) => ({
           ok: true,

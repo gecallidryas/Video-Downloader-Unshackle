@@ -274,6 +274,12 @@ describe('recordPreviewClip', () => {
     await expectation;
   });
 
+  test('rejects before recording when duration exceeds the configured maximum', async () => {
+    await expect(
+      recordPreviewClip(defaultOptions({ durationSec: 601, maxDurationSec: 600 })),
+    ).rejects.toThrow('Browser recording is limited to 600 seconds.');
+  });
+
   test('rejects when video emits an error event', async () => {
     const mockVideo = createMockVideoElement();
 
