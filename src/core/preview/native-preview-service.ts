@@ -1,5 +1,8 @@
 import type { MediaCandidate } from '@/video_downloader_types_skeleton';
-import type { NativeFfmpegClient } from '@/src/native/native-ffmpeg-client';
+import {
+  isNativeFfmpegUnavailableError,
+  type NativeFfmpegClient,
+} from '@/src/native/native-ffmpeg-client';
 import type { NativeFfmpegPreviewFormat } from '@/src/native/native-ffmpeg-contract';
 import {
   clearPreviewAssets,
@@ -23,6 +26,16 @@ export interface EnsurePreviewClipOptions {
   format?: NativeFfmpegPreviewFormat;
   startSec?: number;
   durationSec?: number;
+}
+
+export class PreviewGenerationError extends Error {
+  constructor(
+    readonly code: 'PROTECTED_MEDIA' | 'NATIVE_REQUIRED' | 'OFFSCREEN_FAILED',
+    message: string,
+  ) {
+    super(message);
+    this.name = 'PreviewGenerationError';
+  }
 }
 
 function isProtected(candidate: MediaCandidate): boolean {
@@ -68,7 +81,10 @@ export async function ensurePreviewClip(
   options: EnsurePreviewClipOptions,
 ): Promise<PreviewAsset> {
   if (isProtected(candidate)) {
-    throw new Error('Protected media cannot generate preview assets.');
+    throw new PreviewGenerationError(
+      'PROTECTED_MEDIA',
+      'Protected media cannot generate preview assets.',
+    );
   }
 
   const format = options.format ?? 'webm';
@@ -81,29 +97,37 @@ export async function ensurePreviewClip(
     return cached;
   }
 
-  // Strategy 1: native FFmpeg client
+  let nativeUnavailable = false;
+
   if (options.nativeClient) {
-    const result = await options.nativeClient.extractPreviewClip({
-      candidateId: candidate.id,
-      inputUrl: inputUrlFor(candidate),
-      startSec,
-      durationSec,
-      format,
-    });
-    const dataUrl = result.dataUrl;
+    try {
+      const result = await options.nativeClient.extractPreviewClip({
+        candidateId: candidate.id,
+        inputUrl: inputUrlFor(candidate),
+        startSec,
+        durationSec,
+        format,
+      });
+      const dataUrl = result.dataUrl;
 
-    if (!dataUrl) {
-      throw new Error('Native helper did not return an extension-safe preview asset.');
+      if (!dataUrl) {
+        throw new Error('Native helper did not return an extension-safe preview asset.');
+      }
+
+      return setPreviewAsset(key, {
+        assetUrl: dataUrl,
+        mimeType: (result.mimeType as PreviewAsset['mimeType']) || mimeFor(format),
+        generated: true,
+      });
+    } catch (error) {
+      if (!isNativeFfmpegUnavailableError(error)) {
+        throw error;
+      }
+
+      nativeUnavailable = true;
     }
-
-    return setPreviewAsset(key, {
-      assetUrl: dataUrl,
-      mimeType: (result.mimeType as PreviewAsset['mimeType']) || mimeFor(format),
-      generated: true,
-    });
   }
 
-  // Strategy 2: offscreen MediaRecorder (only works for direct protocol)
   if (options.offscreenRecord && candidate.protocol === 'direct') {
     const offscreenResult = await options.offscreenRecord({
       type: 'GENERATE_PREVIEW_CLIP',
@@ -113,7 +137,10 @@ export async function ensurePreviewClip(
     });
 
     if (!offscreenResult.ok || !offscreenResult.assetUrl) {
-      throw new Error('Offscreen MediaRecorder did not return a preview asset.');
+      throw new PreviewGenerationError(
+        'OFFSCREEN_FAILED',
+        'Offscreen MediaRecorder did not return a preview asset.',
+      );
     }
 
     // MediaRecorder on Chromium always outputs WebM
@@ -129,6 +156,17 @@ export async function ensurePreviewClip(
       mimeType: (offscreenResult.mimeType as PreviewAsset['mimeType']) || 'video/webm',
       generated: true,
     });
+  }
+
+  if (
+    nativeUnavailable ||
+    candidate.protocol === 'hls' ||
+    candidate.protocol === 'dash'
+  ) {
+    throw new PreviewGenerationError(
+      'NATIVE_REQUIRED',
+      'Generated previews for this media require the native helper.',
+    );
   }
 
   throw new Error(
