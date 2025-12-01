@@ -1,7 +1,13 @@
 import { describe, expect, test, vi } from 'vitest';
 import type { MediaCandidate } from '@/video_downloader_types_skeleton';
-import { ensureNativeThumbnail } from '../native-thumbnail-service';
-import type { NativeFfmpegClient } from '@/src/native/native-ffmpeg-client';
+import {
+  ensureNativeThumbnail,
+  ThumbnailGenerationError,
+} from '../native-thumbnail-service';
+import {
+  NativeFfmpegClientError,
+  type NativeFfmpegClient,
+} from '@/src/native/native-ffmpeg-client';
 
 function candidate(overrides: Partial<MediaCandidate> = {}): MediaCandidate {
   return {
@@ -77,14 +83,16 @@ describe('native thumbnail service', () => {
 
   test('does not request thumbnails for protected media', async () => {
     const client = nativeClient();
+    const offscreenCapture = vi.fn();
 
     await expect(
       ensureNativeThumbnail(
         candidate({ status: 'protected', protection: { kind: 'drm', drmSystems: ['widevine'] } }),
-        { nativeClient: client },
+        { nativeClient: client, offscreenCapture },
       ),
     ).rejects.toThrow(/Protected media/);
     expect(client.extractThumbnail).not.toHaveBeenCalled();
+    expect(offscreenCapture).not.toHaveBeenCalled();
   });
 
   test('rejects generated thumbnails without extension-safe asset data', async () => {
@@ -98,5 +106,74 @@ describe('native thumbnail service', () => {
     await expect(ensureNativeThumbnail(candidate(), { nativeClient: client })).rejects.toThrow(
       /extension-safe thumbnail asset/i,
     );
+  });
+
+  test('falls back to offscreen direct frame capture when native thumbnail is unavailable', async () => {
+    const client = nativeClient();
+    vi.mocked(client.extractThumbnail).mockRejectedValueOnce(
+      new NativeFfmpegClientError(
+        'NATIVE_UNAVAILABLE',
+        'Native messaging API is unavailable.',
+      ),
+    );
+    const offscreenCapture = vi.fn().mockResolvedValue({
+      ok: true,
+      assetUrl: 'data:image/jpeg;base64,b2Zmc2NyZWVu',
+      mimeType: 'image/jpeg',
+    });
+
+    await expect(
+      ensureNativeThumbnail(candidate(), { nativeClient: client, offscreenCapture }),
+    ).resolves.toEqual({
+      assetUrl: 'data:image/jpeg;base64,b2Zmc2NyZWVu',
+      mimeType: 'image/jpeg',
+      generated: true,
+    });
+    expect(offscreenCapture).toHaveBeenCalledWith({
+      type: 'EXTRACT_THUMBNAIL',
+      url: 'https://cdn.example.com/video.mp4',
+      atSec: 10,
+      format: 'jpeg',
+    });
+  });
+
+  test('returns typed native-required error for HLS thumbnails without static assets', async () => {
+    const client = nativeClient();
+    vi.mocked(client.extractThumbnail).mockRejectedValueOnce(
+      new NativeFfmpegClientError(
+        'NATIVE_UNAVAILABLE',
+        'Native messaging API is unavailable.',
+      ),
+    );
+
+    await expect(
+      ensureNativeThumbnail(
+        candidate({
+          protocol: 'hls',
+          sourceUrl: undefined,
+          manifestUrl: 'https://cdn.example.com/master.m3u8',
+        }),
+        { nativeClient: client, offscreenCapture: vi.fn() },
+      ),
+    ).rejects.toMatchObject({
+      name: 'ThumbnailGenerationError',
+      code: 'NATIVE_REQUIRED',
+    } satisfies Partial<ThumbnailGenerationError>);
+  });
+
+  test('surfaces offscreen capture failures with a thumbnail-specific message', async () => {
+    const offscreenCapture = vi.fn().mockResolvedValue({
+      ok: false,
+      assetUrl: '',
+      mimeType: '',
+    });
+
+    await expect(
+      ensureNativeThumbnail(candidate(), { offscreenCapture }),
+    ).rejects.toMatchObject({
+      name: 'ThumbnailGenerationError',
+      code: 'OFFSCREEN_FAILED',
+      message: 'Offscreen thumbnail capture did not return an asset.',
+    } satisfies Partial<ThumbnailGenerationError>);
   });
 });

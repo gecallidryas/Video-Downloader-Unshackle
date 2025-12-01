@@ -28,7 +28,10 @@ function candidate(overrides: Partial<MediaCandidate> = {}): MediaCandidate {
   };
 }
 
-function routerWithCandidate(candidateValue: MediaCandidate) {
+function routerWithCandidate(
+  candidateValue: MediaCandidate,
+  overrides: Partial<Parameters<typeof createRuntimeRouter>[0]> = {},
+) {
   const candidateRegistry = createCandidateRegistry();
   candidateRegistry.set(candidateValue.tabId, [candidateValue]);
 
@@ -45,6 +48,7 @@ function routerWithCandidate(candidateValue: MediaCandidate) {
       mimeType: 'image/jpeg',
       generated: true,
     }),
+    ...overrides,
   });
 }
 
@@ -103,5 +107,28 @@ describe('preview asset runtime messages', () => {
         detail: undefined,
       },
     });
+  });
+
+  test('thumbnail asset requests reject protected candidates before service invocation', async () => {
+    const ensureThumbnail = vi.fn();
+    const router = routerWithCandidate(
+      candidate({ status: 'protected', protection: { kind: 'drm', drmSystems: ['widevine'] } }),
+      { ensureThumbnail },
+    );
+
+    const response = await router.handleMessage(
+      createRuntimeRequest('GET_THUMBNAIL_ASSET', { candidateId: 'candidate-1' }, 'req-thumb-protected'),
+    );
+
+    expect(response).toEqual({
+      type: 'ERROR',
+      requestId: 'req-thumb-protected',
+      payload: {
+        code: 'PROTECTED_MEDIA',
+        message: 'Protected media cannot generate preview assets.',
+        detail: undefined,
+      },
+    });
+    expect(ensureThumbnail).not.toHaveBeenCalled();
   });
 });

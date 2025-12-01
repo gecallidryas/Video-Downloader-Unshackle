@@ -1,5 +1,8 @@
 import type { MediaCandidate } from '@/video_downloader_types_skeleton';
-import type { NativeFfmpegClient } from '@/src/native/native-ffmpeg-client';
+import {
+  isNativeFfmpegUnavailableError,
+  type NativeFfmpegClient,
+} from '@/src/native/native-ffmpeg-client';
 import type { NativeFfmpegThumbnailFormat } from '@/src/native/native-ffmpeg-contract';
 
 export interface ThumbnailAssetResult {
@@ -13,6 +16,16 @@ export interface EnsureNativeThumbnailOptions {
   offscreenCapture?: (message: Record<string, unknown>) => Promise<{ ok: boolean; assetUrl: string; mimeType: string }>;
   format?: NativeFfmpegThumbnailFormat;
   atSec?: number;
+}
+
+export class ThumbnailGenerationError extends Error {
+  constructor(
+    readonly code: 'PROTECTED_MEDIA' | 'NATIVE_REQUIRED' | 'OFFSCREEN_FAILED',
+    message: string,
+  ) {
+    super(message);
+    this.name = 'ThumbnailGenerationError';
+  }
 }
 
 function isProtected(candidate: MediaCandidate): boolean {
@@ -62,7 +75,10 @@ export async function ensureNativeThumbnail(
   options: EnsureNativeThumbnailOptions,
 ): Promise<ThumbnailAssetResult> {
   if (isProtected(candidate)) {
-    throw new Error('Protected media cannot generate preview assets.');
+    throw new ThumbnailGenerationError(
+      'PROTECTED_MEDIA',
+      'Protected media cannot generate preview assets.',
+    );
   }
 
   const existing = staticThumbnailUrl(candidate);
@@ -75,25 +91,34 @@ export async function ensureNativeThumbnail(
   }
 
   const format = options.format ?? 'jpg';
+  let nativeUnavailable = false;
 
   if (options.nativeClient) {
-    const result = await options.nativeClient.extractThumbnail({
-      candidateId: candidate.id,
-      inputUrl: inputUrlFor(candidate),
-      atSec: options.atSec ?? defaultAtSec(candidate),
-      format,
-    });
-    const dataUrl = result.dataUrl;
+    try {
+      const result = await options.nativeClient.extractThumbnail({
+        candidateId: candidate.id,
+        inputUrl: inputUrlFor(candidate),
+        atSec: options.atSec ?? defaultAtSec(candidate),
+        format,
+      });
+      const dataUrl = result.dataUrl;
 
-    if (!dataUrl) {
-      throw new Error('Native helper did not return an extension-safe thumbnail asset.');
+      if (!dataUrl) {
+        throw new Error('Native helper did not return an extension-safe thumbnail asset.');
+      }
+
+      return {
+        assetUrl: dataUrl,
+        mimeType: (result.mimeType as ThumbnailAssetResult['mimeType']) || mimeFor(format),
+        generated: true,
+      };
+    } catch (error) {
+      if (!isNativeFfmpegUnavailableError(error)) {
+        throw error;
+      }
+
+      nativeUnavailable = true;
     }
-
-    return {
-      assetUrl: dataUrl,
-      mimeType: (result.mimeType as ThumbnailAssetResult['mimeType']) || mimeFor(format),
-      generated: true,
-    };
   }
 
   if (options.offscreenCapture && candidate.protocol === 'direct') {
@@ -105,11 +130,29 @@ export async function ensureNativeThumbnail(
       format: canvasFormat,
     });
 
+    if (!result.ok || !result.assetUrl) {
+      throw new ThumbnailGenerationError(
+        'OFFSCREEN_FAILED',
+        'Offscreen thumbnail capture did not return an asset.',
+      );
+    }
+
     return {
       assetUrl: result.assetUrl,
-      mimeType: result.mimeType as ThumbnailAssetResult['mimeType'],
+      mimeType: (result.mimeType as ThumbnailAssetResult['mimeType']) || mimeFor(format),
       generated: true,
     };
+  }
+
+  if (
+    nativeUnavailable ||
+    candidate.protocol === 'hls' ||
+    candidate.protocol === 'dash'
+  ) {
+    throw new ThumbnailGenerationError(
+      'NATIVE_REQUIRED',
+      'Generated thumbnails for this media require the native helper.',
+    );
   }
 
   throw new Error('No thumbnail generation method available.');
