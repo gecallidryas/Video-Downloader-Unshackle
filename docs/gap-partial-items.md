@@ -11,7 +11,7 @@ Extracted from `feature-parity-report.md` across all 8 reference analyses. Every
 | 1 | `suppressProtectedDownloads` defaults to `false` | review | Unified baseline | Decide release default before shipping. |
 | 2 | `captureCredentialHeaders` defaults to `true`; stores Cookie/Authorization | review | Policy risk | Change release default to safe headers (referer/origin) only. |
 | 3 | Request header context forwards sensitive headers | review | live-stream (referer/origin only), stream-detector, cat-catch | Strip cookies/auth by default; allow explicit per-download consent. |
-| 4 | Production HLS/DASH path audit — confirm native export is intended default | improved | Unified | Native export remains preferred; HLS now falls back to the browser raw TS runner when the optional native helper is unavailable, and DASH browser fallback remains pending. |
+| 4 | Production HLS/DASH path audit — confirm native export is intended default | improved | Unified | Native export remains preferred; HLS now falls back to browser raw `.ts`, DASH falls back to raw `.m4s`/`.bin`, and direct preview/thumbnail/explicit WebM trim have browser fallbacks when the optional native helper is unavailable. |
 | 5 | Safe default policy against store/experimental build split | gap | puemos | Store-safe and experimental build variants are cleaner than one permissive default. |
 | 6 | Protected-content refusal checks for deep capture modes | gap | cat-catch (has it, risky) | Any MSE/recorder/deep-search feature must refuse DRM/protected media. |
 | 7 | First-class stream detector classifier fixtures | gap | stream-detector | HLS, DASH, HDS, MSS, VTT, SRT, TTML, DFXP, MP4/M4S, TS, AAC, MP3, OGG/OPUS, WebM. |
@@ -107,7 +107,7 @@ Extracted from `feature-parity-report.md` across all 8 reference analyses. Every
 | 68 | Storage summary in Settings and Downloads footer | partial | puemos | Strong UX pattern; constant visibility. |
 | 69 | Auto delete after save setting | gap/partial | puemos | Useful storage-saving option. |
 | 70 | Cleanup cancels active jobs first | partial | puemos | Consistency behavior. |
-| 71 | "Save raw TS" export option | improved | hls_downloader (`-f` flag), cat-catch | Browser HLS fallback now exports raw `.ts` through `chrome.downloads` when the native helper is unavailable; UI-facing explicit action still pending. |
+| 71 | "Save raw TS" export option | improved | hls_downloader (`-f` flag), cat-catch | Browser HLS fallback now exports raw `.ts` through `chrome.downloads` when the native helper is unavailable; UI-facing explicit action still pending. DASH raw fallback uses `.m4s` only when safe and `.bin` otherwise. |
 | 72 | Sidecar subtitle download option | partial | hls_downloader | Users may prefer sidecar files over muxed subtitles. |
 | 73 | Force-export of partial HLS downloads | partial | m3u8-downloader, cat-catch | Download already-completed segments without waiting for full job. |
 | 74 | Streaming write feature detection | partial | m3u8-downloader | Detect File System Access / OPFS capabilities with graceful degradation. |
@@ -212,7 +212,7 @@ Extracted from `feature-parity-report.md` across all 8 reference analyses. Every
 | 137 | Storybook for components | gap | puemos | Visual QA if design system grows. |
 | 138 | `unlimitedStorage` permission | gap/review | puemos | Consider only if quotas require it. |
 | 139 | ffmpeg.wasm as optional fallback | gap by design | puemos | Wasm can be optional fallback when native helper absent. |
-| 140 | mux.js as lightweight browser-only TS-to-MP4 fallback | gap | m3u8-downloader, cat-catch | Apache-2.0. Lightweight fallback for users without native helper. |
+| 140 | mux.js as lightweight browser-only TS-to-MP4 fallback | gap / P3 planned | m3u8-downloader, cat-catch | Deferred by design; browser fallback currently exports honest raw HLS/DASH outputs and does not transmux or label them MP4. |
 | 141 | Online filename resolution | gap/partial | live-stream | Privacy-sensitive; only if user-initiated. |
 | 142 | Manifest/icon/package release checks | partial | cat-catch | Practical packaging sanity checks. |
 | 143 | Release tester guide | partial | puemos (`FOR-DEAR-TESTERS.md`) | Borrow shape from puemos. |

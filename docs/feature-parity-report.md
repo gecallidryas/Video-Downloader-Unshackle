@@ -54,12 +54,12 @@ Recommended direction: keep Unshackle as the typed all-in-one extension, use Uni
 | HLS parsing | Present | Present | Present via `m3u8-parser` | Compare live-stream's timeline, media group, init-map, and quality handling against Unshackle parser tests. |
 | DASH parsing | Present | Present | Present via `mpd-parser` | Live-stream has basic MPD parser delegation, not a full typed planner. |
 | Direct media download | Present via `chrome.downloads`, native export, and tested direct range helper | Present | Present through job window and File System Access | Range-capable helper now uses HEAD probing and scheduler-managed byte ranges; default direct UI path still uses Chrome downloads. |
-| Segmented download engine | Present in core tests; production path prefers native FFmpeg export and now falls back to a browser HLS raw TS runner when the optional helper is unavailable; DASH browser fallback remains pending | Present | Strong custom `MyGet` range/thread engine | Port ideas into `segment-scheduler`, not the JS class hierarchy. |
+| Segmented download engine | Present in core tests; production path prefers native FFmpeg export and now falls back to browser HLS raw `.ts` and DASH raw `.m4s`/`.bin` when the optional helper is unavailable | Present | Strong custom `MyGet` range/thread engine | Port ideas into `segment-scheduler`, not the JS class hierarchy. |
 | AES-128 clear-key HLS | Present | Present | Present | Keep clear-key only; never extend into DRM/key extraction. |
 | DRM/protected handling | Detects/protects in several paths; default setting needs review | Broad detection and mixed policy defaults | Mostly blocklist/compliance, not DRM-centric | Release posture should be safe-by-default. |
 | Queue/history | Present | Present | No persistent queue/history, job window only | Unshackle is stronger. |
-| Output conversion | Native FFmpeg helper, MP4/WebM/audio/trim paths | FFmpeg/offscreen baseline | Downloads raw stream/media; no FFmpeg mux UI | Keep native helper; optionally add browser-only raw save fallback. |
-| Preview | Native preview/thumbnail services and modal | Preview/thumbnail baseline | MSE/MP4Box preview while downloading | Live-stream's progressive preview concept is useful but should be optional. |
+| Output conversion | Native FFmpeg helper, MP4/WebM/audio/trim paths plus browser raw HLS/DASH and explicit direct WebM trim recording | FFmpeg/offscreen baseline | Downloads raw stream/media; no FFmpeg mux UI | Keep native helper primary; browser fallback must label raw outputs honestly. |
+| Preview | Native preview/thumbnail services with direct offscreen preview and thumbnail fallback when native is unavailable; HLS/DASH generated assets remain native-required without static thumbnails | Preview/thumbnail baseline | MSE/MP4Box preview while downloading | Live-stream's progressive preview concept is useful but should be optional. |
 | Context menus | Present | Present | Strong: link, media, selected-link extraction, clear list | Add selected-link extraction parity if not already wired. |
 | Remote policy/blocklist | Strict remote config and blocklist tests | Remote config baseline | Remote/cacheable blocked stream list with owner request process | Adopt owner-request blocklist workflow semantics, not unsigned remote behavior. |
 | Browser portability | Chrome MV3 target | Chrome MV3 | Chrome + Firefox-oriented code paths | Useful as a future portability reference. |
@@ -216,7 +216,7 @@ These are the highest-value enrichment items from the two references, ordered by
 | Priority | Item | Source inspiration | Target landing zone | Notes |
 |---:|---|---|---|---|
 | P0 | Reconcile protected/credential defaults | Unified parity vs safe policy | `src/background/settings/settings-store.ts`, `docs/provider-policy.md` | Decide release posture before more parity claims. |
-| P0 | Production HLS/DASH path audit | Unified + current source | `entrypoints/background.ts`, `src/background/jobs/download-controller.ts` | Native export is the preferred segmented-media path; HLS now falls back to browser raw TS export when the optional helper is unavailable, with DASH fallback still pending. |
+| P0 | Production HLS/DASH path audit | Unified + current source | `entrypoints/background.ts`, `src/background/jobs/download-controller.ts` | Native export is the preferred segmented-media path; HLS now falls back to raw `.ts` and DASH to raw `.m4s`/`.bin` when the optional helper is unavailable. |
 | P1 | Broken-pipe/range recovery policy | live-stream `mget/plugins/error.js` | `src/core/download/segment-scheduler.ts`, HLS/DASH/direct runners | Implemented typed non-retry status handling, timeout tuning, and partial-range recovery in the scheduler; direct range downloads are tracked separately. |
 | P1 | Direct range downloader | live-stream `mget/mget.js` | `src/core/direct/*`, `src/core/download/*`, `src/core/storage/*` | Improves large direct files and live/archive downloads. |
 | P1 | Timeline/discontinuity handling | live-stream `index.js` | `src/core/hls/plan-hls-segments.ts`, `src/ui/media/*` | Planner grouping is implemented; UI-level timeline selection remains useful for ad-separated streams and live recordings. |
@@ -915,7 +915,7 @@ The entire tool is one shell script with no imports, modules, or configuration f
 |---:|---|---|---|
 | P1 | Add sequence-number IV fallback test | `src/core/hls/__tests__/iv-fallback.test.ts`, `src/core/hls/__tests__/parse-hls-manifest.test.ts` | Parser records `EXT-X-MEDIA-SEQUENCE`, and decrypt regression proves omitted-IV fallback uses the HLS media sequence number. |
 | P1 | Add I-frame stream filtering test | `src/core/hls/__tests__/iframe-filtering.test.ts` | Added parser regression proving I-frame-only stream tags are ignored as variants. |
-| P2 | Add "save raw TS" export option | `src/core/export/*`, settings | Browser HLS fallback now saves raw `.ts` when native helper is unavailable; explicit UI action/settings remain pending. |
+| P2 | Add "save raw TS" export option | `src/core/export/*`, settings | Browser HLS fallback now saves raw `.ts` and DASH fallback saves raw `.m4s`/`.bin` when native helper is unavailable; explicit UI action/settings remain pending. |
 | P2 | Add bulk retry pass after initial download | `src/core/download/segment-scheduler.ts` | Two-pass approach (download all, then retry all failures once) is a useful complement to per-segment retry. |
 | P2 | Add auto-highest quality selection policy | `src/core/hls/select-hls-variant.ts`, settings | Add configurable default quality policy (highest/lowest/ask). |
 | P2 | Add sidecar subtitle download option | `src/core/export/*`, UI | Users may prefer sidecar files over muxed subtitles. |
