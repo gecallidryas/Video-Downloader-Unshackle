@@ -1,38 +1,36 @@
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { vi } from 'vitest';
-import { TrimControls } from '../TrimControls';
+import { PreviewModal } from '@/src/ui/preview/PreviewModal';
 
-test('renders no trim controls for direct downloads', () => {
-  const { container } = render(
-    <TrimControls
-      enabled={false}
-      value={null}
-      onChange={() => {}}
-    />,
-  );
-
-  expect(container).toBeEmptyDOMElement();
-});
-
-test('normalizes start and end seconds from text inputs', async () => {
+test('direct trim controls require native for original trim until browser WebM recording is selected', async () => {
   const user = userEvent.setup();
-  const onChange = vi.fn();
+  const onDownload = vi.fn();
 
   render(
-    <TrimControls
-      enabled
-      value={null}
-      onChange={onChange}
+    <PreviewModal
+      open
+      title="Direct file"
+      sourceUrl="https://cdn.example.com/video.mp4"
+      protocol="direct"
+      browserRecordingAvailable
+      onClose={() => {}}
+      onDownload={onDownload}
     />,
   );
 
-  await user.type(screen.getByLabelText(/trim start/i), '1:30');
-  await user.type(screen.getByLabelText(/trim end/i), '2:45');
-  await user.tab();
+  const video = screen.getByLabelText(/preview video/i) as HTMLVideoElement;
+  Object.defineProperty(video, 'duration', { value: 60, configurable: true });
+  video.dispatchEvent(new Event('loadedmetadata'));
 
-  expect(onChange).toHaveBeenLastCalledWith({
-    startSec: 90,
-    endSec: 165,
-  });
+  expect(
+    screen.getByText(/native required for original trim/i),
+  ).toBeInTheDocument();
+  expect(screen.queryByLabelText(/trim (range|controls)/i)).not.toBeInTheDocument();
+
+  await user.click(screen.getByRole('radio', { name: /browser webm clip/i }));
+
+  expect(screen.getByLabelText(/trim (range|controls)/i)).toBeInTheDocument();
+  await user.click(screen.getByRole('button', { name: /download selection/i }));
+  expect(onDownload).toHaveBeenCalledWith(null, { outputKind: 'webm' });
 });

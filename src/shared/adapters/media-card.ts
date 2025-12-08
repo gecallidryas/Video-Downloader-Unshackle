@@ -12,6 +12,11 @@ import type {
   QualityOption,
   TrackOption,
 } from '@/src/types/media';
+import {
+  resolveBrowserDownloadCapability,
+  resolveBrowserPreviewCapability,
+  resolveBrowserThumbnailCapability,
+} from '@/src/core/capabilities/browser-capabilities';
 
 function formatDuration(durationSec?: number): string {
   if (durationSec == null || Number.isNaN(durationSec)) {
@@ -171,28 +176,50 @@ function formatProtocol(candidate: MediaCandidate): string {
 }
 
 function getPrimaryAction(
-  status: CandidateStatus,
-  protection: ProtectionInfo,
+  candidate: MediaCandidate,
 ): MediaPrimaryAction {
-  const isBlocked = status === 'protected' || protection.kind === 'drm';
+  const isBlocked = candidate.status === 'protected' || candidate.protection.kind === 'drm';
 
   if (isBlocked) {
     return {
       kind: 'blocked',
       label: 'Protected Media',
-      reason: protection.reason,
+      reason: candidate.protection.reason,
+    };
+  }
+
+  const capability = resolveBrowserDownloadCapability({
+    candidate,
+  });
+
+  if (capability.capability === 'hls-raw-ts') {
+    return {
+      kind: 'download',
+      label: 'Save raw TS',
+      reason: capability.reason,
+    };
+  }
+
+  if (capability.capability === 'dash-raw-segments') {
+    return {
+      kind: 'download',
+      label: 'Save raw segments',
+      reason: capability.reason,
     };
   }
 
   return {
     kind: 'download',
     label: 'Download',
+    reason: capability.available ? undefined : capability.reason,
   };
 }
 
 export function toDetectedMedia(candidate: MediaCandidate): DetectedMedia {
   const qualities = toQualityOptions(candidate.variants);
   const mediaType = candidate.mediaKind === 'audio' ? 'audio' : 'video';
+  const previewCapability = resolveBrowserPreviewCapability(candidate);
+  const thumbnailCapability = resolveBrowserThumbnailCapability(candidate);
   const selectedAudioTrackIds = candidate.audioTracks
     .filter((track) => track.default)
     .map((track) => track.id);
@@ -217,6 +244,12 @@ export function toDetectedMedia(candidate: MediaCandidate): DetectedMedia {
     protocol: candidate.protocol,
     status: candidate.status,
     protection: candidate.protection,
-    primaryAction: getPrimaryAction(candidate.status, candidate.protection),
+    previewUnavailableReason: previewCapability.available
+      ? undefined
+      : 'Preview unavailable',
+    thumbnailUnavailableReason: thumbnailCapability.available
+      ? undefined
+      : 'Thumbnail unavailable',
+    primaryAction: getPrimaryAction(candidate),
   };
 }

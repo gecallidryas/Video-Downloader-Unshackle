@@ -4,7 +4,7 @@ import { vi } from 'vitest';
 import { PreviewModal } from '../PreviewModal';
 import type { CodecInfo } from '@/src/core/preview/codec-sniff';
 
-test('renders direct preview with disabled trim messaging', () => {
+test('renders direct preview with native-required original trim messaging', () => {
   render(
     <PreviewModal
       open
@@ -21,7 +21,8 @@ test('renders direct preview with disabled trim messaging', () => {
     'src',
     'https://cdn.example.com/video.mp4',
   );
-  expect(screen.getByText(/trim is not supported for direct/i)).toBeInTheDocument();
+  expect(screen.getByText(/native required for original trim/i)).toBeInTheDocument();
+  expect(screen.queryByLabelText(/trim range/i)).not.toBeInTheDocument();
 });
 
 test('renders direct preview with native-helper trim messaging when helper is available', () => {
@@ -38,10 +39,9 @@ test('renders direct preview with native-helper trim messaging when helper is av
   );
 
   expect(screen.getByText(/native helper is required for direct trim/i)).toBeInTheDocument();
-  expect(screen.getByLabelText(/trim start/i)).toBeEnabled();
 });
 
-test('closes on escape and reports trim selection for streamed media', async () => {
+test('closes on escape and downloads with null trim by default', async () => {
   const user = userEvent.setup();
   const onClose = vi.fn();
   const onDownload = vi.fn();
@@ -57,10 +57,8 @@ test('closes on escape and reports trim selection for streamed media', async () 
     />,
   );
 
-  await user.type(screen.getByLabelText(/trim start/i), '0:10');
-  await user.type(screen.getByLabelText(/trim end/i), '0:20');
   await user.click(screen.getByRole('button', { name: /download selection/i }));
-  expect(onDownload).toHaveBeenCalledWith({ startSec: 10, endSec: 20 });
+  expect(onDownload).toHaveBeenCalledWith(null);
 
   await user.keyboard('{Escape}');
   expect(onClose).toHaveBeenCalled();
@@ -134,4 +132,44 @@ test('renders downloaded-region progress bar when ranges provided', () => {
     />,
   );
   expect(screen.getByRole('progressbar', { name: /downloaded preview region/i })).toBeInTheDocument();
+});
+
+test('renders custom video player controls', () => {
+  render(
+    <PreviewModal
+      open
+      title="Player test"
+      sourceUrl="https://cdn.example.com/master.m3u8"
+      protocol="hls"
+      onClose={() => {}}
+      onDownload={() => {}}
+    />,
+  );
+
+  expect(screen.getByRole('group', { name: /video player/i })).toBeInTheDocument();
+  expect(screen.getAllByRole('button', { name: /^play$/i })).toHaveLength(2);
+  expect(screen.getByLabelText(/seek/i)).toBeInTheDocument();
+  expect(screen.getByLabelText(/volume/i)).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: /playback speed/i })).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: /fullscreen/i })).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: /picture-in-picture/i })).toBeInTheDocument();
+});
+
+test('speed menu opens and lists options', async () => {
+  const user = userEvent.setup();
+  render(
+    <PreviewModal
+      open
+      title="Speed test"
+      sourceUrl="https://cdn.example.com/video.mp4"
+      protocol="hls"
+      onClose={() => {}}
+      onDownload={() => {}}
+    />,
+  );
+
+  await user.click(screen.getByRole('button', { name: /playback speed/i }));
+  expect(screen.getByRole('menu', { name: /speed options/i })).toBeInTheDocument();
+  expect(screen.getByRole('menuitem', { name: /0\.5x/i })).toBeInTheDocument();
+  expect(screen.getByRole('menuitem', { name: /^2x$/i })).toBeInTheDocument();
 });

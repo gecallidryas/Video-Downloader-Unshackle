@@ -1,8 +1,80 @@
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { vi } from 'vitest';
 import { SidePanelApp } from '../SidePanelApp';
 import { usePanelStore } from '@/src/state/usePanelStore';
+import type { RuntimeClient } from '@/src/lib/runtime/client';
 import type { DetectedMedia } from '@/src/types/media';
+import type { MediaCandidate } from '@/video_downloader_types_skeleton';
+
+function buildCandidate(
+  overrides: Partial<MediaCandidate> = {},
+): MediaCandidate {
+  return {
+    id: 'candidate-1',
+    tabId: 7,
+    mediaKind: 'video',
+    protocol: 'direct',
+    status: 'ready',
+    pageUrl: 'https://example.com/watch',
+    pageTitle: 'Example page',
+    origin: 'https://example.com',
+    displayName: 'Clear runtime video',
+    sourceUrl: 'https://cdn.example.com/video.mp4',
+    mimeType: 'video/mp4',
+    fileExtensionHint: 'mp4',
+    durationSec: 95,
+    sizeEstimateBytes: 24_000_000,
+    protection: { kind: 'none' },
+    variants: [{ id: '720p', height: 720, isDefault: true }],
+    audioTracks: [],
+    subtitleTracks: [],
+    evidence: [],
+    preview: { playable: true, adapter: 'native' },
+    createdAt: 100,
+    updatedAt: 100,
+    ...overrides,
+  };
+}
+
+function buildRuntimeClient(candidates: MediaCandidate[]): RuntimeClient {
+  return {
+    getCandidates: vi.fn().mockResolvedValue(candidates),
+    ingestManualHls: vi.fn().mockResolvedValue([]),
+    getQueueStats: vi.fn().mockResolvedValue({
+      queued: 0,
+      running: 0,
+      failed: 0,
+      completed: 0,
+    }),
+    requestHostAccess: vi.fn().mockResolvedValue({
+      granted: true,
+      origin: 'https://example.com',
+    }),
+    getDebugEvidence: vi.fn().mockResolvedValue([]),
+    getPreviewAsset: vi.fn().mockResolvedValue({
+      assetUrl: 'preview.webm',
+      mimeType: 'video/webm',
+      generated: true,
+    }),
+    getThumbnailAsset: vi.fn().mockResolvedValue({
+      assetUrl: 'thumb.jpg',
+      mimeType: 'image/jpeg',
+      generated: true,
+    }),
+    startDownload: vi.fn().mockResolvedValue({
+      id: 'job-1',
+      candidateId: candidates[0]?.id ?? 'candidate-1',
+      tabId: 7,
+      phase: 'queued',
+      createdAt: 1,
+      updatedAt: 1,
+      selection: { mode: 'custom' },
+      progressPct: 0,
+      bytesDownloaded: 0,
+    }),
+  };
+}
 
 beforeEach(() => {
   globalThis.localStorage?.removeItem('unshackle:sidepanel:activeTab');
@@ -87,21 +159,21 @@ test('renders runtime results and updates after removing the last item', async (
   expect(screen.getByText(/no media detected on this page/i)).toBeInTheDocument();
 });
 
-test('renders bottom nav with history, current, and settings icons', () => {
+test('renders bottom nav with downloads, current, and settings icons', () => {
   render(<SidePanelApp />);
-  expect(screen.getByRole('button', { name: /history/i })).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: /downloads/i })).toBeInTheDocument();
   expect(screen.getByRole('button', { name: /current/i })).toBeInTheDocument();
   expect(screen.getByRole('button', { name: /settings/i })).toBeInTheDocument();
 });
 
-test('opens the queue tab from the flat bottom nav', async () => {
+test('opens the downloads tab from the bottom nav', async () => {
   const user = userEvent.setup();
 
   render(<SidePanelApp />);
-  await user.click(screen.getByRole('button', { name: /queue/i }));
+  await user.click(screen.getByRole('button', { name: /downloads/i }));
 
   expect(
-    screen.getByRole('tablist', { name: /queue status/i }),
+    screen.getByRole('tablist', { name: /download status/i }),
   ).toBeInTheDocument();
   expect(screen.getByRole('tab', { name: /active 0/i })).toBeInTheDocument();
 });
@@ -111,23 +183,32 @@ test('persists active tab to localStorage', async () => {
   globalThis.localStorage.removeItem('unshackle:sidepanel:activeTab');
 
   render(<SidePanelApp />);
-  await user.click(screen.getByRole('button', { name: /queue/i }));
+  await user.click(screen.getByRole('button', { name: /downloads/i }));
 
   expect(globalThis.localStorage.getItem('unshackle:sidepanel:activeTab')).toBe(
-    'queue',
+    'downloads',
   );
 });
 
 test('reads persisted active tab on mount', () => {
+  globalThis.localStorage.setItem('unshackle:sidepanel:activeTab', 'downloads');
+
+  render(<SidePanelApp />);
+
+  expect(screen.getByRole('tablist', { name: /download status/i })).toBeInTheDocument();
+  globalThis.localStorage.removeItem('unshackle:sidepanel:activeTab');
+});
+
+test('migrates old history/queue tab values to downloads', () => {
   globalThis.localStorage.setItem('unshackle:sidepanel:activeTab', 'history');
 
   render(<SidePanelApp />);
 
-  expect(screen.getByText(/no downloads yet/i)).toBeInTheDocument();
+  expect(screen.getByRole('tablist', { name: /download status/i })).toBeInTheDocument();
   globalThis.localStorage.removeItem('unshackle:sidepanel:activeTab');
 });
 
-test('renders filter input with multi-field chips in results view', () => {
+test('renders media cards directly in results view without filter UI', () => {
   usePanelStore.setState({
     surfaceState: 'results',
     mediaItems: [
@@ -146,9 +227,70 @@ test('renders filter input with multi-field chips in results view', () => {
 
   render(<SidePanelApp />);
 
-  expect(
-    screen.getByRole('searchbox', { name: /filter streams/i }),
-  ).toBeInTheDocument();
-  expect(screen.getByRole('button', { name: /^Filename$/i })).toBeInTheDocument();
-  expect(screen.getByText(/1 of 1 streams/i)).toBeInTheDocument();
+  expect(screen.getByText('Hello.mp4')).toBeInTheDocument();
+  expect(screen.queryByRole('searchbox', { name: /filter streams/i })).not.toBeInTheDocument();
+});
+
+test('labels HLS browser fallback as raw TS instead of MP4', async () => {
+  const runtimeClient = buildRuntimeClient([
+    buildCandidate({
+      id: 'hls-raw',
+      protocol: 'hls',
+      displayName: 'Raw HLS stream',
+      sourceUrl: undefined,
+      manifestUrl: 'https://cdn.example.com/master.m3u8',
+      mimeType: 'application/vnd.apple.mpegurl',
+      fileExtensionHint: undefined,
+    }),
+  ]);
+
+  render(<SidePanelApp activeTabId={7} runtimeClient={runtimeClient} />);
+
+  expect(await screen.findByText('Raw HLS stream')).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: /save raw ts/i })).toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: /download mp4/i })).not.toBeInTheDocument();
+});
+
+test('labels DASH browser fallback as raw segments instead of MP4', async () => {
+  const runtimeClient = buildRuntimeClient([
+    buildCandidate({
+      id: 'dash-raw',
+      protocol: 'dash',
+      displayName: 'Raw DASH stream',
+      sourceUrl: undefined,
+      manifestUrl: 'https://cdn.example.com/manifest.mpd',
+      mimeType: 'application/dash+xml',
+      fileExtensionHint: undefined,
+    }),
+  ]);
+
+  render(<SidePanelApp activeTabId={7} runtimeClient={runtimeClient} />);
+
+  expect(await screen.findByText('Raw DASH stream')).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: /save raw segments/i })).toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: /download mp4/i })).not.toBeInTheDocument();
+});
+
+test('does not show a broken preview spinner when browser preview is unavailable', async () => {
+  const user = userEvent.setup();
+  const runtimeClient = buildRuntimeClient([
+    buildCandidate({
+      id: 'hls-preview-unavailable',
+      protocol: 'hls',
+      displayName: 'HLS with no generated preview',
+      sourceUrl: undefined,
+      manifestUrl: 'https://cdn.example.com/master.m3u8',
+      posterUrl: undefined,
+      thumbnails: undefined,
+    }),
+  ]);
+
+  render(<SidePanelApp activeTabId={7} runtimeClient={runtimeClient} />);
+
+  expect(await screen.findByText('HLS with no generated preview')).toBeInTheDocument();
+  await user.hover(screen.getByTestId('media-thumb'));
+
+  expect(screen.getByText(/preview unavailable/i)).toBeInTheDocument();
+  expect(screen.queryByText(/loading/i)).not.toBeInTheDocument();
+  expect(runtimeClient.getPreviewAsset).not.toHaveBeenCalled();
 });

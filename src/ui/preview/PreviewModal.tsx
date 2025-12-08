@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
-import { TrimControls } from '@/src/ui/media/TrimControls';
+import { VideoPlayer } from './VideoPlayer';
+import { TrimSlider } from './TrimSlider';
 import type { MediaTrimSelection } from '@/src/types/media';
 import type { StreamProtocol } from '@/video_downloader_types_skeleton';
 import {
@@ -16,9 +17,7 @@ export interface DownloadedRange {
 }
 
 export interface LiveSegmentSource {
-  /** MIME type for SourceBuffer creation when MediaSource is available. */
   mimeType: string;
-  /** Async iterator of completed segment bytes. Implementation lives in run-hls-job.ts wiring. */
   segments: AsyncIterable<Uint8Array>;
 }
 
@@ -29,12 +28,16 @@ interface PreviewModalProps {
   protocol: StreamProtocol;
   restrictedMessage?: string;
   nativeHelperAvailable?: boolean;
+  browserRecordingAvailable?: boolean;
   codecInfo?: CodecInfo | null;
   downloadedRanges?: DownloadedRange[];
   totalDurationSec?: number;
   liveSegmentSource?: LiveSegmentSource;
   onClose: () => void;
-  onDownload: (trim: MediaTrimSelection | null) => void;
+  onDownload: (
+    trim: MediaTrimSelection | null,
+    options?: { outputKind: 'webm' },
+  ) => void;
   onDurationResolved?: (durationSec: number) => void;
 }
 
@@ -42,27 +45,20 @@ function previewNote(
   protocol: StreamProtocol,
   restrictedMessage?: string,
   nativeHelperAvailable = false,
+  directOutputMode: 'original' | 'webm' = 'original',
 ): string {
-  if (restrictedMessage) {
-    return restrictedMessage;
-  }
-
+  if (restrictedMessage) return restrictedMessage;
   if (protocol === 'direct') {
+    if (directOutputMode === 'webm') {
+      return 'Browser WebM clip will be recorded without the native helper.';
+    }
     if (nativeHelperAvailable) {
       return 'Native helper is required for direct trim and will export the selected range.';
     }
-
-    return 'Trim is not supported for direct file downloads yet; the full file will be downloaded.';
+    return 'Native required for original trim; full direct download is available without trimming.';
   }
-
-  if (protocol === 'dash') {
-    return 'DASH preview may not play in the side panel; trim applies during muxing.';
-  }
-
-  if (protocol === 'hls') {
-    return 'HLS preview may require the offscreen preview host; trim applies during muxing.';
-  }
-
+  if (protocol === 'dash') return 'DASH preview may not play in the side panel; trim applies during muxing.';
+  if (protocol === 'hls') return 'HLS preview may require the offscreen preview host; trim applies during muxing.';
   return '';
 }
 
@@ -70,34 +66,24 @@ function buildRangeGradient(
   ranges: DownloadedRange[] | undefined,
   totalSec: number | undefined,
 ): string | undefined {
-  if (!ranges || ranges.length === 0 || !totalSec || totalSec <= 0) {
-    return undefined;
-  }
-
+  if (!ranges || ranges.length === 0 || !totalSec || totalSec <= 0) return undefined;
   const stops: string[] = [];
   let cursor = 0;
   for (const range of [...ranges].sort((a, b) => a.start - b.start)) {
     const startPct = Math.max(0, Math.min(100, (range.start / totalSec) * 100));
     const endPct = Math.max(0, Math.min(100, (range.end / totalSec) * 100));
-    if (startPct > cursor) {
-      stops.push(`var(--surface-variant) ${cursor}% ${startPct}%`);
-    }
+    if (startPct > cursor) stops.push(`var(--surface-variant) ${cursor}% ${startPct}%`);
     stops.push(`var(--secondary) ${startPct}% ${endPct}%`);
     cursor = endPct;
   }
-  if (cursor < 100) {
-    stops.push(`var(--surface-variant) ${cursor}% 100%`);
-  }
+  if (cursor < 100) stops.push(`var(--surface-variant) ${cursor}% 100%`);
   return `linear-gradient(to right, ${stops.join(', ')})`;
 }
 
 function ReloadIcon() {
   return (
     <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
-      <path
-        fill="currentColor"
-        d="M8 3V1L4 4l4 3V5a3 3 0 1 1-3 3H3a5 5 0 1 0 5-5z"
-      />
+      <path fill="currentColor" d="M8 3V1L4 4l4 3V5a3 3 0 1 1-3 3H3a5 5 0 1 0 5-5z" />
     </svg>
   );
 }
@@ -109,6 +95,7 @@ export function PreviewModal({
   protocol,
   restrictedMessage,
   nativeHelperAvailable = false,
+  browserRecordingAvailable = false,
   codecInfo = null,
   downloadedRanges,
   totalDurationSec,
@@ -118,55 +105,52 @@ export function PreviewModal({
   onDurationResolved,
 }: PreviewModalProps) {
   const [trim, setTrim] = useState<MediaTrimSelection | null>(null);
-  const trimEnabled = protocol === 'hls' || protocol === 'dash' || (protocol === 'direct' && nativeHelperAvailable);
-  const note = previewNote(protocol, restrictedMessage, nativeHelperAvailable);
+  const [videoDuration, setVideoDuration] = useState(0);
+  const [directOutputMode, setDirectOutputMode] = useState<'original' | 'webm'>('original');
+  const trimEnabled =
+    protocol === 'hls' ||
+    protocol === 'dash' ||
+    (protocol === 'direct' &&
+      (nativeHelperAvailable || (browserRecordingAvailable && directOutputMode === 'webm')));
+  const note = previewNote(
+    protocol,
+    restrictedMessage,
+    nativeHelperAvailable,
+    directOutputMode,
+  );
 
   const playerProtocol: 'hls' | 'dash' | 'direct' =
     protocol === 'hls' || protocol === 'dash' || protocol === 'direct' ? protocol : 'direct';
 
+  function handleDuration(sec: number) {
+    setVideoDuration(sec);
+    onDurationResolved?.(sec);
+  }
+
   const { videoRef, reload, key } = usePreviewPlayer({
     sourceUrl,
     protocol: playerProtocol,
-    onDurationResolved,
+    onDurationResolved: handleDuration,
   });
 
   useEffect(() => {
-    if (!open) {
-      return undefined;
-    }
-
+    if (!open) return undefined;
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        onClose();
-      }
+      if (event.key === 'Escape') onClose();
     };
-
     document.addEventListener('keydown', onKeyDown);
-
     return () => document.removeEventListener('keydown', onKeyDown);
   }, [onClose, open]);
 
   const codecUnsupported = useMemo(() => {
-    if (!codecInfo) {
-      return false;
-    }
-    if (typeof document === 'undefined') {
-      return false;
-    }
+    if (!codecInfo || typeof document === 'undefined') return false;
     const probe = document.createElement('video');
     return !isCodecSupported(codecInfo, (mime) => probe.canPlayType(mime) as '' | 'maybe' | 'probably');
   }, [codecInfo]);
 
   const rangeGradient = buildRangeGradient(downloadedRanges, totalDurationSec);
 
-  // Live MediaSource wiring: feature-detected. Real bytes-into-SourceBuffer integration
-  // lands in run-hls-job.ts; UI honors progress via downloadedRanges.
-  // Documented stub: when liveSegmentSource is provided, the orchestrator pushes appended
-  // buffers and emits progress events that update downloadedRanges externally.
-
-  if (!open) {
-    return null;
-  }
+  if (!open) return null;
 
   return (
     <div className="preview-modal__overlay" onMouseDown={onClose}>
@@ -203,15 +187,13 @@ export function PreviewModal({
           </div>
         </header>
 
-        <video
-          key={key}
-          ref={videoRef}
-          className="preview-modal__video"
-          aria-label="Preview video"
-          src={sourceUrl}
-          controls
-          preload="metadata"
-        />
+        <div className="preview-modal__player">
+          <VideoPlayer
+            videoRef={videoRef}
+            sourceUrl={sourceUrl}
+            playerKey={key}
+          />
+        </div>
 
         {rangeGradient ? (
           <div
@@ -226,8 +208,36 @@ export function PreviewModal({
 
         {note ? <p className="preview-modal__note">{note}</p> : null}
 
-        <TrimControls
+        {protocol === 'direct' && browserRecordingAvailable ? (
+          <fieldset className="preview-modal__output-mode">
+            <legend className="preview-modal__output-mode-title">Trim output</legend>
+            <label className="preview-modal__output-mode-option">
+              <input
+                type="radio"
+                name="direct-trim-output"
+                checked={directOutputMode === 'original'}
+                onChange={() => {
+                  setDirectOutputMode('original');
+                  setTrim(null);
+                }}
+              />
+              Original trim
+            </label>
+            <label className="preview-modal__output-mode-option">
+              <input
+                type="radio"
+                name="direct-trim-output"
+                checked={directOutputMode === 'webm'}
+                onChange={() => setDirectOutputMode('webm')}
+              />
+              Browser WebM clip
+            </label>
+          </fieldset>
+        ) : null}
+
+        <TrimSlider
           enabled={trimEnabled}
+          duration={videoDuration}
           value={trim}
           onChange={setTrim}
         />
@@ -236,7 +246,13 @@ export function PreviewModal({
           <button
             type="button"
             className="preview-modal__download"
-            onClick={() => onDownload(trim)}
+            onClick={() => {
+              if (protocol === 'direct' && directOutputMode === 'webm') {
+                onDownload(trim, { outputKind: 'webm' });
+                return;
+              }
+              onDownload(trim);
+            }}
           >
             Download Selection
           </button>

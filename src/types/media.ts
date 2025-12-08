@@ -64,5 +64,7 @@ export interface DetectedMedia {
   protocol?: StreamProtocol;
   status?: CandidateStatus;
   protection?: ProtectionInfo;
+  previewUnavailableReason?: string;
+  thumbnailUnavailableReason?: string;
   primaryAction?: MediaPrimaryAction;
 }

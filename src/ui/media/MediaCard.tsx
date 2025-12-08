@@ -5,7 +5,6 @@ import { ProtectedActionGate } from '@/src/ui/protected/ProtectedActionGate';
 import { OverflowMenu, type MenuAction } from '@/src/ui/shared/OverflowMenu';
 import { DuplicateBadge } from './DuplicateBadge';
 import { TrackPicker } from './TrackPicker';
-import { TrimControls } from './TrimControls';
 import { VariantPicker } from './VariantPicker';
 import './MediaCard.css';
 
@@ -17,7 +16,6 @@ interface MediaCardProps {
   onQualityChange: (quality: string) => void;
   onAudioTrackChange?: (trackIds: string[]) => void;
   onSubtitleTrackChange?: (trackIds: string[]) => void;
-  onTrimChange?: (trim: DetectedMedia['trim']) => void;
   onPreviewHover?: () => void;
   onCopyUrl?: (url: string) => void;
   onCopyFilename?: () => void;
@@ -81,7 +79,6 @@ export function MediaCard({
   onQualityChange,
   onAudioTrackChange = () => {},
   onSubtitleTrackChange = () => {},
-  onTrimChange = () => {},
   onPreviewHover = () => {},
   onCopyUrl,
   onCopyFilename,
@@ -100,7 +97,6 @@ export function MediaCard({
   };
   const isBlocked = primaryAction.kind === 'blocked';
   const protectedLabel = protectionBadge(media);
-  const trimEnabled = media.protocol === 'hls' || media.protocol === 'dash';
   const [hoveringThumb, setHoveringThumb] = useState(false);
   const hoverRequested = useRef(false);
   const [filenameTooltipVisible, setFilenameTooltipVisible] = useState(false);
@@ -140,6 +136,9 @@ export function MediaCard({
 
   function handleThumbEnter() {
     setHoveringThumb(true);
+    if (media.previewUnavailableReason) {
+      return;
+    }
     if (!hoverRequested.current) {
       hoverRequested.current = true;
       onPreviewHover();
@@ -212,7 +211,11 @@ export function MediaCard({
           onMouseEnter={handleThumbEnter}
           onMouseLeave={handleThumbLeave}
         >
-          {hoveringThumb && media.previewAssetUrl ? (
+          {hoveringThumb && media.previewUnavailableReason ? (
+            <span className="media-card__preview-loading">
+              {media.previewUnavailableReason}
+            </span>
+          ) : hoveringThumb && media.previewAssetUrl ? (
             <video
               className="media-card__thumb-video"
               aria-label="Hover preview"
@@ -335,11 +338,6 @@ export function MediaCard({
           selectedIds={media.selectedSubtitleTrackIds ?? []}
           onChange={onSubtitleTrackChange}
         />
-        <TrimControls
-          enabled={trimEnabled}
-          value={media.trim ?? null}
-          onChange={onTrimChange}
-        />
       </div>
 
       <div className="media-card__actions">
@@ -352,9 +350,10 @@ export function MediaCard({
         <div className="media-card__buttons">
           <button
             className="media-card__icon-btn"
-            onClick={onPreview}
+            onClick={media.previewUnavailableReason ? undefined : onPreview}
             aria-label="Preview"
-            title="Preview"
+            title={media.previewUnavailableReason ?? 'Preview'}
+            disabled={Boolean(media.previewUnavailableReason)}
           >
             <svg viewBox="0 0 20 20" width="16" height="16" fill="currentColor">
               <path d="M10 4.5C5.8 4.5 2.3 7.3 1 10c1.3 2.7 4.8 5.5 9 5.5s7.7-2.8 9-5.5c-1.3-2.7-4.8-5.5-9-5.5zm0 9a3.5 3.5 0 110-7 3.5 3.5 0 010 7zm0-5.5a2 2 0 100 4 2 2 0 000-4z" />
