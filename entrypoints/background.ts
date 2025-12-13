@@ -6,6 +6,7 @@ import { createDownloadController } from '@/src/background/jobs/download-control
 import { createDownloadQueue } from '@/src/background/jobs/download-queue';
 import { createHistoryStore } from '@/src/background/jobs/history-store';
 import { createJobStore } from '@/src/background/jobs/job-store';
+import { createOffscreenManager } from '@/src/background/offscreen/offscreen-manager';
 import { createNotificationManager } from '@/src/background/notifications/notification-manager';
 import { createDetectionNotifier } from '@/src/background/notifications/detection-notifier';
 import { saveDetectionsOnTabClose } from '@/src/background/state/previous-detections';
@@ -41,6 +42,7 @@ export function initializeBackgroundShell() {
   const tabSnapshots = createTabSnapshotStore();
   const tabVideoStatus = createTabVideoStatusStore();
   const nativeClient = createNativeFfmpegClient();
+  const offscreenManager = createOffscreenManager();
   const downloadController = createDownloadController({
     downloadFile: async (candidate, job) => {
       const probe = probeDirectMedia(candidate);
@@ -135,13 +137,13 @@ export function initializeBackgroundShell() {
     ensurePreviewClip: (candidate, options) =>
       ensurePreviewClip(candidate, {
         nativeClient,
-        offscreenRecord: (message) => chrome.runtime.sendMessage(message),
+        offscreenRecord: (message) => offscreenManager.sendMessage(message),
         ...options,
       }),
     ensureThumbnail: (candidate) =>
       ensureNativeThumbnail(candidate, {
         nativeClient,
-        offscreenCapture: (message) => chrome.runtime.sendMessage(message),
+        offscreenCapture: (message) => offscreenManager.sendMessage(message),
       }),
   });
   const autoScan = createAutoScanController({
