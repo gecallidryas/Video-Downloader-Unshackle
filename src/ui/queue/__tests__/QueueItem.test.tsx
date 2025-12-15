@@ -91,4 +91,56 @@ describe('QueueItem overflow menu', () => {
 
     expect(onCopyCommand).toHaveBeenCalledWith('yt-dlp', 'job-1');
   });
+
+  test('renders raw HLS output filename, MIME type, and notes', () => {
+    render(
+      <QueueItem
+        item={{
+          ...baseItem,
+          outputLabel: 'stream.ts',
+          outputMimeType: 'video/mp2t',
+          notes: ['Browser raw TS export; mux.js is deferred.'],
+        }}
+        onAction={() => {}}
+      />,
+    );
+
+    expect(screen.getByText('stream.ts')).toBeInTheDocument();
+    expect(screen.getByText('video/mp2t')).toBeInTheDocument();
+    expect(screen.getByText(/browser raw ts export/i)).toBeInTheDocument();
+  });
+
+  test('renders raw DASH and browser-recorded trim outputs honestly', () => {
+    const { rerender } = render(
+      <QueueItem
+        item={{
+          ...baseItem,
+          outputLabel: 'segments.bin',
+          outputMimeType: 'application/octet-stream',
+          notes: ['Raw DASH segments; native or muxing is required for a final MP4.'],
+        }}
+        onAction={() => {}}
+      />,
+    );
+
+    expect(screen.getByText('segments.bin')).toBeInTheDocument();
+    expect(screen.getByText('application/octet-stream')).toBeInTheDocument();
+    expect(screen.getByText(/raw dash segments/i)).toBeInTheDocument();
+
+    rerender(
+      <QueueItem
+        item={{
+          ...baseItem,
+          outputLabel: 'Direct video.trim.webm',
+          outputMimeType: 'video/webm',
+          notes: ['Browser-recorded WebM clip; not an original-quality stream copy.'],
+        }}
+        onAction={() => {}}
+      />,
+    );
+
+    expect(screen.getByText('Direct video.trim.webm')).toBeInTheDocument();
+    expect(screen.getByText('video/webm')).toBeInTheDocument();
+    expect(screen.getByText(/browser-recorded webm clip/i)).toBeInTheDocument();
+  });
 });

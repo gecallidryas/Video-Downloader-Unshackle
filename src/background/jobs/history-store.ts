@@ -8,6 +8,8 @@ import type {
 export interface DownloadHistoryRecord extends HistoryRecord {
   failureCode?: JobFailure['code'];
   errorMessage?: string;
+  outputMimeType?: string;
+  outputNotes?: string[];
 }
 
 export interface HistoryStore {
@@ -36,6 +38,8 @@ export function historyRecordFromCompletedJob(
     pageTitle: candidate.pageTitle,
     status: 'completed',
     fileName: job.output?.fileName,
+    outputMimeType: job.output?.mimeType,
+    outputNotes: job.output?.notes,
     fileSizeBytes: job.output?.sizeBytes,
     createdAt: job.createdAt,
     updatedAt: now(),

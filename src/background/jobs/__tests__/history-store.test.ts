@@ -89,7 +89,18 @@ describe('history store', () => {
 
   test('creates completed history records from direct jobs', () => {
     expect(
-      historyRecordFromCompletedJob(buildCandidate(), buildJob(), () => 300),
+      historyRecordFromCompletedJob(
+        buildCandidate(),
+        buildJob({
+          output: {
+            fileName: 'stream.ts',
+            mimeType: 'video/mp2t',
+            sizeBytes: 123,
+            notes: ['Browser raw TS export.'],
+          },
+        }),
+        () => 300,
+      ),
     ).toEqual({
       id: 'history-job-1',
       candidateId: 'candidate-1',
@@ -99,7 +110,9 @@ describe('history store', () => {
       pageUrl: 'https://example.com/watch',
       pageTitle: 'Example page',
       status: 'completed',
-      fileName: 'video.mp4',
+      fileName: 'stream.ts',
+      outputMimeType: 'video/mp2t',
+      outputNotes: ['Browser raw TS export.'],
       fileSizeBytes: 123,
       createdAt: 100,
       updatedAt: 300,

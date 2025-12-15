@@ -11,6 +11,8 @@ export interface QueueViewItem {
   statusText?: string;
   error?: string;
   outputLabel?: string;
+  outputMimeType?: string;
+  notes?: string[];
 }
 
 export type QueueAction =
@@ -97,7 +99,21 @@ export function QueueItem({
           {statusLabel(item)}
         </div>
         {item.outputLabel ? (
-          <div className="queue-item__output">{item.outputLabel}</div>
+          <div className="queue-item__output">
+            <span>{item.outputLabel}</span>
+            {item.outputMimeType ? (
+              <span className="queue-item__output-mime">{item.outputMimeType}</span>
+            ) : null}
+          </div>
+        ) : null}
+        {item.notes?.length ? (
+          <div className="queue-item__notes">
+            {item.notes.map((note) => (
+              <div key={note} className="queue-item__note">
+                {note}
+              </div>
+            ))}
+          </div>
         ) : null}
         {item.status === 'running' ? (
           <div

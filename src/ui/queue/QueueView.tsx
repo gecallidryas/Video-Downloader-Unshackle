@@ -7,44 +7,68 @@ import {
 } from './QueueItem';
 import './QueueView.css';
 
-type QueueTab = 'pending' | 'active' | 'failed' | 'completed';
+type DownloadsTab = 'active' | 'failed' | 'completed';
+
+export interface HistoryRow {
+  id: string;
+  displayName: string;
+  protocol: string;
+  status: string;
+  mediaKind?: string;
+  fileName?: string;
+  outputMimeType?: string;
+  outputNotes?: string[];
+  fileSizeBytes?: number;
+  pageTitle?: string;
+  createdAt: number;
+}
 
 interface QueueViewProps {
   items: QueueViewItem[];
+  historyRecords?: HistoryRow[];
   onAction: (action: QueueAction, id: string) => void;
 }
 
-const tabStatus: Record<QueueTab, QueueViewStatus[]> = {
-  pending: ['pending'],
-  active: ['running', 'paused'],
+const tabStatus: Record<'active' | 'failed', QueueViewStatus[]> = {
+  active: ['running', 'paused', 'pending'],
   failed: ['failed'],
-  completed: ['completed'],
 };
 
-function tabCount(items: QueueViewItem[], tab: QueueTab): number {
+function tabCount(items: QueueViewItem[], tab: 'active' | 'failed'): number {
   const statuses = new Set(tabStatus[tab]);
   return items.filter((item) => statuses.has(item.status)).length;
 }
 
-export function QueueView({ items, onAction }: QueueViewProps) {
-  const [activeTab, setActiveTab] = useState<QueueTab>('active');
+function formatBytes(bytes?: number): string {
+  if (!bytes) return '';
+  if (bytes >= 1_000_000_000) return `${(bytes / 1_000_000_000).toFixed(1)} GB`;
+  if (bytes >= 1_000_000) return `${(bytes / 1_000_000).toFixed(0)} MB`;
+  return `${(bytes / 1_000).toFixed(0)} KB`;
+}
+
+function formatDate(ts: number): string {
+  const d = new Date(ts);
+  return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+}
+
+export function QueueView({ items, historyRecords = [], onAction }: QueueViewProps) {
+  const [activeTab, setActiveTab] = useState<DownloadsTab>('active');
   const counts = useMemo(
     () => ({
-      pending: tabCount(items, 'pending'),
       active: tabCount(items, 'active'),
       failed: tabCount(items, 'failed'),
-      completed: tabCount(items, 'completed'),
+      completed: historyRecords.length,
     }),
-    [items],
+    [items, historyRecords],
   );
-  const visibleItems = items.filter((item) =>
-    tabStatus[activeTab].includes(item.status),
-  );
+  const visibleItems = activeTab !== 'completed'
+    ? items.filter((item) => tabStatus[activeTab].includes(item.status))
+    : [];
 
   return (
-    <section className="queue-view" aria-label="Download queue">
-      <div className="queue-view__tabs" role="tablist" aria-label="Queue status">
-        {(['pending', 'active', 'failed', 'completed'] as QueueTab[]).map((tab) => (
+    <section className="queue-view" aria-label="Downloads">
+      <div className="queue-view__tabs" role="tablist" aria-label="Download status">
+        {(['active', 'failed', 'completed'] as DownloadsTab[]).map((tab) => (
           <button
             key={tab}
             type="button"
@@ -53,19 +77,55 @@ export function QueueView({ items, onAction }: QueueViewProps) {
             className={`queue-view__tab ${activeTab === tab ? 'queue-view__tab--active' : ''}`}
             onClick={() => setActiveTab(tab)}
           >
-            {tab === 'active' ? 'Active' : tab[0].toUpperCase() + tab.slice(1)}{' '}
-            {counts[tab]}
+            {tab[0].toUpperCase() + tab.slice(1)} {counts[tab]}
           </button>
         ))}
       </div>
 
       <div className="queue-view__list">
-        {visibleItems.length > 0 ? (
+        {activeTab === 'completed' ? (
+          historyRecords.length > 0 ? (
+            historyRecords.map((record) => (
+              <div key={record.id} className="queue-item">
+                <div className="queue-item__main">
+                  <div className="queue-item__title">{record.displayName}</div>
+                  <div className="queue-item__status">
+                    <span className="queue-item__chip">{record.protocol.toUpperCase()}</span>
+                    {record.fileSizeBytes ? ` ${formatBytes(record.fileSizeBytes)}` : ''}
+                  </div>
+                  <div className="queue-item__output">
+                    {record.fileName ? `${record.fileName} ` : ''}
+                    {record.outputMimeType ? (
+                      <span className="queue-item__output-mime">
+                        {record.outputMimeType}
+                      </span>
+                    ) : null}
+                    {record.pageTitle ? ` ${record.pageTitle} · ` : ' '}
+                    {formatDate(record.createdAt)}
+                  </div>
+                  {record.outputNotes?.length ? (
+                    <div className="queue-item__notes">
+                      {record.outputNotes.map((note) => (
+                        <div key={note} className="queue-item__note">
+                          {note}
+                        </div>
+                      ))}
+                    </div>
+                  ) : null}
+                </div>
+              </div>
+            ))
+          ) : (
+            <div className="queue-view__empty">No completed downloads yet.</div>
+          )
+        ) : visibleItems.length > 0 ? (
           visibleItems.map((item) => (
             <QueueItem key={item.id} item={item} onAction={onAction} />
           ))
         ) : (
-          <div className="queue-view__empty">No queue items in this state.</div>
+          <div className="queue-view__empty">
+            {activeTab === 'active' ? 'No active downloads.' : 'No failed downloads.'}
+          </div>
         )}
       </div>
     </section>

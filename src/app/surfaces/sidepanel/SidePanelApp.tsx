@@ -498,6 +498,8 @@ function DownloadsPanel() {
           progressPct: job.progressPct,
           statusText: queueStatusText(job),
           outputLabel: item?.format ?? job.output?.fileName,
+          outputMimeType: job.output?.mimeType,
+          notes: job.output?.notes,
         };
       });
       const localQueueItems: QueueViewItem[] = mediaItems
@@ -523,6 +525,9 @@ function DownloadsPanel() {
       protocol: r.protocol,
       status: r.status,
       mediaKind: r.mediaKind,
+      fileName: r.fileName,
+      outputMimeType: r.outputMimeType,
+      outputNotes: r.outputNotes,
       fileSizeBytes: r.fileSizeBytes,
       pageTitle: r.pageTitle,
       createdAt: r.createdAt,
