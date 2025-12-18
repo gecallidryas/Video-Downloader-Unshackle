@@ -11,10 +11,10 @@ credential replay, and bypass-oriented extraction out of scope.
 | `activeTab` | Current-tab inspection and host-access repair flows | Allows explicit user-gesture access to the active page without assuming permanent origin access. |
 | `tabs` | Side panel tab resolution and tab lifecycle cleanup | The side panel needs the active tab id, and the background worker clears tab-scoped candidate state on navigation/removal. |
 | `webRequest` | Passive request journal | Detects clear direct media and HLS/DASH manifests from tab network activity. Request bodies and sensitive headers are not persisted. |
-| `downloads` | Direct clear-media export | Starts browser-managed downloads for eligible clear direct candidates. |
+| `downloads` | Browser export path | Starts browser-managed downloads for eligible clear direct candidates, raw HLS `.ts`, raw DASH `.m4s`/`.bin`, and browser-recorded WebM trim clips. |
 | `storage` | Settings, job/history state, and plugin policy data | Persists user settings and extension-owned state only. |
 | `sidePanel` | Primary extension UI | Hosts the main downloader surface. |
-| `offscreen` | Preview/media helper page | Creates a hidden extension document for DOM/media tasks that cannot run in the MV3 service worker. |
+| `offscreen` | Preview/media helper page | Creates a hidden extension document for browser-only direct preview recording, direct thumbnail frame capture, and explicit WebM trim recording that cannot run in the MV3 service worker. |
 | `scripting` | Active-tab and future repair flows | Supports explicit user-driven injection when runtime access needs to be repaired. |
 | `contextMenus` | User-driven download shortcuts | Adds safe context-menu entries controlled by extension settings. |
 | `declarativeContent` | Future action enablement rules | Reserved for showing/enabling extension affordances without reading page content first. |
@@ -39,7 +39,7 @@ back as optional host permissions at the same time.
 
 | Permission | Status | Rationale |
 | --- | --- | --- |
-| `nativeMessaging` | Optional user-enabled helper | Required only when the user installs/enables the native ffmpeg helper for native trim, export, thumbnail extraction, and preview clip generation. It is not required for detection or normal browser-managed direct downloads. |
+| `nativeMessaging` | Optional user-enabled helper | Required only when the user installs/enables the native ffmpeg helper for native trim, muxed export, HLS/DASH generated preview clips, and HLS/DASH generated thumbnails. It is not required for detection, direct browser downloads, raw HLS/DASH fallback exports, direct thumbnail capture, direct preview recording, or browser-recorded WebM trim clips. |
 
 ## Content Security Policy
 
@@ -51,9 +51,11 @@ The manifest includes:
 }
 ```
 
-The native FFmpeg helper is the supported trim/export/preview media engine, so
-extension pages do not require `'wasm-unsafe-eval'` for native media work. Future
-WASM features must justify any CSP expansion with a separate plan and tests.
+The native FFmpeg helper is the supported mux/original-quality media engine, and
+the browser fallback path uses extension pages, Blob downloads, canvas capture,
+and MediaRecorder. Extension pages do not require `'wasm-unsafe-eval'` for this
+work. Future WASM features must justify any CSP expansion with a separate plan
+and tests.
 
 ## Explicit Boundaries
 

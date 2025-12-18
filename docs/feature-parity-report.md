@@ -58,7 +58,7 @@ Recommended direction: keep Unshackle as the typed all-in-one extension, use Uni
 | AES-128 clear-key HLS | Present | Present | Present | Keep clear-key only; never extend into DRM/key extraction. |
 | DRM/protected handling | Detects/protects in several paths; default setting needs review | Broad detection and mixed policy defaults | Mostly blocklist/compliance, not DRM-centric | Release posture should be safe-by-default. |
 | Queue/history | Present | Present | No persistent queue/history, job window only | Unshackle is stronger. |
-| Output conversion | Native FFmpeg helper, MP4/WebM/audio/trim paths plus browser raw HLS/DASH and explicit direct WebM trim recording | FFmpeg/offscreen baseline | Downloads raw stream/media; no FFmpeg mux UI | Keep native helper primary; browser fallback must label raw outputs honestly. |
+| Output conversion | Native FFmpeg helper, MP4/WebM/audio/trim paths plus browser raw HLS/DASH and explicit direct WebM trim recording | FFmpeg/offscreen baseline | Downloads raw stream/media; no FFmpeg mux UI | Native helper remains optional; browser fallback labels raw `.ts`, `.m4s`, `.bin`, and `.webm` outputs honestly. |
 | Preview | Native preview/thumbnail services with direct offscreen preview and thumbnail fallback when native is unavailable; HLS/DASH generated assets remain native-required without static thumbnails | Preview/thumbnail baseline | MSE/MP4Box preview while downloading | Live-stream's progressive preview concept is useful but should be optional. |
 | Context menus | Present | Present | Strong: link, media, selected-link extraction, clear list | Add selected-link extraction parity if not already wired. |
 | Remote policy/blocklist | Strict remote config and blocklist tests | Remote config baseline | Remote/cacheable blocked stream list with owner request process | Adopt owner-request blocklist workflow semantics, not unsigned remote behavior. |
@@ -225,7 +225,7 @@ These are the highest-value enrichment items from the two references, ordered by
 | P2 | Performance/player evidence scanners | live-stream `extract.js` | `src/content/dom/*`, `src/core/candidates/*` | Done as advanced-mode-gated extractors; candidate ingestion wiring can stay opt-in. |
 | P2 | Opt-in blob manifest scanner | live-stream blob detector | dedicated content script/advanced setting | Done as an advanced-mode DOM diagnostic for blob HLS/DASH MIME hints; deeper Blob proxying remains out of default scope. |
 | P2 | Progressive preview diagnostics | live-stream MP4Box/MSE plugins | `src/core/preview/*`, `src/ui/preview/*` | Native preview may be enough; use for advanced streaming diagnostics. |
-| P2 | Direct-to-disk/browser raw save mode | live-stream File System Access path | `src/core/export/*`, UI settings | Useful fallback when native helper is absent. |
+| P2 | Direct-to-disk/browser raw save mode | live-stream File System Access path | `src/core/export/*`, UI settings | Browser fallback now covers direct downloads plus raw HLS/DASH Blob exports; streaming write feature detection remains item 74. |
 | P3 | Owner exclusion process | live-stream README/blocklist | `docs/provider-policy.md`, release docs | Helps product credibility and abuse response. |
 | P3 | Firefox portability notes | live-stream manifest/worker branches | docs/roadmap | Future-only unless target expands beyond Chrome. |
 
@@ -425,7 +425,7 @@ Status meanings in this section:
 | UI | Sticky footer actions in playlist/downloads | PlaylistView/DownloadsView | present/partial | Useful for popup; side panel can adapt. |
 | UI | Inline destructive confirmation | InlineConfirm | present/partial | Ensure cleanup/delete use confirmation. |
 | UI | Job expandable rows | JobView | present/partial | Unshackle queue cards likely similar. |
-| UI | Filter downloads by filename | DownloadsController | done | `FilterInput` filters detected streams case-insensitively with debounce; multi-field chip selector also supports tab title, type, and hostname. |
+| UI | Filter downloads by filename | DownloadsController | not-scope | Removed from Unshackle side panel; small detected lists now render directly without a filter menu. |
 | UI | Storage footer in downloads | DownloadsView | done | Unshackle wires `StorageFooter` to the queue tab using `navigator.storage.estimate()` with level-tier coloring. |
 | UI | Settings language list with ISO-ish codes | SettingsView | done | `LanguagePicker.tsx` exposes ISO 639-1 presets for en/es/fr/de/ja/ko/zh/pt/ru/ar/hi/it plus Other free-text; `select-audio-by-language.ts` resolves preference against audio tracks with subtag fallback. |
 | UI | About links open through extension tabs API | AboutView | present/partial | Good MV2/MV3-compatible fallback. |
@@ -784,12 +784,12 @@ The core detector is `reference/stream-detector/src/js/background.js`. It listen
 | Filename extraction | Uses URL pathname, with an MSS workaround that trims `.ism/manifest` to the parent path. | partial | Small but useful MSS detail. | Add protocol-specific display filename rules. |
 | Header capture | Stores User-Agent, Referer, Cookie, Set-Cookie, and Content-Length in request records. | review | Similar risk to cat-catch, but used for command generation rather than header replay. | Redact cookies by default; expose sensitive headers only with explicit per-copy consent. |
 | Source metadata | Stores documentUrl, originUrl, initiator, tab title/url/incognito, hostname, timestamp. | present | Useful and compact. | Keep this in candidate provenance and history. |
-| Storage lifecycle | Persists current `urlStorage`; on startup moves previous entries into `urlStorageRestore`, excluding private-window entries unless no-restore is enabled. | done | Unshackle persists non-incognito candidates on tab close to `unshackle:previousDetections` and exposes them in the Previous Session view. | Maintained parity with stream-detector recall semantics. |
+| Storage lifecycle | Persists current `urlStorage`; on startup moves previous entries into `urlStorageRestore`, excluding private-window entries unless no-restore is enabled. | improved | Unshackle persists non-incognito candidates on tab close to `unshackle:previousDetections`, exposes them in the Previous Session view, and uses the `previousSessionLimit` setting to cap saved links. | Matches recall semantics while giving users storage-volume control. |
 | Badge/notifications | Badge increments for detected items; batched notifications summarize one or many detections after debounce. | done | Unshackle ships `detection-notifier.ts` with `notificationMode: each | batched | off` (default `batched`) and 2s coalescing; badge text accumulates total count. | Matches stream-detector behavior with explicit user control. |
-| Popup list | Popup shows type, filename, size, source, timestamp, delete, filter, current/all/previous tabs, copy all, clear list, disable, options. | done | Side panel now exposes Current Tab / All Tabs / Previous Session sub-tabs with filter, multi-field chips, and count summary. | |
+| Popup list | Popup shows type, filename, size, source, timestamp, delete, filter, current/all/previous tabs, copy all, clear list, disable, options. | partial | Side panel exposes Current Tab / All Tabs / Previous Session sub-tabs and count summary, but intentionally omits filter controls for the smaller detected list. | |
 | Sidebar list | Firefox sidebar has compact filename/delete list with same copy/filter controls (`sidebar.html`, `popup.js`). | done | Side panel hosts the same controls. | |
-| Recent limit | Option to show only a configured number of latest entries (`recentPref`, `recentAmount`). | done | "Recent only" toggle limits the visible list to the last 20 detections with a "Show N more" expander. | |
-| Filter input | Popup/sidebar filter by filename, tab title, type, or hostname. | done | `FilterInput` + chip selector drive `filterStreams` in `src/state/streamFilter.ts`; chips additive across fields. | |
+| Recent limit | Option to show only a configured number of latest entries (`recentPref`, `recentAmount`). | improved | `previousSessionLimit` controls how many previous-session links are saved and shown; `0` keeps all saved links. | |
+| Filter input | Popup/sidebar filter by filename, tab title, type, or hostname. | not-scope | Removed from Unshackle because detected lists are expected to stay short. | |
 | Direct download | Clicking direct file/custom entries can use `chrome.downloads.download`; optional auto-download for non-manifest files. | partial | Cat-catch has more downloader UI; stream-detector has clean simple direct download. | Direct media downloading is core; capture-rule blacklist and size guards are now available for safe auto-download wiring. |
 | Firefox referer download | Firefox direct downloads can include Referer header; Chrome path omits headers due API limits (`popup.js`, `background.js`). | partial | Useful browser capability distinction. | Model browser-specific download header support explicitly. |
 | Command generation | Copy methods include raw URL, Kodi URL, table form, yt-dlp, FFmpeg, Streamlink, hlsdl, N_m3u8DL-RE, and three user commands (`popup.js`). | done | Unshackle now ships `src/core/export/command-profiles.ts` exposing yt-dlp, ffmpeg, streamlink, hlsdl, n_m3u8dl-re plus a `custom` template profile through `command-generation-policy`; sensitive headers gated. | Command-preview wired into QueueItem overflow menu via `onCopyCommand`. |
@@ -915,7 +915,7 @@ The entire tool is one shell script with no imports, modules, or configuration f
 |---:|---|---|---|
 | P1 | Add sequence-number IV fallback test | `src/core/hls/__tests__/iv-fallback.test.ts`, `src/core/hls/__tests__/parse-hls-manifest.test.ts` | Parser records `EXT-X-MEDIA-SEQUENCE`, and decrypt regression proves omitted-IV fallback uses the HLS media sequence number. |
 | P1 | Add I-frame stream filtering test | `src/core/hls/__tests__/iframe-filtering.test.ts` | Added parser regression proving I-frame-only stream tags are ignored as variants. |
-| P2 | Add "save raw TS" export option | `src/core/export/*`, settings | Browser HLS fallback now saves raw `.ts` and DASH fallback saves raw `.m4s`/`.bin` when native helper is unavailable; explicit UI action/settings remain pending. |
+| P2 | Add "save raw TS" export option | `src/core/export/*`, settings | Done for browser fallback: UI labels HLS as `Save raw TS`; DASH is labeled raw segments and never MP4 unless a real mux path exists. |
 | P2 | Add bulk retry pass after initial download | `src/core/download/segment-scheduler.ts` | Two-pass approach (download all, then retry all failures once) is a useful complement to per-segment retry. |
 | P2 | Add auto-highest quality selection policy | `src/core/hls/select-hls-variant.ts`, settings | Add configurable default quality policy (highest/lowest/ask). |
 | P2 | Add sidecar subtitle download option | `src/core/export/*`, UI | Users may prefer sidecar files over muxed subtitles. |
@@ -1001,7 +1001,7 @@ The entire tool is one shell script with no imports, modules, or configuration f
 | P2 | Add force-export of partial HLS downloads | `src/core/download/*`, job actions | Download already-completed segments without waiting for full job. Useful for failed/stalled downloads. |
 | P2 | Add segment range selection for HLS jobs | HLS job creation UI, segment scheduler | Start/end segment picker. cat-catch has richer selection. Start with simple numeric range. |
 | P2 | Add periodic auto-retry for errored segments | `src/core/download/segment-scheduler.ts`, settings | Add configurable auto-retry with backoff and max-attempt limits, not fixed 2-second polling. |
-| P3 | Consider mux.js as lightweight browser-only TS-to-MP4 fallback | `src/core/export/*`, fallback path | Apache-2.0 licensed. Useful fallback for users without native helper. |
+| P3 | Consider mux.js as lightweight browser-only TS-to-MP4 fallback | `src/core/export/*`, fallback path | Deferred; current browser-only fallback exports raw HLS/DASH outputs and intentionally does not transmux or label them MP4. |
 | P3 | Add streaming write feature detection | `src/core/storage/*`, `src/core/export/*` | Detect File System Access / OPFS capabilities with graceful degradation. |
 
 ### Things Not To Copy Literally / Risks

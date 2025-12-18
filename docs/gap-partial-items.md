@@ -11,7 +11,7 @@ Extracted from `feature-parity-report.md` across all 8 reference analyses. Every
 | 1 | `suppressProtectedDownloads` defaults to `false` | review | Unified baseline | Decide release default before shipping. |
 | 2 | `captureCredentialHeaders` defaults to `true`; stores Cookie/Authorization | review | Policy risk | Change release default to safe headers (referer/origin) only. |
 | 3 | Request header context forwards sensitive headers | review | live-stream (referer/origin only), stream-detector, cat-catch | Strip cookies/auth by default; allow explicit per-download consent. |
-| 4 | Production HLS/DASH path audit — confirm native export is intended default | improved | Unified | Native export remains preferred; HLS now falls back to browser raw `.ts`, DASH falls back to raw `.m4s`/`.bin`, and direct preview/thumbnail/explicit WebM trim have browser fallbacks when the optional native helper is unavailable. |
+| 4 | Production HLS/DASH path audit — confirm native export is intended default | done | Unified | Native export remains preferred and optional; production HLS falls back to browser raw `.ts`, DASH falls back to raw `.m4s`/`.bin`, and direct preview/thumbnail/explicit WebM trim use offscreen browser fallbacks when the native helper is unavailable. |
 | 5 | Safe default policy against store/experimental build split | gap | puemos | Store-safe and experimental build variants are cleaner than one permissive default. |
 | 6 | Protected-content refusal checks for deep capture modes | gap | cat-catch (has it, risky) | Any MSE/recorder/deep-search feature must refuse DRM/protected media. |
 | 7 | First-class stream detector classifier fixtures | gap | stream-detector | HLS, DASH, HDS, MSS, VTT, SRT, TTML, DFXP, MP4/M4S, TS, AAC, MP3, OGG/OPUS, WebM. |
@@ -107,10 +107,10 @@ Extracted from `feature-parity-report.md` across all 8 reference analyses. Every
 | 68 | Storage summary in Settings and Downloads footer | partial | puemos | Strong UX pattern; constant visibility. |
 | 69 | Auto delete after save setting | gap/partial | puemos | Useful storage-saving option. |
 | 70 | Cleanup cancels active jobs first | partial | puemos | Consistency behavior. |
-| 71 | "Save raw TS" export option | improved | hls_downloader (`-f` flag), cat-catch | Browser HLS fallback now exports raw `.ts` through `chrome.downloads` when the native helper is unavailable; UI-facing explicit action still pending. DASH raw fallback uses `.m4s` only when safe and `.bin` otherwise. |
+| 71 | "Save raw TS" export option | done | hls_downloader (`-f` flag), cat-catch | Browser HLS fallback exports raw `.ts` through `chrome.downloads`, UI labels it `Save raw TS`, and DASH raw fallback labels raw segments without claiming MP4. |
 | 72 | Sidecar subtitle download option | partial | hls_downloader | Users may prefer sidecar files over muxed subtitles. |
 | 73 | Force-export of partial HLS downloads | partial | m3u8-downloader, cat-catch | Download already-completed segments without waiting for full job. |
-| 74 | Streaming write feature detection | partial | m3u8-downloader | Detect File System Access / OPFS capabilities with graceful degradation. |
+| 74 | Streaming write feature detection | partial | m3u8-downloader | Browser fallback currently uses Blob assembly with honest queue notes; File System Access / OPFS streaming feature detection remains follow-up work for large outputs. |
 
 ### Settings & Configuration
 
@@ -147,15 +147,15 @@ Extracted from `feature-parity-report.md` across all 8 reference analyses. Every
 | 94 | Storage footer in downloads | done | puemos | `StorageFooter` wired into the queue tab using `navigator.storage.estimate()` with level mapping (<60% ok, <80% moderate, <95% high, ≥95% critical). |
 | 95 | Router tab persisted in localStorage | done | puemos | SidePanelApp persists active tab to `unshackle:sidepanel:activeTab` and rehydrates on mount. |
 | 96 | Metadata badges for FPS, channels, default, autoselect | ~~present/partial~~ done | puemos | MediaCard chips render FPS/channels/default/autoselect from new DetectedMedia fields. |
-| 97 | Filter downloads by filename | done | puemos | `FilterInput` above detected streams filters `media.title` case-insensitively with debounce; "N of M streams" count rendered below. |
+| 97 | Filter downloads by filename | removed/not-scope | puemos | Removed side-panel filter UI and unused filter helpers; detected lists are intentionally direct because typical candidate counts are small. |
 | 98 | Settings language list with ISO codes | done | puemos | `LanguagePicker.tsx` presets (en/es/fr/de/ja/ko/zh/pt/ru/ar/hi/it) + Other free-text; `select-audio-by-language.ts` auto-matches with subtag fallback. |
 | 99 | Estimated output size from bitrate and duration | ~~partial~~ done | puemos | MediaCard shows `~N MB` estimate from bitrate × duration and a ⚠ marker when over `remainingStorageBytes`. |
 | 100 | Duplicate handling (duplicate URL/filename filtering) | ~~partial~~ improved | cat-catch | DuplicateBadge primitive plus MediaCard `duplicateCount`/`onDuplicateClick` props; grouping logic still pending parent integration. |
 | 101 | Badge/command coverage (pause, clear, open parser) | done | cat-catch | Registered `pause-all`, `clear-completed`, `open-side-panel` in `wxt.config.ts` manifest commands with Ctrl+Shift+P/X/D suggested keys; PopupApp footer lists shortcuts. |
-| 102 | Current/all/previous candidate views | done | stream-detector | SidePanelApp exposes Current Tab / All Tabs / Previous Session sub-tabs; previous detections persisted via `previous-detections.ts` and `saveDetectionsOnTabClose` on tab close. |
+| 102 | Current/all/previous candidate views | improved | stream-detector | SidePanelApp exposes Current Tab / All Tabs / Previous Session sub-tabs; previous detections persist newest-first and `previousSessionLimit` controls how many links are saved. |
 | 103 | Recent-only compact mode | done | stream-detector | "Recent only" toggle limits list to the last 20 detections, with a "Show N more" button to expand. |
 | 104 | Debounced notifications and badge mode | done | stream-detector | `detection-notifier.ts` batches detection events in a 2s window with `notificationMode: each | batched | off` setting (default batched); badge accumulates total. |
-| 105 | Multi-field stream filtering | done | stream-detector | Chip selector (Filename / Tab Title / Type / Hostname) drives `filterStreams` predicate in `src/state/streamFilter.ts`; chips are additive. |
+| 105 | Multi-field stream filtering | removed/not-scope | stream-detector | Removed the chip filter menu and stream-filter helper; the side panel keeps simpler current/all/previous views instead. |
 | 106 | Direct URL job panel | done | cat-catch | `DirectUrlPanel.tsx` form (URL/filename/referer/origin) plus result list with per-job retry/stop callbacks. |
 
 ### Download & Export
