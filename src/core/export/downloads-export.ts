@@ -76,23 +76,100 @@ export function createSegmentedExportPlan(
 }
 
 export function joinSegmentsToBlob(parts: Uint8Array[], mimeType: string): Blob {
-  return new Blob(parts, { type: mimeType });
+  return new Blob(parts.map((part) => {
+    const buffer = new ArrayBuffer(part.byteLength);
+    new Uint8Array(buffer).set(part);
+    return buffer;
+  }), { type: mimeType });
+}
+
+function bytesToBase64(bytes: Uint8Array): string {
+  const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
+  let output = '';
+  let index = 0;
+
+  for (; index + 2 < bytes.length; index += 3) {
+    const value = (bytes[index] << 16) | (bytes[index + 1] << 8) | bytes[index + 2];
+    output +=
+      alphabet[(value >> 18) & 63] +
+      alphabet[(value >> 12) & 63] +
+      alphabet[(value >> 6) & 63] +
+      alphabet[value & 63];
+  }
+
+  if (index < bytes.length) {
+    const first = bytes[index];
+    const second = bytes[index + 1];
+
+    if (second === undefined) {
+      const value = first << 16;
+      output +=
+        alphabet[(value >> 18) & 63] +
+        alphabet[(value >> 12) & 63] +
+        '==';
+    } else {
+      const value = (first << 16) | (second << 8);
+      output +=
+        alphabet[(value >> 18) & 63] +
+        alphabet[(value >> 12) & 63] +
+        alphabet[(value >> 6) & 63] +
+        '=';
+    }
+  }
+
+  return output;
+}
+
+async function blobToDataUrl(blob: Blob, mimeType: string): Promise<string> {
+  const buffer =
+    typeof blob.arrayBuffer === 'function'
+      ? await blob.arrayBuffer()
+      : await new Promise<ArrayBuffer>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.addEventListener('load', () => {
+            if (reader.result instanceof ArrayBuffer) {
+              resolve(reader.result);
+              return;
+            }
+
+            reject(new Error('Blob reader did not return bytes.'));
+          });
+          reader.addEventListener(
+            'error',
+            () => reject(reader.error ?? new Error('Blob read failed.')),
+          );
+          reader.readAsArrayBuffer(blob);
+        });
+  const bytes = new Uint8Array(buffer);
+  return `data:${mimeType};base64,${bytesToBase64(bytes)}`;
 }
 
 export async function exportBlobDownload(
   input: BlobDownloadExportInput,
 ): Promise<JobOutput> {
-  const createObjectUrl = input.createObjectUrl ?? URL.createObjectURL;
-  const revokeObjectUrl = input.revokeObjectUrl ?? URL.revokeObjectURL;
+  const createObjectUrl =
+    input.createObjectUrl ??
+    (typeof URL.createObjectURL === 'function'
+      ? URL.createObjectURL.bind(URL)
+      : undefined);
+  const revokeObjectUrl =
+    input.revokeObjectUrl ??
+    (typeof URL.revokeObjectURL === 'function'
+      ? URL.revokeObjectURL.bind(URL)
+      : undefined);
   const download = input.download ?? chrome.downloads.download;
-  const outputUrl = createObjectUrl(input.blob);
+  const outputUrl = createObjectUrl
+    ? createObjectUrl(input.blob)
+    : await blobToDataUrl(input.blob, input.mimeType);
   const downloadId = await download({
     url: outputUrl,
     filename: input.filename,
     saveAs: Boolean(input.saveAs),
   });
 
-  setTimeout(() => revokeObjectUrl(outputUrl), 30_000);
+  if (createObjectUrl && revokeObjectUrl) {
+    setTimeout(() => revokeObjectUrl(outputUrl), 30_000);
+  }
 
   return {
     fileName: input.filename,

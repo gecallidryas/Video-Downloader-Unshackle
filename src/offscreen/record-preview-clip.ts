@@ -39,16 +39,7 @@ export function recordPreviewClip(options: RecordPreviewOptions): Promise<Previe
       video.load();
     }
 
-    video.addEventListener('error', () => {
-      cleanup();
-      reject(new Error(`Failed to load video: ${url}`));
-    }, { once: true });
-
-    video.addEventListener('loadedmetadata', () => {
-      video.currentTime = Math.min(startSec, video.duration || startSec);
-    }, { once: true });
-
-    video.addEventListener('seeked', () => {
+    function startRecording() {
       void video.play().then(() => {
         try {
           const stream = (video as any).captureStream();
@@ -82,6 +73,26 @@ export function recordPreviewClip(options: RecordPreviewOptions): Promise<Previe
         cleanup();
         reject(error);
       });
+    }
+
+    video.addEventListener('error', () => {
+      cleanup();
+      reject(new Error(`Failed to load video: ${url}`));
+    }, { once: true });
+
+    video.addEventListener('loadedmetadata', () => {
+      const targetTime = Math.min(startSec, video.duration || startSec);
+
+      if (Math.abs(video.currentTime - targetTime) < 0.001) {
+        startRecording();
+        return;
+      }
+
+      video.currentTime = targetTime;
+    }, { once: true });
+
+    video.addEventListener('seeked', () => {
+      startRecording();
     }, { once: true });
 
     video.src = url;

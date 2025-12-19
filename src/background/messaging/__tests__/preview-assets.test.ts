@@ -89,6 +89,26 @@ describe('preview asset runtime messages', () => {
     });
   });
 
+  test('GET_PREVIEW_ASSET returns an error response when generation fails', async () => {
+    const router = routerWithCandidate(candidate(), {
+      ensurePreviewClip: vi.fn().mockRejectedValue(new Error('Preview recording failed.')),
+    });
+
+    const response = await router.handleMessage(
+      createRuntimeRequest('GET_PREVIEW_ASSET', { candidateId: 'candidate-1', format: 'webm' }, 'req-preview-failed'),
+    );
+
+    expect(response).toEqual({
+      type: 'ERROR',
+      requestId: 'req-preview-failed',
+      payload: {
+        code: 'PREVIEW_ASSET_FAILED',
+        message: 'Preview recording failed.',
+        detail: undefined,
+      },
+    });
+  });
+
   test('asset requests reject protected candidates before service invocation', async () => {
     const router = routerWithCandidate(
       candidate({ status: 'protected', protection: { kind: 'drm', drmSystems: ['widevine'] } }),

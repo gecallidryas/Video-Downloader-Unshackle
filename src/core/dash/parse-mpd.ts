@@ -88,6 +88,125 @@ function attr(element: Element, name: string): string | undefined {
   return element.getAttribute(name) ?? undefined;
 }
 
+class MinimalXmlElement {
+  readonly localName: string;
+  readonly attributes: Map<string, string>;
+  readonly childElements: MinimalXmlElement[] = [];
+  readonly textParts: string[] = [];
+
+  constructor(localName: string, attributes: Map<string, string>) {
+    this.localName = localName;
+    this.attributes = attributes;
+  }
+
+  get children(): Element[] {
+    return this.childElements.map((child) => child.asElement());
+  }
+
+  get textContent(): string {
+    return [
+      ...this.textParts,
+      ...this.childElements.map((child) => child.textContent),
+    ].join('');
+  }
+
+  getAttribute(name: string): string | null {
+    return this.attributes.get(name) ?? null;
+  }
+
+  getElementsByTagNameNS(_namespace: string, tagName: string): Element[] {
+    return this.childElements.flatMap((child) => {
+      const descendants = child.getElementsByTagNameNS(_namespace, tagName);
+
+      return child.localName === tagName
+        ? [child.asElement(), ...descendants]
+        : descendants;
+    });
+  }
+
+  asElement(): Element {
+    return this as unknown as Element;
+  }
+}
+
+function localNameFor(rawName: string): string {
+  return rawName.split(':').pop() ?? rawName;
+}
+
+function parseAttributes(rawTag: string): Map<string, string> {
+  const attributes = new Map<string, string>();
+  const pattern = /([A-Za-z_:][\w:.-]*)\s*=\s*("([^"]*)"|'([^']*)')/g;
+  let match: RegExpExecArray | null;
+
+  while ((match = pattern.exec(rawTag)) !== null) {
+    attributes.set(match[1] ?? '', match[3] ?? match[4] ?? '');
+  }
+
+  return attributes;
+}
+
+function parseXmlFallback(content: string): Element {
+  const tokens = content.match(/<!--[\s\S]*?-->|<\?[\s\S]*?\?>|<!\[CDATA\[[\s\S]*?\]\]>|<[^>]+>|[^<]+/g) ?? [];
+  const stack: MinimalXmlElement[] = [];
+  let root: MinimalXmlElement | undefined;
+
+  for (const token of tokens) {
+    if (token.startsWith('<!--') || token.startsWith('<?')) {
+      continue;
+    }
+
+    if (token.startsWith('<![CDATA[')) {
+      stack[stack.length - 1]?.textParts.push(token.slice(9, -3));
+      continue;
+    }
+
+    if (token.startsWith('</')) {
+      stack.pop();
+      continue;
+    }
+
+    if (token.startsWith('<')) {
+      if (token.startsWith('<!')) {
+        continue;
+      }
+
+      const selfClosing = /\/\s*>$/.test(token);
+      const rawTag = token.slice(1, selfClosing ? -2 : -1).trim();
+      const rawName = rawTag.split(/\s+/, 1)[0] ?? '';
+      const element = new MinimalXmlElement(localNameFor(rawName), parseAttributes(rawTag));
+      const parent = stack[stack.length - 1];
+
+      if (parent) {
+        parent.childElements.push(element);
+      } else {
+        root = element;
+      }
+
+      if (!selfClosing) {
+        stack.push(element);
+      }
+
+      continue;
+    }
+
+    stack[stack.length - 1]?.textParts.push(token);
+  }
+
+  if (!root) {
+    throw new Error('DASH MPD did not contain a document element.');
+  }
+
+  return root.asElement();
+}
+
+function parseMpdRoot(content: string): Element {
+  if (typeof DOMParser === 'function') {
+    return new DOMParser().parseFromString(content, 'application/xml').documentElement;
+  }
+
+  return parseXmlFallback(content);
+}
+
 function numberAttr(element: Element, name: string): number | undefined {
   const value = attr(element, name);
 
@@ -337,9 +456,7 @@ function parseSegmentList(
 }
 
 export function parseMpd(input: ParseMpdInput): ParsedDashManifest {
-  const parser = new DOMParser();
-  const document = parser.parseFromString(input.content, 'application/xml');
-  const root = document.documentElement;
+  const root = parseMpdRoot(input.content);
   const durationSec = parseDuration(attr(root, 'mediaPresentationDuration'));
   const isLive = attr(root, 'type') === 'dynamic';
   const protection = detectProtection(root);

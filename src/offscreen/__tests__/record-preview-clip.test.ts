@@ -22,9 +22,13 @@ interface MockVideoCallbacks {
   error?: () => void;
 }
 
-function createMockVideoElement(callbacks: MockVideoCallbacks = {}): HTMLVideoElement {
+function createMockVideoElement(
+  callbacks: MockVideoCallbacks = {},
+  options: { fireSeekedOnNoop?: boolean } = {},
+): HTMLVideoElement {
   const listeners = new Map<string, Array<{ fn: EventListenerOrEventListenerObject; once: boolean }>>();
   let _currentTime = 0;
+  const fireSeekedOnNoop = options.fireSeekedOnNoop ?? true;
 
   const video: any = {
     crossOrigin: '',
@@ -38,7 +42,11 @@ function createMockVideoElement(callbacks: MockVideoCallbacks = {}): HTMLVideoEl
       return _currentTime;
     },
     set currentTime(val: number) {
+      const previousTime = _currentTime;
       _currentTime = val;
+      if (!fireSeekedOnNoop && previousTime === val) {
+        return;
+      }
       // Fire seeked asynchronously so the caller has time to register listeners
       queueMicrotask(() => {
         fireEvent('seeked');
@@ -238,6 +246,32 @@ describe('recordPreviewClip', () => {
 
     // currentTime should have been clamped to duration (3)
     expect(mockVideo.currentTime).toBe(3);
+  });
+
+  test('records immediately when startSec is already the current playback time', async () => {
+    const mockStream = createMockStream();
+    const mockVideo = createMockVideoElement({}, { fireSeekedOnNoop: false });
+    (mockVideo as any).currentTime = 0;
+    (mockVideo as any).captureStream = vi.fn().mockReturnValue(mockStream);
+
+    vi.spyOn(document, 'createElement').mockImplementation((tag: string) => {
+      if (tag === 'video') return mockVideo;
+      return originalCreateElement(tag);
+    });
+
+    vi.stubGlobal('MediaRecorder', MockMediaRecorder);
+    vi.stubGlobal('FileReader', MockFileReaderSuccess);
+
+    const promise = recordPreviewClip(defaultOptions({ startSec: 0 }));
+
+    await vi.advanceTimersByTimeAsync(0);
+    await vi.advanceTimersByTimeAsync(3000);
+    await vi.advanceTimersByTimeAsync(0);
+
+    await expect(promise).resolves.toEqual({
+      dataUrl: 'data:video/webm;base64,bW9jay12aWRlby1kYXRh',
+      mimeType: 'video/webm',
+    });
   });
 
   test('rejects with timeout error when video never fires events', async () => {

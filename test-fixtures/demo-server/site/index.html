@@ -20,7 +20,7 @@
 
     <button id="runAll">Run All Requests</button>
     <button id="runDirect">Direct MP4</button>
-    <button id="runGif">GIF + Preview MP4</button>
+    <button id="runGif">GIF + Preview Media</button>
     <button id="runHls">HLS</button>
     <button id="runDash">DASH</button>
     <button id="runProtected">Protected marker</button>
@@ -32,6 +32,7 @@
     <p>Endpoints:</p>
     <ul>
         <li><code>/media/sample.mp4</code></li>
+        <li><code>/media/sample.webm</code></li>
         <li><code>/media/animated.gif</code></li>
         <li><code>/thumb-cdn/preview.mp4</code></li>
         <li><code>/hls/master.m3u8</code></li>
@@ -51,6 +52,7 @@
 
         async function runDirect() {
             await ping('/media/sample.mp4');
+            await ping('/media/sample.webm');
             const video = document.getElementById('fixtureVideo');
             video.load();
         }

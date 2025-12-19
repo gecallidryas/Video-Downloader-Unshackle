@@ -194,6 +194,44 @@ describe('browser HLS export runner', () => {
     schedulerSpy.mockRestore();
   });
 
+  test('fetches the selected media playlist when given an HLS master playlist', async () => {
+    const manifest = parseHlsManifest({
+      manifestUrl: 'https://cdn.example.com/hls/master.m3u8',
+      content: [
+        '#EXTM3U',
+        '#EXT-X-STREAM-INF:BANDWIDTH=900000,RESOLUTION=1280x720',
+        'media/720p.m3u8',
+      ].join('\n'),
+    });
+    const fetchText = vi.fn().mockResolvedValue(
+      ['#EXTM3U', '#EXTINF:4,', 'segment.ts', '#EXT-X-ENDLIST'].join('\n'),
+    );
+    const fetchBytes = vi.fn().mockResolvedValue(new Uint8Array([1, 2, 3]));
+
+    await runBrowserHlsExportJob({
+      candidate: candidate(),
+      job: job(),
+      manifest,
+      fetchText,
+      fetchBytes,
+      createObjectUrl: vi.fn().mockReturnValue('blob:master-hls'),
+      revokeObjectUrl: vi.fn(),
+      download: vi.fn().mockResolvedValue(100),
+    });
+
+    expect(fetchText).toHaveBeenCalledWith(
+      'https://cdn.example.com/hls/media/720p.m3u8',
+      expect.objectContaining({
+        cache: 'no-store',
+        credentials: 'include',
+      }),
+    );
+    expect(fetchBytes).toHaveBeenCalledWith(
+      'https://cdn.example.com/hls/media/segment.ts',
+      expect.any(Object),
+    );
+  });
+
   test('rejects protected non-AES HLS before fetching', async () => {
     const manifest = parseHlsManifest({
       manifestUrl: 'https://cdn.example.com/hls/protected.m3u8',

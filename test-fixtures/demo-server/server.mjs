@@ -13,6 +13,7 @@ const mimeTypes = new Map([
   ['.m3u8', 'application/vnd.apple.mpegurl'],
   ['.mpd', 'application/dash+xml'],
   ['.mp4', 'video/mp4'],
+  ['.webm', 'video/webm'],
   ['.m4s', 'video/iso.segment'],
   ['.ts', 'video/mp2t'],
   ['.gif', 'image/gif'],

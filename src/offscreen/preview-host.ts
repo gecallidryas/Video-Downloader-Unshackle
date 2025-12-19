@@ -35,6 +35,7 @@ export interface PreviewHostResponse {
   command?: OffscreenCommand['type'];
   assetUrl?: string;
   mimeType?: string;
+  error?: string;
 }
 
 export interface PreviewHost {
@@ -93,7 +94,12 @@ export function createPreviewHost(): PreviewHost {
           ok: true,
           assetUrl: clip.dataUrl,
           mimeType: clip.mimeType,
-        }));
+        })).catch((error) => {
+          return {
+            ok: false,
+            error: error instanceof Error ? error.message : 'Preview recording failed.',
+          };
+        });
       }
 
       if (currentCandidate?.id === message.candidateId) {

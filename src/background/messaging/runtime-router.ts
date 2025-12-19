@@ -631,9 +631,19 @@ export function createRuntimeRouter(
             );
           }
 
-          const asset = await dependencies.ensurePreviewClip(candidate, {
-            format: request.payload.format,
-          });
+          let asset: GeneratedAssetResult;
+
+          try {
+            asset = await dependencies.ensurePreviewClip(candidate, {
+              format: request.payload.format,
+            });
+          } catch (error) {
+            return createRuntimeErrorResponse(
+              'PREVIEW_ASSET_FAILED',
+              error instanceof Error ? error.message : 'Preview asset generation failed.',
+              request.requestId,
+            );
+          }
 
           return createRuntimeResponse(
             'GET_PREVIEW_ASSET_RESULT',
@@ -671,11 +681,19 @@ export function createRuntimeRouter(
             );
           }
 
-          return createRuntimeResponse(
-            'GET_THUMBNAIL_ASSET_RESULT',
-            await dependencies.ensureThumbnail(candidate),
-            request.requestId,
-          );
+          try {
+            return createRuntimeResponse(
+              'GET_THUMBNAIL_ASSET_RESULT',
+              await dependencies.ensureThumbnail(candidate),
+              request.requestId,
+            );
+          } catch (error) {
+            return createRuntimeErrorResponse(
+              'THUMBNAIL_ASSET_FAILED',
+              error instanceof Error ? error.message : 'Thumbnail generation failed.',
+              request.requestId,
+            );
+          }
         }
 
         case 'DEBUG_GET_EVIDENCE': {

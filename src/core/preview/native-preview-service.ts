@@ -22,7 +22,7 @@ export interface EnsurePreviewClipOptions {
   nativeClient?: NativeFfmpegClient;
   offscreenRecord?: (
     message: Record<string, unknown>,
-  ) => Promise<{ ok: boolean; assetUrl: string; mimeType: string }>;
+  ) => Promise<{ ok: boolean; assetUrl?: string; mimeType?: string; error?: string }>;
   format?: NativeFfmpegPreviewFormat;
   startSec?: number;
   durationSec?: number;
@@ -139,7 +139,9 @@ export async function ensurePreviewClip(
     if (!offscreenResult.ok || !offscreenResult.assetUrl) {
       throw new PreviewGenerationError(
         'OFFSCREEN_FAILED',
-        'Offscreen MediaRecorder did not return a preview asset.',
+        'error' in offscreenResult && typeof offscreenResult.error === 'string'
+          ? offscreenResult.error
+          : 'Offscreen MediaRecorder did not return a preview asset.',
       );
     }
 

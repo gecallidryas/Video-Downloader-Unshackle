@@ -199,6 +199,48 @@ describe('parseMpd', () => {
     expect(manifest.durationSec).toBe(86400 + 7200 + 1800 + 15);
   });
 
+  test('parses clear MPDs when DOMParser is unavailable', () => {
+    const originalDomParser = globalThis.DOMParser;
+    Object.defineProperty(globalThis, 'DOMParser', {
+      configurable: true,
+      value: undefined,
+    });
+
+    try {
+      const manifest = parseMpd({
+        manifestUrl: 'https://cdn.example.com/dash/worker.mpd',
+        content: `
+          <MPD mediaPresentationDuration="PT4S">
+            <Period>
+              <AdaptationSet contentType="video" mimeType="video/mp4">
+                <SegmentTemplate timescale="1" initialization="init.mp4" media="seg-$Number$.m4s" duration="4" />
+                <Representation id="video-worker" bandwidth="900000" width="640" height="360" />
+              </AdaptationSet>
+            </Period>
+          </MPD>
+        `,
+      });
+
+      expect(manifest.variants).toEqual([
+        expect.objectContaining({
+          id: 'video-worker',
+          width: 640,
+          height: 360,
+        }),
+      ]);
+      expect(manifest.representations[0]).toMatchObject({
+        initializationUrl: 'https://cdn.example.com/dash/init.mp4',
+        mediaUrlTemplate: 'https://cdn.example.com/dash/seg-$Number$.m4s',
+        segmentCount: 1,
+      });
+    } finally {
+      Object.defineProperty(globalThis, 'DOMParser', {
+        configurable: true,
+        value: originalDomParser,
+      });
+    }
+  });
+
   test('classifies Widevine, PlayReady, and unknown ContentProtection', () => {
     expect(
       classifyDashProtection(`

@@ -10,13 +10,22 @@ import {
   joinSegmentsToBlob,
   rawSegmentOutputName,
 } from '@/src/core/export/downloads-export';
-import type { ParsedHlsManifest } from '@/src/core/hls/parse-hls-manifest';
+import {
+  parseHlsManifest,
+  type ParsedHlsManifest,
+} from '@/src/core/hls/parse-hls-manifest';
 import { runHlsJob } from '@/src/core/hls/run-hls-job';
+import { selectHlsVariant } from '@/src/core/hls/select-hls-variant';
 
 export type FetchBrowserBytes = (
   url: string,
   init: RequestInit,
 ) => Promise<Uint8Array>;
+
+export type FetchBrowserText = (
+  url: string,
+  init: RequestInit,
+) => Promise<string>;
 
 export interface RunBrowserHlsExportJobInput {
   candidate: MediaCandidate;
@@ -24,6 +33,7 @@ export interface RunBrowserHlsExportJobInput {
   manifest: ParsedHlsManifest;
   download?: ChromeDownload;
   fetchBytes?: FetchBrowserBytes;
+  fetchText?: FetchBrowserText;
   createObjectUrl?: (blob: Blob) => string;
   revokeObjectUrl?: (url: string) => void;
   allowProtected?: boolean;
@@ -56,6 +66,19 @@ async function defaultFetchBytes(
   return new Uint8Array(await response.arrayBuffer());
 }
 
+async function defaultFetchText(
+  url: string,
+  init: RequestInit,
+): Promise<string> {
+  const response = await fetch(url, init);
+
+  if (!response.ok) {
+    throw new Error(`HLS playlist fetch failed: ${response.status}`);
+  }
+
+  return response.text();
+}
+
 function requestInitFromScheduler(request: {
   headers: Record<string, string>;
   signal?: AbortSignal;
@@ -68,6 +91,34 @@ function requestInitFromScheduler(request: {
   };
 }
 
+async function resolveMediaPlaylist(
+  input: RunBrowserHlsExportJobInput,
+): Promise<ParsedHlsManifest> {
+  if (input.manifest.playlistKind === 'media') {
+    return input.manifest;
+  }
+
+  const selected = selectHlsVariant(input.manifest, input.job.selection, {
+    qualityPolicy: input.qualityPolicy,
+  });
+
+  if (!selected.url) {
+    throw new Error('Selected HLS variant is missing a media playlist URL.');
+  }
+
+  const fetchText = input.fetchText ?? defaultFetchText;
+  const content = await fetchText(selected.url, {
+    cache: 'no-store',
+    credentials: 'include',
+    signal: input.signal,
+  });
+
+  return parseHlsManifest({
+    manifestUrl: selected.url,
+    content,
+  });
+}
+
 export async function runBrowserHlsExportJob(
   input: RunBrowserHlsExportJobInput,
 ): Promise<JobOutput> {
@@ -76,10 +127,11 @@ export async function runBrowserHlsExportJob(
   }
 
   const fetchBytes = input.fetchBytes ?? defaultFetchBytes;
+  const mediaManifest = await resolveMediaPlaylist(input);
 
   return runHlsJob({
     job: input.job,
-    manifest: input.manifest,
+    manifest: mediaManifest,
     allowProtected: input.allowProtected,
     concurrency: input.concurrency,
     maxConcurrentPerHost: input.maxConcurrentPerHost,

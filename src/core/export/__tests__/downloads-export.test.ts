@@ -150,6 +150,47 @@ describe('downloads export', () => {
     expect(revokeObjectUrl).toHaveBeenCalledWith('blob:raw-hls');
   });
 
+  test('exports blob downloads as data URLs when object URLs are unavailable', async () => {
+    const originalCreateObjectUrl = URL.createObjectURL;
+    const originalRevokeObjectUrl = URL.revokeObjectURL;
+    Object.defineProperty(URL, 'createObjectURL', {
+      configurable: true,
+      value: undefined,
+    });
+    Object.defineProperty(URL, 'revokeObjectURL', {
+      configurable: true,
+      value: undefined,
+    });
+    const blob = new Blob([new Uint8Array([1, 2, 3])], { type: 'video/mp2t' });
+    const download = vi.fn().mockResolvedValue(43);
+
+    try {
+      await expect(
+        exportBlobDownload({
+          blob,
+          filename: 'raw.ts',
+          mimeType: 'video/mp2t',
+          download,
+        }),
+      ).resolves.toMatchObject({
+        fileName: 'raw.ts',
+        mimeType: 'video/mp2t',
+        outputUrl: 'data:video/mp2t;base64,AQID',
+        downloadId: 43,
+        sizeBytes: 3,
+      });
+    } finally {
+      Object.defineProperty(URL, 'createObjectURL', {
+        configurable: true,
+        value: originalCreateObjectUrl,
+      });
+      Object.defineProperty(URL, 'revokeObjectURL', {
+        configurable: true,
+        value: originalRevokeObjectUrl,
+      });
+    }
+  });
+
   test('names raw HLS output as TS even when display name ends in MP4', () => {
     expect(
       rawSegmentOutputName({
