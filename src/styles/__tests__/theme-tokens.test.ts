@@ -20,40 +20,39 @@ function tokenValue(block: string, token: string): string | undefined {
   return match?.[1]?.trim();
 }
 
-test('contrast theme uses the bold Unified dark palette as the default contract', () => {
+test('root uses minimal dark monochrome palette', () => {
   const root = extractBlock(':root');
-  const contrast = extractBlock(':root[data-theme="contrast"]');
 
   expect(tokenValue(root, '--surface')).toBe('#000000');
-  expect(tokenValue(root, '--primary')).toBe('#ffcc00');
-  expect(tokenValue(contrast, '--surface')).toBe('#000000');
-  expect(tokenValue(contrast, '--on-surface')).toBe('#fff9c2');
-  expect(tokenValue(contrast, '--primary')).toBe('#ffcc00');
-  expect(tokenValue(contrast, '--outline')).toBe('#333300');
+  expect(tokenValue(root, '--on-surface')).toBe('#b0b0b0');
+  expect(tokenValue(root, '--primary')).toBe('#b0b0b0');
+  expect(tokenValue(root, '--outline')).toBe('#222222');
+  expect(tokenValue(root, '--background')).toBe('#000000');
 });
 
-test.each([
-  ['blueberry', '#0f111a', '#5f8cff'],
-  ['lightdark', '#000000', '#ffffff'],
-  ['noirgold', '#0b0a08', '#c89a3f'],
-  ['purplefanatic', '#0e0a17', '#b184e0'],
-  ['sakura', '#130d14', '#e78fb2'],
-  ['ocean', '#0a1318', '#42b8d5'],
-  ['forest', '#0b120d', '#4ec27a'],
-  ['slate', '#1a1c21', '#8a9bb3'],
-  ['ember', '#140c0a', '#e07840'],
-])('%s theme maps Unified surface and accent into current tokens', (theme, surface, primary) => {
-  const block = extractBlock(`:root[data-theme="${theme}"]`);
+test('light theme uses stitch Precision Panel palette', () => {
+  const light = extractBlock(':root[data-theme="light"]');
 
-  expect(tokenValue(block, '--surface')).toBe(surface);
-  expect(tokenValue(block, '--primary')).toBe(primary);
-  expect(tokenValue(block, '--surface-container-lowest')).not.toBe('#ffffff');
+  expect(tokenValue(light, '--surface')).toBe('#f8f9ff');
+  expect(tokenValue(light, '--on-surface')).toBe('#0b1c30');
+  expect(tokenValue(light, '--primary')).toBe('#0050cb');
+  expect(tokenValue(light, '--outline')).toBe('#727687');
+  expect(tokenValue(light, '--background')).toBe('#f8f9ff');
+  expect(tokenValue(light, '--primary-container')).toBe('#0066ff');
 });
 
-test('theme tokens expose bold UI effect hooks for current components', () => {
+test('only dark and light themes exist', () => {
+  const themeMatches = css.match(/data-theme="/g) ?? [];
+  expect(themeMatches).toHaveLength(2);
+  expect(css).toContain('data-theme="light"');
+});
+
+test('stitch design tokens preserved for typography and spacing', () => {
   const root = extractBlock(':root');
 
-  expect(tokenValue(root, '--control-shadow')).toContain('rgba(0, 0, 0');
-  expect(tokenValue(root, '--focus-glow')).toContain('var(--primary)');
-  expect(tokenValue(root, '--scrollbar-thumb')).toBe('var(--primary)');
+  expect(tokenValue(root, '--font-base')).toContain('Inter');
+  expect(tokenValue(root, '--text-body-size')).toBe('13px');
+  expect(tokenValue(root, '--panel-padding')).toBe('12px');
+  expect(tokenValue(root, '--stack-gap')).toBe('8px');
+  expect(tokenValue(root, '--radius')).toBe('0.25rem');
 });

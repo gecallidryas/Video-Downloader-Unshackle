@@ -1,0 +1,221 @@
+.vp {
+  position: relative;
+  width: 100%;
+  background: #000;
+  border-radius: var(--radius);
+  overflow: hidden;
+  outline: none;
+  user-select: none;
+}
+
+.vp__video {
+  display: block;
+  width: 100%;
+  max-height: 260px;
+  cursor: pointer;
+}
+
+.vp__big-play {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.35);
+  border: none;
+  color: #fff;
+  cursor: pointer;
+  opacity: 0.9;
+  transition: opacity 0.15s;
+}
+
+.vp__big-play:hover {
+  opacity: 1;
+}
+
+/* ── Controls overlay ── */
+.vp__controls {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: linear-gradient(transparent, rgba(0, 0, 0, 0.75));
+  padding: 18px 6px 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  transition: opacity 0.2s;
+}
+
+.vp--hide-ui .vp__controls {
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* ── Seek bar ── */
+.vp__seek-row {
+  padding: 0 2px;
+}
+
+.vp__seek-track {
+  position: relative;
+  height: 4px;
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 2px;
+  cursor: pointer;
+}
+
+.vp__seek-track:hover {
+  height: 6px;
+}
+
+.vp__seek-buf {
+  position: absolute;
+  inset: 0;
+  width: 0;
+  background: rgba(255, 255, 255, 0.3);
+  border-radius: 2px;
+  pointer-events: none;
+}
+
+.vp__seek-fill {
+  position: absolute;
+  inset: 0;
+  width: 0;
+  background: var(--primary, #b0b0b0);
+  border-radius: 2px;
+  pointer-events: none;
+}
+
+.vp__seek-input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+/* ── Bottom bar ── */
+.vp__bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px;
+  min-height: 28px;
+}
+
+.vp__left,
+.vp__right {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.vp__btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 28px;
+  height: 28px;
+  border: none;
+  border-radius: var(--radius, 0.25rem);
+  background: transparent;
+  color: #fff;
+  font-family: var(--font-base, sans-serif);
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+  padding: 0 4px;
+}
+
+.vp__btn:hover {
+  background: rgba(255, 255, 255, 0.15);
+}
+
+/* ── Volume slider ── */
+.vp__vol {
+  width: 56px;
+  height: 4px;
+  -webkit-appearance: none;
+  appearance: none;
+  background: rgba(255, 255, 255, 0.3);
+  border-radius: 2px;
+  outline: none;
+  cursor: pointer;
+}
+
+.vp__vol::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #fff;
+  cursor: pointer;
+}
+
+.vp__vol::-moz-range-thumb {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #fff;
+  border: none;
+  cursor: pointer;
+}
+
+/* ── Time display ── */
+.vp__time {
+  color: rgba(255, 255, 255, 0.85);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  padding: 0 4px;
+}
+
+/* ── Speed menu ── */
+.vp__speed-wrap {
+  position: relative;
+}
+
+.vp__speed-toggle {
+  min-width: 32px;
+}
+
+.vp__speed-menu {
+  position: absolute;
+  bottom: 100%;
+  right: 0;
+  margin-bottom: 4px;
+  list-style: none;
+  background: var(--surface-container-high, #1a1a1a);
+  border: 1px solid var(--outline-variant, #1a1a1a);
+  border-radius: var(--radius, 0.25rem);
+  padding: 4px 0;
+  z-index: 10;
+  min-width: 64px;
+}
+
+.vp__speed-item {
+  display: block;
+  width: 100%;
+  border: none;
+  background: transparent;
+  color: var(--on-surface, #b0b0b0);
+  font-family: var(--font-base, sans-serif);
+  font-size: 12px;
+  text-align: center;
+  padding: 4px 12px;
+  cursor: pointer;
+}
+
+.vp__speed-item:hover {
+  background: var(--surface-variant, #222);
+}
+
+.vp__speed-item--on {
+  color: var(--primary, #b0b0b0);
+  font-weight: 600;
+}

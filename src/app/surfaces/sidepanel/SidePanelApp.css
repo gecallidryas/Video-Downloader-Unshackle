@@ -210,3 +210,28 @@
 .side-panel__show-more:hover {
   background: var(--surface-container);
 }
+
+.side-panel__tool-btn {
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--outline);
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--on-surface-variant);
+  cursor: pointer;
+  margin-left: auto;
+}
+
+.side-panel__tool-btn:hover {
+  background: var(--surface-container);
+  color: var(--on-surface);
+}
+
+.side-panel__tool-btn--active {
+  background: var(--primary);
+  color: var(--primary-action-text);
+  border-color: var(--primary);
+}

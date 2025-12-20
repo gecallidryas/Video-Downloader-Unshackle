@@ -29,7 +29,7 @@ test('setPreferredQuality updates quality preference', () => {
 
 test('includes unified downloader defaults used by background services', () => {
   expect(useSettingsStore.getState()).toMatchObject({
-    theme: 'contrast',
+    theme: 'dark',
     uiMode: 'side-panel',
     autoScanEnabled: true,
     networkCaptureEnabled: true,
@@ -51,10 +51,24 @@ test('includes unified downloader defaults used by background services', () => {
   });
 });
 
-test('supports source theme choices and preview settings without changing UI structure', () => {
-  useSettingsStore.getState().setTheme('forest');
+test('setAdvancedMode toggles the flag', () => {
+  expect(useSettingsStore.getState().advancedMode).toBe(false);
+  useSettingsStore.getState().setAdvancedMode(true);
+  expect(useSettingsStore.getState().advancedMode).toBe(true);
+});
+
+test('setPreviousSessionLimit clamps to non-negative integer', () => {
+  expect(useSettingsStore.getState().previousSessionLimit).toBe(50);
+  useSettingsStore.getState().setPreviousSessionLimit(100);
+  expect(useSettingsStore.getState().previousSessionLimit).toBe(100);
+  useSettingsStore.getState().setPreviousSessionLimit(-5);
+  expect(useSettingsStore.getState().previousSessionLimit).toBe(0);
+});
+
+test('supports theme and preview settings without changing UI structure', () => {
+  useSettingsStore.getState().setTheme('dark');
   useSettingsStore.getState().setPreviewMode('video');
 
-  expect(useSettingsStore.getState().theme).toBe('forest');
+  expect(useSettingsStore.getState().theme).toBe('dark');
   expect(useSettingsStore.getState().previewMode).toBe('video');
 });

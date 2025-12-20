@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { vi } from 'vitest';
 import { SidePanelApp } from '../SidePanelApp';
 import { usePanelStore } from '@/src/state/usePanelStore';
+import { useSettingsStore } from '@/src/state/useSettingsStore';
 import type { RuntimeClient } from '@/src/lib/runtime/client';
 import type { MediaCandidate } from '@/video_downloader_types_skeleton';
 
@@ -107,6 +108,7 @@ beforeEach(() => {
     errorMessage: null,
     downloadingIds: new Set<string>(),
   });
+  useSettingsStore.setState({ advancedMode: false });
 });
 
 test('loads side panel candidates from a typed runtime client', async () => {
@@ -130,9 +132,11 @@ test('loads side panel candidates from a typed runtime client', async () => {
 test('submits manual HLS text ingest from the current tab view', async () => {
   const user = userEvent.setup();
   const runtimeClient = buildRuntimeClient([]);
+  useSettingsStore.setState({ advancedMode: true });
 
   render(<SidePanelApp activeTabId={7} runtimeClient={runtimeClient} />);
 
+  await user.click(screen.getByRole('button', { name: /manual ingest tools/i }));
   await user.type(
     screen.getByRole('textbox', { name: /manual hls input/i }),
     'seg-1.ts\nseg-2.ts',
@@ -228,8 +232,6 @@ test('starts download with current quality, track, and trim selections', async (
   await user.selectOptions(screen.getByRole('combobox', { name: /quality/i }), 'variant-720');
   await user.selectOptions(screen.getByRole('combobox', { name: /audio/i }), 'audio-es');
   await user.selectOptions(screen.getByRole('combobox', { name: /subtitles/i }), 'subs-en');
-  await user.type(screen.getByLabelText(/trim start/i), '0:10');
-  await user.type(screen.getByLabelText(/trim end/i), '0:20');
   await user.click(screen.getByRole('button', { name: /^download$/i }));
 
   expect(runtimeClient.startDownload).toHaveBeenCalledWith('hls-1', {
@@ -237,13 +239,11 @@ test('starts download with current quality, track, and trim selections', async (
     variantId: 'variant-720',
     audioTrackIds: ['audio-es'],
     subtitleTrackIds: ['subs-en'],
-    trim: { startSec: 10, endSec: 20 },
   });
 
-  await user.click(screen.getByRole('button', { name: /queue/i }));
-  expect(screen.getByRole('tab', { name: /pending 1/i })).toBeInTheDocument();
+  await user.click(screen.getByRole('button', { name: /downloads/i }));
+  expect(screen.getByRole('tab', { name: /active 1/i })).toBeInTheDocument();
 
-  await user.click(screen.getByRole('tab', { name: /pending 1/i }));
   expect(screen.getByText('Selectable HLS stream')).toBeInTheDocument();
 });
 
@@ -269,7 +269,7 @@ test('opens preview modal and requests generated preview assets for streamed med
   expect(screen.getByLabelText(/preview video/i)).toHaveAttribute('src', 'preview.webm');
 });
 
-test('preview modal download includes trim selection', async () => {
+test('preview modal download with no trim sends null', async () => {
   const user = userEvent.setup();
   const runtimeClient = buildRuntimeClient([
     buildCandidate({
@@ -283,11 +283,9 @@ test('preview modal download includes trim selection', async () => {
 
   expect(await screen.findByText('Previewable direct stream')).toBeInTheDocument();
   await user.click(screen.getByRole('button', { name: /preview/i }));
-  await user.type(screen.getByLabelText(/trim start/i), '0:01');
-  await user.type(screen.getByLabelText(/trim end/i), '0:03');
   await user.click(screen.getByRole('button', { name: /download selection/i }));
 
   expect(runtimeClient.startDownload).toHaveBeenCalledWith('direct-preview', expect.objectContaining({
-    trim: { startSec: 1, endSec: 3 },
+    mode: 'custom',
   }));
 });

@@ -5,7 +5,7 @@ import { useSettingsStore } from '@/src/state/useSettingsStore';
 
 beforeEach(() => {
   useSettingsStore.setState({
-    theme: 'contrast',
+    theme: 'dark',
     autoDetectEnabled: true,
     autoScanEnabled: true,
     networkCaptureEnabled: true,
@@ -24,6 +24,8 @@ beforeEach(() => {
     captureRuleUrlBlacklist: [],
     captureRuleMinSizeBytes: 0,
     captureRuleSizePredicate: '',
+    advancedMode: false,
+    previousSessionLimit: 50,
   });
 });
 
@@ -62,11 +64,11 @@ test('renders extension version info', () => {
   expect(screen.getByText(/v0\.1\.0/)).toBeInTheDocument();
 });
 
-test('renders source-equivalent theme and download settings in the flat settings surface', () => {
+test('renders source-equivalent download settings in the flat settings surface', () => {
   render(<PopupApp />);
 
-  expect(screen.getByRole('combobox', { name: /theme/i })).toHaveValue('contrast');
-  expect(screen.getByRole('option', { name: /blueberry/i })).toBeInTheDocument();
+  expect(screen.getByRole('combobox', { name: /theme/i })).toHaveValue('dark');
+  expect(screen.getByRole('option', { name: /light/i })).toBeInTheDocument();
   expect(screen.getByRole('checkbox', { name: /network capture/i })).toBeChecked();
   expect(screen.getByRole('combobox', { name: /max concurrent downloads/i })).toHaveValue('3');
   expect(screen.getByRole('combobox', { name: /segments per download/i })).toHaveValue('5');
@@ -93,10 +95,10 @@ test('theme selection persists to the settings store and document token hook', a
   const user = userEvent.setup();
   render(<PopupApp />);
 
-  await user.selectOptions(screen.getByRole('combobox', { name: /theme/i }), 'ocean');
+  await user.selectOptions(screen.getByRole('combobox', { name: /theme/i }), 'light');
 
-  expect(useSettingsStore.getState().theme).toBe('ocean');
-  expect(document.documentElement).toHaveAttribute('data-theme', 'ocean');
+  expect(useSettingsStore.getState().theme).toBe('light');
+  expect(document.documentElement).toHaveAttribute('data-theme', 'light');
 });
 
 test('edits, exports, imports, and resets capture rules', async () => {
@@ -148,6 +150,16 @@ test('shows validation errors for invalid capture rules', async () => {
   await user.type(screen.getByRole('textbox', { name: /custom extensions/i }), 'webm');
 
   expect(screen.getByText(/invalid extension/i)).toBeInTheDocument();
+});
+
+test('advanced mode toggle updates the store', async () => {
+  const user = userEvent.setup();
+  render(<PopupApp />);
+
+  const toggle = screen.getByRole('checkbox', { name: /advanced mode/i });
+  expect(toggle).not.toBeChecked();
+  await user.click(toggle);
+  expect(useSettingsStore.getState().advancedMode).toBe(true);
 });
 
 test('renders keyboard shortcut hints in popup footer', () => {

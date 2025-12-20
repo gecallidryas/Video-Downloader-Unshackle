@@ -1,20 +1,7 @@
 export const SETTINGS_STORAGE_KEY = 'unshackle_settings';
 
 export type UiMode = 'side-panel' | 'popup';
-export type ThemeName =
-  | 'contrast'
-  | 'blueberry'
-  | 'lightdark'
-  | 'noirgold'
-  | 'purplefanatic'
-  | 'sakura'
-  | 'ocean'
-  | 'forest'
-  | 'slate'
-  | 'ember'
-  | 'light'
-  | 'dark'
-  | 'system';
+export type ThemeName = 'dark' | 'light';
 export type PreferredQuality = 'highest' | 'best' | 'smallest' | 'ask' | '1080p' | '720p' | '480p' | '360p';
 export type DefaultQualityPolicy = 'highest' | 'lowest' | 'ask';
 export type OutputFormat = 'auto' | 'mp4' | 'mkv' | 'mp3' | 'webm';
@@ -96,12 +83,13 @@ export interface UnifiedSettings {
   aria2Secret: string;
   webhookEnabled: boolean;
   webhookUrl: string;
+  previousSessionLimit: number;
   externalPlayerProfiles: ExternalPlayerProfile[];
   _schemaVersion: number;
 }
 
 export const DEFAULT_SETTINGS: UnifiedSettings = {
-  theme: 'contrast',
+  theme: 'dark',
   uiMode: 'side-panel',
   autoScanEnabled: true,
   networkCaptureEnabled: true,
@@ -148,8 +136,9 @@ export const DEFAULT_SETTINGS: UnifiedSettings = {
   aria2Secret: '',
   webhookEnabled: false,
   webhookUrl: '',
+  previousSessionLimit: 50,
   externalPlayerProfiles: [],
-  _schemaVersion: 9,
+  _schemaVersion: 10,
 };
 
 export interface SettingsStorageAdapter {
@@ -326,6 +315,11 @@ function normalizeSettings(value: unknown): UnifiedSettings {
       typeof incoming.webhookUrl === 'string'
         ? incoming.webhookUrl
         : DEFAULT_SETTINGS.webhookUrl,
+    previousSessionLimit:
+      Number.isInteger(incoming.previousSessionLimit) &&
+      Number(incoming.previousSessionLimit) >= 0
+        ? Number(incoming.previousSessionLimit)
+        : DEFAULT_SETTINGS.previousSessionLimit,
     externalPlayerProfiles: normalizeExternalPlayerProfiles(incoming.externalPlayerProfiles),
     _schemaVersion: DEFAULT_SETTINGS._schemaVersion,
   };

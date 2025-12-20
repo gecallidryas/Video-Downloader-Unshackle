@@ -34,6 +34,21 @@ export class NativeFfmpegClientError extends Error {
   }
 }
 
+const nativeUnavailableCodes = new Set(['NATIVE_UNAVAILABLE', 'FFMPEG_NOT_FOUND']);
+
+export function isNativeFfmpegUnavailableError(error: unknown): boolean {
+  if (error instanceof NativeFfmpegClientError) {
+    return nativeUnavailableCodes.has(error.code);
+  }
+
+  if (!error || typeof error !== 'object' || !('code' in error)) {
+    return false;
+  }
+
+  const code = (error as { code?: unknown }).code;
+  return typeof code === 'string' && nativeUnavailableCodes.has(code);
+}
+
 export type NativeSendNativeMessage = (
   hostName: string,
   message: NativeFfmpegRequest,

@@ -10,7 +10,7 @@ describe('background settings store', () => {
     const store = createSettingsStore();
 
     await expect(store.load()).resolves.toMatchObject({
-      theme: 'contrast',
+      theme: 'dark',
       uiMode: 'side-panel',
       autoScanEnabled: true,
       networkCaptureEnabled: true,
@@ -52,8 +52,9 @@ describe('background settings store', () => {
       aria2Secret: '',
       webhookEnabled: false,
       webhookUrl: '',
+      previousSessionLimit: 50,
       externalPlayerProfiles: [],
-      _schemaVersion: 9,
+      _schemaVersion: 10,
     });
   });
 

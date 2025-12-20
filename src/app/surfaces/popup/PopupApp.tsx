@@ -51,6 +51,10 @@ function SettingsContent() {
   const setPreviewFormat = useSettingsStore((s) => s.setPreviewFormat);
   const enableContextMenu = useSettingsStore((s) => s.enableContextMenu);
   const toggleContextMenu = useSettingsStore((s) => s.toggleContextMenu);
+  const advancedMode = useSettingsStore((s) => s.advancedMode);
+  const setAdvancedMode = useSettingsStore((s) => s.setAdvancedMode);
+  const previousSessionLimit = useSettingsStore((s) => s.previousSessionLimit);
+  const setPreviousSessionLimit = useSettingsStore((s) => s.setPreviousSessionLimit);
   const captureRuleCustomExtensions = useSettingsStore((s) => s.captureRuleCustomExtensions);
   const captureRuleCustomContentTypes = useSettingsStore((s) => s.captureRuleCustomContentTypes);
   const captureRuleUrlBlacklist = useSettingsStore((s) => s.captureRuleUrlBlacklist);
@@ -180,16 +184,8 @@ function SettingsContent() {
           onChange={(e) => setTheme(e.target.value as Parameters<typeof setTheme>[0])}
           className="popup__select"
         >
-          <option value="contrast">High Contrast</option>
-          <option value="blueberry">Blueberry</option>
-          <option value="lightdark">Light in the Dark</option>
-          <option value="noirgold">Noir Gold</option>
-          <option value="purplefanatic">Purple Fanatic</option>
-          <option value="sakura">Sakura</option>
-          <option value="ocean">Ocean</option>
-          <option value="forest">Forest</option>
-          <option value="slate">Slate</option>
-          <option value="ember">Ember</option>
+          <option value="dark">Dark</option>
+          <option value="light">Light</option>
         </select>
       </label>
 
@@ -377,6 +373,34 @@ function SettingsContent() {
           onChange={toggleContextMenu}
           className="popup__toggle"
         />
+      </label>
+
+      <label className="popup__row">
+        <span className="popup__label">Advanced mode</span>
+        <input
+          type="checkbox"
+          role="checkbox"
+          aria-label="Advanced mode"
+          checked={advancedMode}
+          onChange={() => setAdvancedMode(!advancedMode)}
+          className="popup__toggle"
+        />
+      </label>
+
+      <label className="popup__row">
+        <span className="popup__label">Previous session items limit</span>
+        <select
+          aria-label="Previous session limit"
+          value={String(previousSessionLimit)}
+          onChange={(e) => setPreviousSessionLimit(Number(e.target.value))}
+          className="popup__select"
+        >
+          {[10, 25, 50, 100, 200, 0].map((value) => (
+            <option key={value} value={value}>
+              {value === 0 ? 'Unlimited' : value}
+            </option>
+          ))}
+        </select>
       </label>
 
       <section className="capture-rules">

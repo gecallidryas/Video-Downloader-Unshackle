@@ -6,7 +6,7 @@
 
 .queue-view__tabs {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 4px;
 }
 
@@ -104,4 +104,13 @@
   font-size: var(--text-label-size);
   padding: 0 8px;
   cursor: pointer;
+}
+
+.queue-item__chip {
+  display: inline-block;
+  background: var(--surface-variant);
+  color: var(--on-surface-variant);
+  font-size: var(--text-label-size);
+  padding: 1px 4px;
+  border-radius: 2px;
 }

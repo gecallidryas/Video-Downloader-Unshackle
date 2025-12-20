@@ -1,1 +1,0 @@
-import{a as e,r as t,t as n}from"./tokens-CeuLIhef.js";import"./_virtual_wxt-html-plugins-UbnOHyfP.js";import{t as r}from"./HistoryApp-BtKX8WzB.js";var i=e(t(),1),a=n();i.createRoot(document.getElementById(`root`)).render((0,a.jsx)(r,{}));

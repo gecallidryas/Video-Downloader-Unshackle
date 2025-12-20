@@ -1,7 +1,10 @@
 import type { MediaCandidate } from '@/video_downloader_types_skeleton';
+import {
+  DEFAULT_SETTINGS,
+  SETTINGS_STORAGE_KEY,
+} from '@/src/background/settings/settings-store';
 
 export const PREVIOUS_DETECTIONS_KEY = 'unshackle:previousDetections';
-export const PREVIOUS_DETECTIONS_MAX_ENTRIES = 200;
 
 export interface PreviousDetectionsStorage {
   get(key: string): Promise<Record<string, unknown>>;
@@ -13,6 +16,7 @@ export interface SaveDetectionsParams {
   incognito?: boolean;
   candidates: MediaCandidate[];
   storage?: PreviousDetectionsStorage;
+  maxEntries?: number;
   now?: () => number;
 }
 
@@ -22,17 +26,44 @@ function defaultStorage(): PreviousDetectionsStorage | undefined {
     | undefined;
 }
 
+function normalizeMaxEntries(value: unknown): number {
+  return Number.isInteger(value) && Number(value) >= 0
+    ? Number(value)
+    : DEFAULT_SETTINGS.previousSessionLimit;
+}
+
+async function readPreviousSessionLimit(
+  storage: PreviousDetectionsStorage,
+  maxEntries?: number,
+): Promise<number> {
+  if (maxEntries !== undefined) {
+    return normalizeMaxEntries(maxEntries);
+  }
+
+  const stored = await storage.get(SETTINGS_STORAGE_KEY);
+  const settings = stored[SETTINGS_STORAGE_KEY];
+  if (typeof settings !== 'object' || settings === null || Array.isArray(settings)) {
+    return DEFAULT_SETTINGS.previousSessionLimit;
+  }
+
+  return normalizeMaxEntries(
+    (settings as Partial<typeof DEFAULT_SETTINGS>).previousSessionLimit,
+  );
+}
+
 export async function saveDetectionsOnTabClose({
   tabId,
   incognito = false,
   candidates,
   storage = defaultStorage(),
+  maxEntries,
   now = Date.now,
 }: SaveDetectionsParams): Promise<void> {
   if (incognito || !storage || candidates.length === 0) {
     return;
   }
 
+  const limit = await readPreviousSessionLimit(storage, maxEntries);
   const stored = await storage.get(PREVIOUS_DETECTIONS_KEY);
   const existing = Array.isArray(stored[PREVIOUS_DETECTIONS_KEY])
     ? (stored[PREVIOUS_DETECTIONS_KEY] as MediaCandidate[])
@@ -45,10 +76,10 @@ export async function saveDetectionsOnTabClose({
     updatedAt: candidate.updatedAt || timestamp,
   }));
 
-  const merged = [...enriched, ...existing].slice(
-    0,
-    PREVIOUS_DETECTIONS_MAX_ENTRIES,
-  );
+  const merged =
+    limit > 0
+      ? [...enriched, ...existing].slice(0, limit)
+      : [...enriched, ...existing];
 
   await storage.set({ [PREVIOUS_DETECTIONS_KEY]: merged });
 }

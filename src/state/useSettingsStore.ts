@@ -46,6 +46,10 @@ export interface SettingsState {
   captureRuleUrlBlacklist: string[];
   captureRuleMinSizeBytes: number;
   captureRuleSizePredicate: string;
+  advancedMode: boolean;
+  previousSessionLimit: number;
+  setAdvancedMode: (enabled: boolean) => void;
+  setPreviousSessionLimit: (limit: number) => void;
   setTheme: (theme: ThemeName) => void;
   setAutoScanEnabled: (enabled: boolean) => void;
   setNetworkCaptureEnabled: (enabled: boolean) => void;
@@ -122,6 +126,9 @@ export const useSettingsStore = create<SettingsState>((set) => ({
         ? { captureRuleSizePredicate: rules.sizePredicate }
         : {}),
     }),
+  setAdvancedMode: (enabled) => set({ advancedMode: enabled }),
+  setPreviousSessionLimit: (limit) =>
+    set({ previousSessionLimit: Math.max(0, Math.floor(limit)) }),
   resetCaptureRules: () =>
     set({
       captureRuleCustomExtensions: [],
