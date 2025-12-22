@@ -203,7 +203,7 @@ test('renders protected candidates with warning copy and blocks generic download
   expect(screen.queryByRole('button', { name: /^download$/i })).not.toBeInTheDocument();
 });
 
-test('starts download with current quality, track, and trim selections', async () => {
+test('starts HLS browser fallback download with current quality and track selections', async () => {
   const user = userEvent.setup();
   const runtimeClient = buildRuntimeClient([
     buildCandidate({
@@ -232,7 +232,7 @@ test('starts download with current quality, track, and trim selections', async (
   await user.selectOptions(screen.getByRole('combobox', { name: /quality/i }), 'variant-720');
   await user.selectOptions(screen.getByRole('combobox', { name: /audio/i }), 'audio-es');
   await user.selectOptions(screen.getByRole('combobox', { name: /subtitles/i }), 'subs-en');
-  await user.click(screen.getByRole('button', { name: /^download$/i }));
+  await user.click(screen.getByRole('button', { name: /save raw ts/i }));
 
   expect(runtimeClient.startDownload).toHaveBeenCalledWith('hls-1', {
     mode: 'custom',
@@ -247,7 +247,7 @@ test('starts download with current quality, track, and trim selections', async (
   expect(screen.getByText('Selectable HLS stream')).toBeInTheDocument();
 });
 
-test('opens preview modal and requests generated preview assets for streamed media', async () => {
+test('opens preview modal and requests generated preview assets for preview-capable streamed media', async () => {
   const user = userEvent.setup();
   const runtimeClient = buildRuntimeClient([
     buildCandidate({
@@ -256,6 +256,7 @@ test('opens preview modal and requests generated preview assets for streamed med
       protocol: 'hls',
       sourceUrl: undefined,
       manifestUrl: 'https://cdn.example.com/master.m3u8',
+      posterUrl: 'https://cdn.example.com/poster.jpg',
     }),
   ]);
 
