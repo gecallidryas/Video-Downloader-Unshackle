@@ -27,18 +27,43 @@
 
 ### First-Run Onboarding
 
-Screen: `Native FFmpeg setup`
+Surface: the existing extension popup, not a separate web landing page.
+
+Screen: `Welcome to Unshackle`
+
+Placement:
+- Render inside `PopupApp` as the first card in the popup settings/home surface when native helper setup is incomplete and onboarding is not dismissed.
+- Keep it visually consistent with the existing popup: same compact rows, dark/light theme tokens, small controls, and popup-width responsive layout.
+- Do not open a new browser tab for the permission step. The permission request must happen from the popup button click.
+- Do not block normal extension use. Users can dismiss the card and continue with browser-only downloads.
+- After dismissal, keep a compact native helper card in Settings so setup can be restarted.
 
 Component stack:
-- `OnboardingShell`: centered first-run layout with progress rail and dismiss button.
-- `NativeCapabilitySummary`: explains unlocked capabilities: trim, MP4/MKV/WebM export, MP3 extraction, generated thumbnails/previews.
+- `OnboardingShell`: popup-width card container with step status, dismiss button, and compact actions.
+- `ProjectIntroStep`: states that Unshackle is an open-source, local-first video downloader extension.
+- `FeatureSummaryStep`: short capability list for stream detection, direct downloads, HLS/DASH browser fallback, queue/history, previews, and optional native FFmpeg export.
+- `PreferencesStep`: asks for theme and language. Theme choices are `System`, `Dark`, and `Light` if system theme support exists; otherwise `Dark` and `Light`. Language is English-only for now and stored as `en`.
 - `NativePermissionStep`: asks for Chrome native messaging permission.
 - `NativeInstallerStep`: shows helper install status and PowerShell setup action.
 - `FfmpegHealthStep`: checks FFmpeg/FFprobe availability.
 - `NativeSetupCompleteStep`: confirms native export is ready.
-- `NativeSetupTroubleshooter`: compact diagnostics with copyable status codes.
+- `NativeSetupTroubleshooter`: collapsible diagnostics with copyable status codes.
+
+Popup UI states:
+- `not-checked`: show `Check native helper`.
+- `permission-needed`: show primary `Enable native helper`.
+- `permission-denied`: show `Enable in Chrome` plus diagnostics.
+- `host-missing`: show `Open setup` and `Check again`.
+- `ffmpeg-missing`: show `Install FFmpeg` and `Check again`.
+- `ready`: show `Ready` and a small `Recheck` action.
+- `error`: show `Diagnostics` and `Check again`.
 
 Do not show walls of explanatory text in the app. Use short labels and status messages:
+- `Open source`
+- `Local-first`
+- `Choose theme`
+- `Language`
+- `English`
 - `Enable native helper`
 - `Install helper`
 - `Check again`
@@ -55,6 +80,18 @@ Replace the current small `NativeHelperStatus` row with a richer compact card:
 - Primary action changes by state.
 - Secondary action: `Diagnostics`.
 - Link/action to PowerShell setup package or local setup docs.
+- Same component can render in first-run mode and settings mode; first-run mode has the capability summary, settings mode is compact.
+
+### Onboarding Copy Requirements
+
+The popup onboarding should briefly explain:
+- Unshackle is open source.
+- Detection and normal browser downloads work without the native helper.
+- Native helper is optional and unlocks local FFmpeg features.
+- The PowerShell setup wrapper checks Node.js and FFmpeg first, then can install missing dependencies with user approval.
+- English is the only available UI language for now; more languages can be added later.
+
+Keep each explanation to one short sentence. Use details links for anything longer.
 
 ### Runtime Error Handling
 
@@ -234,6 +271,8 @@ Add defaults:
 nativeHelperOnboardingDismissed: false,
 nativeHelperPermissionPrompted: false,
 nativeHelperLastReadiness: 'not-checked',
+onboardingCompleted: false,
+uiLanguage: 'en',
 ```
 
 Require `_schemaVersion` bump from `9` to `10`.
@@ -254,7 +293,11 @@ Add types and defaults. Normalize invalid stored values. Add setters:
 setNativeHelperOnboardingDismissed(value: boolean): void;
 setNativeHelperPermissionPrompted(value: boolean): void;
 setNativeHelperLastReadiness(value: NativeHelperReadiness): void;
+setOnboardingCompleted(value: boolean): void;
+setUiLanguage(value: 'en'): void;
 ```
+
+If theme is already persisted, reuse existing `theme` settings. Do not add language choices beyond English in this task.
 
 **Step 4: Run green tests**
 
@@ -282,8 +325,16 @@ git commit -m "feat(settings): persist native helper onboarding state"
 **Step 1: Write failing tests**
 
 Cover:
+- renders as a compact popup card, not a full-page landing view.
+- supports `variant="first-run"` with project intro, feature summary, preferences, and native helper steps.
+- supports `variant="settings"` without the capability summary.
+- first-run variant says the project is open source.
+- first-run variant explains detection/direct downloads work without native helper.
+- preferences step renders theme controls.
+- preferences step renders English as the only language option.
 - renders permission step when readiness is `permission-needed`.
 - clicking `Enable native helper` calls permission request callback.
+- host-missing step mentions the PowerShell setup wrapper.
 - renders install step when readiness is `host-missing`.
 - renders FFmpeg missing step when readiness is `ffmpeg-missing`.
 - renders ready state when readiness is `ready`.
@@ -304,15 +355,21 @@ Props:
 ```ts
 interface NativeHelperOnboardingProps {
   diagnostic: NativeHelperDiagnostic;
+  variant?: 'first-run' | 'settings';
+  theme: 'dark' | 'light';
+  language: 'en';
   busy?: boolean;
+  onThemeChange: (theme: 'dark' | 'light') => void;
+  onLanguageChange: (language: 'en') => void;
   onRequestPermission: () => void | Promise<void>;
   onCheckAgain: () => void | Promise<void>;
   onOpenSetup: () => void;
   onDismiss: () => void;
+  onComplete?: () => void;
 }
 ```
 
-Use real buttons, status badges, and concise copy. Keep controls keyboard accessible.
+Use real buttons, status badges, and concise copy. Keep controls keyboard accessible. CSS must use the existing popup/theme tokens where possible and must stay within popup-width constraints.
 
 **Step 4: Run green test**
 
@@ -340,10 +397,17 @@ git commit -m "feat(ui): add native helper onboarding"
 **Step 1: Write failing tests**
 
 Cover:
-- popup shows onboarding when helper is not ready and onboarding is not dismissed.
+- popup shows the first-run onboarding card when helper is not ready and onboarding is not dismissed.
+- popup renders the card inside the existing popup content, before the settings rows.
+- popup onboarding explains the project is open source and local-first.
+- popup onboarding lets the user choose theme.
+- popup onboarding shows language selection with English as the only option.
+- theme choice updates the existing settings store.
+- completing onboarding stores `onboardingCompleted: true`.
 - `Enable native helper` calls `requestNativeMessagingPermission`.
 - after permission grant, popup calls readiness check.
-- existing settings card shows a primary action matching readiness.
+- host-missing state shows the PowerShell setup action and does not imply the extension can silently install the host.
+- existing settings surface shows the compact settings variant with a primary action matching readiness.
 - dismissed onboarding does not render on next popup open.
 
 Mock `src/native/native-permissions.ts` and `src/native/native-helper-diagnostics.ts`.
@@ -377,6 +441,7 @@ async function enableNativeHelper() {
 Setup action v1:
 - Opens `docs/native-helper.md` in dev.
 - Opens the packaged PowerShell setup wrapper docs or downloaded `.zip` in beta.
+- The setup action copy must say the script checks Node.js, FFmpeg, and FFprobe first, then asks before installing missing dependencies.
 
 **Step 4: Run green tests**
 
