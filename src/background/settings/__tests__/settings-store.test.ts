@@ -54,7 +54,12 @@ describe('background settings store', () => {
       webhookUrl: '',
       previousSessionLimit: 50,
       externalPlayerProfiles: [],
-      _schemaVersion: 10,
+      nativeHelperOnboardingDismissed: false,
+      nativeHelperPermissionPrompted: false,
+      nativeHelperLastReadiness: 'not-checked',
+      onboardingCompleted: false,
+      uiLanguage: 'en',
+      _schemaVersion: 11,
     });
   });
 
@@ -178,5 +183,31 @@ describe('background settings store', () => {
     expect(loaded.aria2RpcUrl).toBe('http://localhost:6800/jsonrpc');
     expect(loaded.externalPlayerProfiles).toEqual([]);
     expect(loaded.customCommandTemplate).toBe('');
+  });
+
+  test('normalizes onboarding and native helper settings', async () => {
+    const storage = {
+      get: vi.fn(async () => ({
+        [SETTINGS_STORAGE_KEY]: {
+          nativeHelperOnboardingDismissed: 'yes',
+          nativeHelperPermissionPrompted: 1,
+          nativeHelperLastReadiness: 'surprised',
+          onboardingCompleted: 'done',
+          uiLanguage: 'fr',
+          _schemaVersion: 1,
+        },
+      })),
+      set: vi.fn(async () => undefined),
+    };
+    const store = createSettingsStore({ storage });
+
+    await expect(store.load()).resolves.toMatchObject({
+      nativeHelperOnboardingDismissed: false,
+      nativeHelperPermissionPrompted: false,
+      nativeHelperLastReadiness: 'not-checked',
+      onboardingCompleted: false,
+      uiLanguage: 'en',
+      _schemaVersion: 11,
+    });
   });
 });
