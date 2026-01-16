@@ -41,6 +41,12 @@ back as optional host permissions at the same time.
 | --- | --- | --- |
 | `nativeMessaging` | Optional user-enabled helper | Required only when the user installs/enables the native ffmpeg helper for native trim, muxed export, HLS/DASH generated preview clips, and HLS/DASH generated thumbnails. It is not required for detection, direct browser downloads, raw HLS/DASH fallback exports, direct thumbnail capture, direct preview recording, or browser-recorded WebM trim clips. |
 
+The extension requests `nativeMessaging` only after the user clicks the native
+helper enable action in onboarding or settings. Granting the permission does not
+install the native host; the user still needs the native helper setup flow so
+Chrome can find `com.unshackle.ffmpeg`. Browser detection and normal browser
+downloads continue to work without this permission or host.
+
 ## Content Security Policy
 
 The manifest includes:
