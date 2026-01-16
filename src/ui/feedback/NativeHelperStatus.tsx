@@ -1,44 +1,115 @@
-export type NativeHelperUiStatus = 'not-checked' | 'connected' | 'missing' | 'ffmpeg-missing';
+import { useState } from 'react';
+import type { NativeHelperDiagnostic } from '@/src/native/native-helper-diagnostics';
 
 interface NativeHelperStatusProps {
-  status: NativeHelperUiStatus;
+  diagnostic: NativeHelperDiagnostic;
   onCheck?: () => void;
-  setupHref?: string;
+  onRequestPermission?: () => void;
+  onOpenSetup?: () => void;
+  busy?: boolean;
 }
 
-function statusLabel(status: NativeHelperUiStatus): string {
+function statusLabel(status: NativeHelperDiagnostic['readiness']): string {
   switch (status) {
-    case 'connected':
-      return 'Connected';
-    case 'missing':
-      return 'Not installed';
+    case 'ready':
+      return 'Ready';
+    case 'permission-needed':
+      return 'Permission needed';
+    case 'permission-denied':
+      return 'Permission denied';
+    case 'host-missing':
+    case 'host-forbidden':
+      return 'Install helper';
     case 'ffmpeg-missing':
-      return 'FFmpeg not found';
+      return 'FFmpeg missing';
+    case 'error':
+      return 'Error';
     case 'not-checked':
     default:
       return 'Not checked';
   }
 }
 
-export function NativeHelperStatus({ status, onCheck, setupHref }: NativeHelperStatusProps) {
+function primaryAction(
+  readiness: NativeHelperDiagnostic['readiness'],
+): 'check' | 'permission' | 'setup' | 'recheck' {
+  switch (readiness) {
+    case 'permission-needed':
+    case 'permission-denied':
+      return 'permission';
+    case 'host-missing':
+    case 'host-forbidden':
+      return 'setup';
+    case 'ready':
+    case 'ffmpeg-missing':
+    case 'error':
+      return 'recheck';
+    case 'not-checked':
+    default:
+      return 'check';
+  }
+}
+
+export function NativeHelperStatus({
+  diagnostic,
+  onCheck,
+  onRequestPermission,
+  onOpenSetup,
+  busy = false,
+}: NativeHelperStatusProps) {
+  const [showDiagnostics, setShowDiagnostics] = useState(false);
+  const action = primaryAction(diagnostic.readiness);
+
   return (
     <div className="native-helper-status">
       <div>
         <span className="native-helper-status__label">Native FFmpeg helper</span>
-        <span className="native-helper-status__value">{statusLabel(status)}</span>
+        <span className="native-helper-status__value">{statusLabel(diagnostic.readiness)}</span>
       </div>
       <div className="native-helper-status__actions">
-        {setupHref ? (
-          <a className="native-helper-status__setup" href={setupHref} target="_blank" rel="noreferrer">
-            Setup
-          </a>
-        ) : null}
-        {onCheck ? (
-          <button type="button" className="native-helper-status__check" onClick={onCheck}>
-            Check helper
+        {action === 'permission' ? (
+          <button
+            type="button"
+            className="native-helper-status__check"
+            onClick={onRequestPermission}
+            disabled={busy}
+          >
+            Enable native helper
           </button>
         ) : null}
+        {action === 'setup' ? (
+          <button
+            type="button"
+            className="native-helper-status__check"
+            onClick={onOpenSetup}
+          >
+            Open setup
+          </button>
+        ) : null}
+        {onCheck ? (
+          <button
+            type="button"
+            className="native-helper-status__check"
+            onClick={onCheck}
+            disabled={busy}
+          >
+            {action === 'check' ? 'Check helper' : 'Check again'}
+          </button>
+        ) : null}
+        <button
+          type="button"
+          className="native-helper-status__check"
+          onClick={() => setShowDiagnostics((value) => !value)}
+        >
+          Diagnostics
+        </button>
       </div>
+      {showDiagnostics ? (
+        <div className="native-helper-status__diagnostics">
+          <input aria-label="Readiness code" readOnly value={diagnostic.readiness} />
+          <input aria-label="Host code" readOnly value={diagnostic.hostName} />
+        </div>
+      ) : null}
     </div>
   );
 }
