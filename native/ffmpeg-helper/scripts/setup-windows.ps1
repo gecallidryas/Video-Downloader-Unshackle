@@ -132,35 +132,52 @@ $ScriptsDir = Split-Path -Parent $PSCommandPath
 $HelperRoot = Resolve-Path (Join-Path $ScriptsDir '..')
 $RepoRoot = Resolve-Path (Join-Path $HelperRoot '..\..')
 $InstallScript = Join-Path $ScriptsDir 'install-windows.ps1'
+$LogDir = Join-Path $InstallDir 'logs'
+$TranscriptStarted = $false
 
 Write-Host "Video Downloader Unshackle native helper setup $ProductVersion"
 Write-Host "Host: $HostName"
 
-Ensure-Dependencies
-
-Push-Location $RepoRoot
 try {
-  if (-not (Test-Path -LiteralPath (Join-Path $RepoRoot 'node_modules'))) {
-    Write-Host 'npm install'
-    npm install
-    if ($LASTEXITCODE -ne 0) {
-      throw "npm install failed with exit code $LASTEXITCODE."
+  New-Item -ItemType Directory -Force -Path $LogDir | Out-Null
+  $LogPath = Join-Path $LogDir ("setup-{0}.log" -f (Get-Date -Format 'yyyyMMdd-HHmmss'))
+  Start-Transcript -Path $LogPath -Append | Out-Null
+  $TranscriptStarted = $true
+} catch {
+  Write-Warning "Could not start setup transcript: $($_.Exception.Message)"
+}
+
+try {
+  Ensure-Dependencies
+
+  Push-Location $RepoRoot
+  try {
+    if (-not (Test-Path -LiteralPath (Join-Path $RepoRoot 'node_modules'))) {
+      Write-Host 'npm install'
+      npm install
+      if ($LASTEXITCODE -ne 0) {
+        throw "npm install failed with exit code $LASTEXITCODE."
+      }
     }
+
+    Write-Host 'npm run native:build'
+    npm run native:build
+    if ($LASTEXITCODE -ne 0) {
+      throw "npm run native:build failed with exit code $LASTEXITCODE."
+    }
+  } finally {
+    Pop-Location
   }
 
-  Write-Host 'npm run native:build'
-  npm run native:build
+  $NodePath = (Get-Command node -ErrorAction Stop).Source
+  & $InstallScript -ExtensionId $ExtensionId -InstallDir $InstallDir -NodePath $NodePath
   if ($LASTEXITCODE -ne 0) {
-    throw "npm run native:build failed with exit code $LASTEXITCODE."
+    throw "install-windows.ps1 failed with exit code $LASTEXITCODE."
   }
+
+  Write-Host "Setup complete for $HostName"
 } finally {
-  Pop-Location
+  if ($TranscriptStarted) {
+    Stop-Transcript | Out-Null
+  }
 }
-
-$NodePath = (Get-Command node -ErrorAction Stop).Source
-& $InstallScript -ExtensionId $ExtensionId -InstallDir $InstallDir -NodePath $NodePath
-if ($LASTEXITCODE -ne 0) {
-  throw "install-windows.ps1 failed with exit code $LASTEXITCODE."
-}
-
-Write-Host "Setup complete for $HostName"
