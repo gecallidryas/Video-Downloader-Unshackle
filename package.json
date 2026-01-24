@@ -10,6 +10,7 @@
     "test": "vitest run --config vitest.config.ts",
     "native:build": "tsc -p native/ffmpeg-helper/tsconfig.json",
     "native:test": "vitest run --config vitest.config.ts native/ffmpeg-helper/src",
+    "native:setup:windows": "powershell -ExecutionPolicy Bypass -File native/ffmpeg-helper/scripts/setup-windows.ps1",
     "test:e2e": "playwright test",
     "typecheck": "tsc --noEmit",
     "postinstall": "wxt prepare"
