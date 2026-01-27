@@ -46,6 +46,8 @@ describe('native helper diagnostics', () => {
         nativeClient: createClient(async () => ({
           version: '0.1.0',
           ffmpegAvailable: true,
+          ffprobeAvailable: true,
+          platform: 'win32',
         })),
         now: () => 200,
       }),

@@ -55,7 +55,7 @@ export async function checkNativeHelperReadiness(input: {
 
   try {
     const pong = await nativeClient.ping();
-    if (!pong.ffmpegAvailable) {
+    if (!pong.ffmpegAvailable || !pong.ffprobeAvailable) {
       return createDiagnostic({
         readiness: 'ffmpeg-missing',
         permission: 'granted',

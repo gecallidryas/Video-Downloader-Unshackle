@@ -29,7 +29,17 @@ export type NativeHelperRequest =
   | { type: 'CLEANUP_JOB'; requestId: string; payload: { jobId: string } };
 
 export type NativeHelperResponse =
-  | { type: 'PONG'; requestId: string; payload: { version: string; ffmpegAvailable: boolean } }
+  | {
+      type: 'PONG';
+      requestId: string;
+      payload: {
+        version: string;
+        ffmpegAvailable: boolean;
+        ffprobeAvailable: boolean;
+        platform: string;
+        installKind?: 'dev' | 'per-user' | 'system';
+      };
+    }
   | { type: 'PROBE_RESULT'; requestId: string; payload: ProbeResult }
   | { type: 'COMPLETED'; requestId: string; payload: ProcessJobResult }
   | { type: 'THUMBNAIL_RESULT'; requestId: string; payload: AssetResultPayload }
@@ -81,6 +91,9 @@ export async function dispatchNativeRequest(
           payload: {
             version: HELPER_VERSION,
             ffmpegAvailable: await checkExecutable('ffmpeg', deps),
+            ffprobeAvailable: await checkExecutable('ffprobe', deps),
+            platform: process.platform,
+            installKind: nativeInstallKind(),
           },
         };
 
@@ -127,6 +140,11 @@ export async function dispatchNativeRequest(
       error instanceof Error ? error.message : 'Unknown native helper error.',
     );
   }
+}
+
+function nativeInstallKind(): 'dev' | 'per-user' | 'system' | undefined {
+  const value = process.env.UNSHACKLE_NATIVE_INSTALL_KIND;
+  return value === 'per-user' || value === 'system' || value === 'dev' ? value : 'dev';
 }
 
 async function dispatchExport(

@@ -11,18 +11,24 @@ const dirs = {
 };
 
 describe('native ffmpeg helper dispatcher', () => {
-  it('returns PONG with helper version and ffmpeg availability', async () => {
+  it('returns PONG with helper version and runtime availability', async () => {
+    const checkExecutable = vi.fn(async (file: 'ffmpeg' | 'ffprobe') => file === 'ffmpeg');
     const response = await dispatchNativeRequest(
       { type: 'PING', requestId: 'req-ping' },
-      { checkExecutable: vi.fn().mockResolvedValue(true), ensureOutputDirs: vi.fn().mockResolvedValue(dirs) },
+      { checkExecutable, ensureOutputDirs: vi.fn().mockResolvedValue(dirs) },
     );
 
+    expect(checkExecutable).toHaveBeenCalledWith('ffmpeg');
+    expect(checkExecutable).toHaveBeenCalledWith('ffprobe');
     expect(response).toEqual({
       type: 'PONG',
       requestId: 'req-ping',
       payload: {
         version: '0.1.0',
         ffmpegAvailable: true,
+        ffprobeAvailable: false,
+        platform: process.platform,
+        installKind: 'dev',
       },
     });
   });

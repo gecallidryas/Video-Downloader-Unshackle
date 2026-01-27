@@ -44,6 +44,16 @@ export interface NativeFfmpegJobPayload {
   jobId: string;
 }
 
+export type NativeFfmpegInstallKind = 'dev' | 'per-user' | 'system';
+
+export interface NativeFfmpegPongPayload {
+  version: string;
+  ffmpegAvailable: boolean;
+  ffprobeAvailable: boolean;
+  platform: string;
+  installKind?: NativeFfmpegInstallKind;
+}
+
 export type NativeFfmpegRequest =
   | { type: 'PING'; requestId: string }
   | { type: 'PROBE'; requestId: string; payload: NativeFfmpegProbePayload }
@@ -81,7 +91,7 @@ export type NativeFfmpegResponse =
   | {
       type: 'PONG';
       requestId: string;
-      payload: { version: string; ffmpegAvailable: boolean };
+      payload: NativeFfmpegPongPayload;
     }
   | {
       type: 'PROBE_RESULT';
@@ -230,9 +240,19 @@ export function isNativeFfmpegResponse(value: unknown): value is NativeFfmpegRes
       return (
         hasOnlyKeys(value, ['type', 'requestId', 'payload']) &&
         isRecord(value.payload) &&
-        hasOnlyKeys(value.payload, ['version', 'ffmpegAvailable']) &&
+        hasOnlyKeys(value.payload, [
+          'version',
+          'ffmpegAvailable',
+          'ffprobeAvailable',
+          'platform',
+          'installKind',
+        ]) &&
         isString(value.payload.version) &&
-        typeof value.payload.ffmpegAvailable === 'boolean'
+        typeof value.payload.ffmpegAvailable === 'boolean' &&
+        typeof value.payload.ffprobeAvailable === 'boolean' &&
+        isString(value.payload.platform) &&
+        (value.payload.installKind === undefined ||
+          ['dev', 'per-user', 'system'].includes(String(value.payload.installKind)))
       );
     case 'PROBE_RESULT':
       return hasOnlyKeys(value, ['type', 'requestId', 'payload']) && isProbeResultPayload(value.payload);
