@@ -1,4 +1,5 @@
 import type { NativeHelperDiagnostic } from '@/src/native/native-helper-diagnostics';
+import type { NativeHelperInstallTarget } from '@/src/native/native-helper-links';
 import { OnboardingShell } from './OnboardingShell';
 import './NativeHelperOnboarding.css';
 
@@ -15,6 +16,7 @@ export interface NativeHelperOnboardingProps {
   onOpenSetup: () => void;
   onDismiss: () => void;
   onComplete?: () => void;
+  installTarget?: NativeHelperInstallTarget;
 }
 
 export function NativeHelperOnboarding({
@@ -30,6 +32,7 @@ export function NativeHelperOnboarding({
   onOpenSetup,
   onDismiss,
   onComplete,
+  installTarget = { kind: 'docs', href: 'docs/native-helper.md' },
 }: NativeHelperOnboardingProps) {
   const title = variant === 'first-run' ? 'Welcome to Unshackle' : 'Native FFmpeg helper';
 
@@ -100,6 +103,7 @@ export function NativeHelperOnboarding({
         onCheckAgain={onCheckAgain}
         onOpenSetup={onOpenSetup}
         onComplete={onComplete}
+        installTarget={installTarget}
       />
 
       <details className="native-helper-onboarding__diagnostics">
@@ -118,10 +122,11 @@ function NativeStep({
   onCheckAgain,
   onOpenSetup,
   onComplete,
+  installTarget,
 }: Pick<
   NativeHelperOnboardingProps,
   'diagnostic' | 'busy' | 'onRequestPermission' | 'onCheckAgain' | 'onOpenSetup' | 'onComplete'
->) {
+> & { installTarget: NativeHelperInstallTarget }) {
   switch (diagnostic.readiness) {
     case 'permission-needed':
       return (
@@ -150,7 +155,9 @@ function NativeStep({
         <div className="native-helper-onboarding__native-step">
           <span className="native-helper-onboarding__label">Helper not installed</span>
           <p className="native-helper-onboarding__copy">
-            PowerShell setup wrapper checks Node.js, FFmpeg, and FFprobe first.
+            {installTarget.kind === 'powershell-setup'
+              ? 'PowerShell setup package checks Node.js, FFmpeg, and FFprobe first.'
+              : 'PowerShell setup wrapper checks Node.js, FFmpeg, and FFprobe first.'}
           </p>
           <p className="native-helper-onboarding__copy">
             It asks before installing missing dependencies.

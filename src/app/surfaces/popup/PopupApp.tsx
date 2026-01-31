@@ -7,6 +7,7 @@ import {
   type NativeHelperDiagnostic,
   type NativeHelperReadiness,
 } from '@/src/native/native-helper-diagnostics';
+import { getNativeHelperInstallTarget } from '@/src/native/native-helper-links';
 import { useSettingsStore } from '@/src/state/useSettingsStore';
 import { NativeHelperStatus } from '@/src/ui/feedback/NativeHelperStatus';
 import { NativeHelperOnboarding } from '@/src/ui/onboarding/NativeHelperOnboarding';
@@ -55,6 +56,18 @@ function createPopupDiagnostic(
   };
 }
 
+function resolveNativeHelperInstallTarget() {
+  const runtimeId = typeof chrome === 'undefined' ? undefined : chrome.runtime?.id;
+  const platform = typeof navigator === 'undefined' ? undefined : navigator.platform;
+  const setupBaseUrl = import.meta.env.VITE_NATIVE_HELPER_SETUP_BASE_URL as string | undefined;
+
+  return getNativeHelperInstallTarget({
+    platform,
+    setupBaseUrl,
+    extensionId: runtimeId,
+  });
+}
+
 function SettingsContent() {
   const theme = useSettingsStore((s) => s.theme);
   const setTheme = useSettingsStore((s) => s.setTheme);
@@ -76,6 +89,7 @@ function SettingsContent() {
   const [nativeHelperDiagnostic, setNativeHelperDiagnostic] =
     useState<NativeHelperDiagnostic>(() => createPopupDiagnostic(nativeHelperLastReadiness));
   const [nativeHelperBusy, setNativeHelperBusy] = useState(false);
+  const nativeHelperInstallTarget = resolveNativeHelperInstallTarget();
   const autoDetect = useSettingsStore((s) => s.autoDetectEnabled);
   const toggleAutoDetect = useSettingsStore((s) => s.toggleAutoDetect);
   const autoScanEnabled = useSettingsStore((s) => s.autoScanEnabled);
@@ -166,7 +180,7 @@ function SettingsContent() {
   }
 
   function openNativeHelperSetup() {
-    window.open('docs/native-helper.md', '_blank', 'noopener,noreferrer');
+    window.open(nativeHelperInstallTarget.href, '_blank', 'noopener,noreferrer');
   }
 
   function dismissOnboarding() {
@@ -282,6 +296,7 @@ function SettingsContent() {
           onOpenSetup={openNativeHelperSetup}
           onDismiss={dismissOnboarding}
           onComplete={completeOnboarding}
+          installTarget={nativeHelperInstallTarget}
         />
       ) : null}
 
