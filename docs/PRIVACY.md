@@ -14,6 +14,8 @@ Media detection, manifest parsing, segment planning, queue management, and expor
 
 Unshackle does not send data to external servers unless you explicitly configure an integration or external helper workflow. Native FFmpeg helper usage is a local machine integration, not a project-operated server.
 
+The native helper is optional. Detection and normal browser downloads continue to work without it. When enabled, it unlocks local FFmpeg features such as muxing, conversion, thumbnails, and preview support. The Windows beta setup wrapper does not bundle Node, FFmpeg, or FFprobe; it checks for those tools first and only offers package-manager installation after printing the exact `winget` command and receiving user confirmation unless `-AssumeYes` is explicitly used.
+
 ## Credential Handling
 
 Cookies, `Authorization`, and `Set-Cookie` headers are never captured by default.
@@ -49,7 +51,7 @@ Unshackle requests Chrome extension permissions for the downloader workflows it 
 | `alarms` | Schedules background maintenance such as cleanup and retry-related work. |
 | `notifications` | Shows optional download completion or error notifications. |
 | `<all_urls>` host access | Allows detection across sites where the user has installed and enabled the extension. |
-| Optional `nativeMessaging` | Enables a local native helper such as FFmpeg export only when granted by the user. |
+| Optional `nativeMessaging` | Enables the local native helper only after a popup button click grants the optional permission. Permission alone does not install the host. |
 
 ## External Sharing
 

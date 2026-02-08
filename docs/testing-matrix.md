@@ -83,15 +83,29 @@ Native FFmpeg helper:
 
 ```bash
 npm test -- native/ffmpeg-helper/src/__tests__/ffmpeg-command.test.ts native/ffmpeg-helper/src/__tests__/process-runner.test.ts native/ffmpeg-helper/src/__tests__/dispatcher.test.ts
+npm test -- src/native/__tests__/native-permissions.test.ts src/native/__tests__/native-helper-diagnostics.test.ts src/native/__tests__/native-helper-links.test.ts src/ui/onboarding/__tests__/NativeHelperOnboarding.test.tsx src/app/surfaces/popup/__tests__/PopupApp.test.tsx src/ui/feedback/__tests__/NativeHelperStatus.test.tsx src/background/__tests__/manifest-permissions.test.ts
 npm run native:test
 npm run native:build
 ```
+
+Windows beta setup smoke scripts:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File native/ffmpeg-helper/scripts/test-setup-windows.ps1
+powershell -ExecutionPolicy Bypass -File native/ffmpeg-helper/scripts/smoke-test-installed-host.ps1 -ExtensionId <loaded-extension-id>
+```
+
+Run the setup smoke scripts on Windows. They verify Node 20+, FFmpeg, FFprobe,
+the optional native messaging host registration, and uninstall cleanup. If
+dependencies are missing, setup may offer `winget` commands only after printing
+the exact command and asking for confirmation unless `-AssumeYes` is passed.
 
 Unified parity and E2E harness:
 
 ```bash
 npm test -- src/parity/__tests__/unified-fixture-parity.test.ts src/background/messaging/__tests__/runtime-router.test.ts
 npm run test:e2e
+VITE_NATIVE_HELPER_SETUP_BASE_URL=https://example.invalid/native-helper npm run test:e2e -- e2e/native-helper-onboarding.spec.ts
 UNSHACKLE_NATIVE_E2E=1 npm run test:e2e -- e2e/native-ffmpeg.spec.ts
 ```
 
