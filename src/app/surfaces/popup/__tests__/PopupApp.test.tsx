@@ -210,12 +210,21 @@ test('edits, exports, imports, and resets capture rules', async () => {
   const user = userEvent.setup();
   render(<PopupApp />);
 
-  await user.type(screen.getByRole('textbox', { name: /custom extensions/i }), '.vob\n.flv');
-  await user.type(screen.getByRole('textbox', { name: /custom content types/i }), 'application/octet-stream');
-  await user.type(screen.getByRole('textbox', { name: /url blacklist/i }), '*analytics*');
-  await user.clear(screen.getByRole('spinbutton', { name: /minimum size bytes/i }));
-  await user.type(screen.getByRole('spinbutton', { name: /minimum size bytes/i }), '1024');
-  await user.type(screen.getByRole('textbox', { name: /size predicate/i }), '1KB-5MB');
+  fireEvent.change(screen.getByRole('textbox', { name: /custom extensions/i }), {
+    target: { value: '.vob\n.flv' },
+  });
+  fireEvent.change(screen.getByRole('textbox', { name: /custom content types/i }), {
+    target: { value: 'application/octet-stream' },
+  });
+  fireEvent.change(screen.getByRole('textbox', { name: /url blacklist/i }), {
+    target: { value: '*analytics*' },
+  });
+  fireEvent.change(screen.getByRole('spinbutton', { name: /minimum size bytes/i }), {
+    target: { value: '1024' },
+  });
+  fireEvent.change(screen.getByRole('textbox', { name: /size predicate/i }), {
+    target: { value: '1KB-5MB' },
+  });
 
   expect(useSettingsStore.getState()).toMatchObject({
     captureRuleCustomExtensions: ['.vob', '.flv'],
