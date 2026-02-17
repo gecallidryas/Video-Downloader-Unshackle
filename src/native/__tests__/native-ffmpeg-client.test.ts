@@ -27,13 +27,25 @@ describe('native ffmpeg client', () => {
       callback({
         type: 'PONG',
         requestId: request.requestId,
-        payload: { version: '1.0.0', ffmpegAvailable: true },
+        payload: {
+          version: '1.0.0',
+          ffmpegAvailable: true,
+          ffprobeAvailable: true,
+          platform: 'win32',
+          installKind: 'per-user',
+        },
       });
     });
     vi.stubGlobal('chrome', { runtime: { sendNativeMessage } });
 
     const client = createNativeFfmpegClient();
-    await expect(client.ping()).resolves.toEqual({ version: '1.0.0', ffmpegAvailable: true });
+    await expect(client.ping()).resolves.toEqual({
+      version: '1.0.0',
+      ffmpegAvailable: true,
+      ffprobeAvailable: true,
+      platform: 'win32',
+      installKind: 'per-user',
+    });
 
     expect(sendNativeMessage).toHaveBeenCalledTimes(1);
     expect(sendNativeMessage).toHaveBeenCalledWith(

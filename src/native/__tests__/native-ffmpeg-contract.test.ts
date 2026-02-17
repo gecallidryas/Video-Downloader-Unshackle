@@ -116,6 +116,22 @@ describe('native ffmpeg message contract', () => {
     ).toBe(true);
   });
 
+  test('accepts PONG responses with helper self-test diagnostics', () => {
+    expect(
+      isNativeFfmpegResponse({
+        type: 'PONG',
+        requestId: 'req-ping',
+        payload: {
+          version: '0.1.0',
+          ffmpegAvailable: true,
+          ffprobeAvailable: false,
+          platform: 'win32',
+          installKind: 'per-user',
+        },
+      }),
+    ).toBe(true);
+  });
+
   test('accepts preview asset responses with extension-safe data URLs', () => {
     expect(
       isNativeFfmpegResponse({
@@ -204,6 +220,13 @@ describe('native ffmpeg message contract', () => {
         type: 'PROGRESS',
         requestId: 'req-export',
         payload: { jobId: 'job-1', progressPct: 140, phase: 'exporting' },
+      }),
+    ).toBe(false);
+    expect(
+      isNativeFfmpegResponse({
+        type: 'PONG',
+        requestId: 'req-ping',
+        payload: { version: '0.1.0', ffmpegAvailable: true },
       }),
     ).toBe(false);
   });

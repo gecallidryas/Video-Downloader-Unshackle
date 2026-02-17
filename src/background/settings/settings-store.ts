@@ -1,3 +1,5 @@
+import type { NativeHelperReadiness } from '@/src/native/native-helper-diagnostics';
+
 export const SETTINGS_STORAGE_KEY = 'unshackle_settings';
 
 export type UiMode = 'side-panel' | 'popup';
@@ -21,6 +23,7 @@ export type DefaultDownloadAction =
   | 'copy'
   | 'record_live';
 export type NotificationMode = 'each' | 'batched' | 'off';
+export type UiLanguage = 'en';
 
 export interface ProviderDefaultSettings {
   quality: PreferredQuality;
@@ -85,6 +88,11 @@ export interface UnifiedSettings {
   webhookUrl: string;
   previousSessionLimit: number;
   externalPlayerProfiles: ExternalPlayerProfile[];
+  nativeHelperOnboardingDismissed: boolean;
+  nativeHelperPermissionPrompted: boolean;
+  nativeHelperLastReadiness: NativeHelperReadiness;
+  onboardingCompleted: boolean;
+  uiLanguage: UiLanguage;
   _schemaVersion: number;
 }
 
@@ -138,8 +146,24 @@ export const DEFAULT_SETTINGS: UnifiedSettings = {
   webhookUrl: '',
   previousSessionLimit: 50,
   externalPlayerProfiles: [],
-  _schemaVersion: 10,
+  nativeHelperOnboardingDismissed: false,
+  nativeHelperPermissionPrompted: false,
+  nativeHelperLastReadiness: 'not-checked',
+  onboardingCompleted: false,
+  uiLanguage: 'en',
+  _schemaVersion: 11,
 };
+
+const nativeHelperReadinessValues = new Set<NativeHelperReadiness>([
+  'not-checked',
+  'permission-needed',
+  'permission-denied',
+  'host-missing',
+  'host-forbidden',
+  'ffmpeg-missing',
+  'ready',
+  'error',
+]);
 
 export interface SettingsStorageAdapter {
   get(key: string): Promise<Record<string, unknown>>;
@@ -321,6 +345,24 @@ function normalizeSettings(value: unknown): UnifiedSettings {
         ? Number(incoming.previousSessionLimit)
         : DEFAULT_SETTINGS.previousSessionLimit,
     externalPlayerProfiles: normalizeExternalPlayerProfiles(incoming.externalPlayerProfiles),
+    nativeHelperOnboardingDismissed:
+      typeof incoming.nativeHelperOnboardingDismissed === 'boolean'
+        ? incoming.nativeHelperOnboardingDismissed
+        : DEFAULT_SETTINGS.nativeHelperOnboardingDismissed,
+    nativeHelperPermissionPrompted:
+      typeof incoming.nativeHelperPermissionPrompted === 'boolean'
+        ? incoming.nativeHelperPermissionPrompted
+        : DEFAULT_SETTINGS.nativeHelperPermissionPrompted,
+    nativeHelperLastReadiness: nativeHelperReadinessValues.has(
+      incoming.nativeHelperLastReadiness as NativeHelperReadiness,
+    )
+      ? (incoming.nativeHelperLastReadiness as NativeHelperReadiness)
+      : DEFAULT_SETTINGS.nativeHelperLastReadiness,
+    onboardingCompleted:
+      typeof incoming.onboardingCompleted === 'boolean'
+        ? incoming.onboardingCompleted
+        : DEFAULT_SETTINGS.onboardingCompleted,
+    uiLanguage: incoming.uiLanguage === 'en' ? 'en' : DEFAULT_SETTINGS.uiLanguage,
     _schemaVersion: DEFAULT_SETTINGS._schemaVersion,
   };
 }

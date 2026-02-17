@@ -58,7 +58,7 @@ Recommended direction: keep Unshackle as the typed all-in-one extension, use Uni
 | AES-128 clear-key HLS | Present | Present | Present | Keep clear-key only; never extend into DRM/key extraction. |
 | DRM/protected handling | Detects/protects in several paths; default setting needs review | Broad detection and mixed policy defaults | Mostly blocklist/compliance, not DRM-centric | Release posture should be safe-by-default. |
 | Queue/history | Present | Present | No persistent queue/history, job window only | Unshackle is stronger. |
-| Output conversion | Native FFmpeg helper, MP4/WebM/audio/trim paths plus browser raw HLS/DASH and explicit direct WebM trim recording | FFmpeg/offscreen baseline | Downloads raw stream/media; no FFmpeg mux UI | Native helper remains optional; browser fallback labels raw `.ts`, `.m4s`, `.bin`, and `.webm` outputs honestly. |
+| Output conversion | Native FFmpeg helper, MP4/WebM/audio/trim paths plus browser raw HLS/DASH and explicit direct WebM trim recording | FFmpeg/offscreen baseline | Downloads raw stream/media; no FFmpeg mux UI | Native helper remains optional; popup onboarding explains browser downloads still work without it, requests optional `nativeMessaging` from a button, and links Windows users to the beta PowerShell setup wrapper. |
 | Preview | Native preview/thumbnail services with direct offscreen preview and thumbnail fallback when native is unavailable; HLS/DASH generated assets remain native-required without static thumbnails | Preview/thumbnail baseline | MSE/MP4Box preview while downloading | Live-stream's progressive preview concept is useful but should be optional. |
 | Context menus | Present | Present | Strong: link, media, selected-link extraction, clear list | Add selected-link extraction parity if not already wired. |
 | Remote policy/blocklist | Strict remote config and blocklist tests | Remote config baseline | Remote/cacheable blocked stream list with owner request process | Adopt owner-request blocklist workflow semantics, not unsigned remote behavior. |
@@ -116,7 +116,7 @@ Status values:
 | Notifications | present | present | minimal badge/title | Unshackle/Unified stronger. |
 | Side panel UX | present | present | gap | Keep Unshackle UX. |
 | Popup job details | partial | present | present | Consider a job-details modal/panel for advanced diagnostics. |
-| Native FFmpeg export | present | present in source baseline as offscreen/wasm idea; Unshackle uses native helper | gap | Unshackle stronger; keep optional and explicit. |
+| Native FFmpeg export | present with optional popup permission flow, host/dependency diagnostics, and beta/dev PowerShell setup wrapper | present in source baseline as offscreen/wasm idea; Unshackle uses native helper | gap | Unshackle stronger; keep optional and explicit. Signed MSI/EXE packaging is deferred. |
 | MP4/MKV/MP3/WebM outputs | present/partial depending path | present | gap/raw only | Keep improving native helper path. |
 | Trim/cut | present | present | gap | Unshackle stronger. |
 | Remote config refresh | present | present | present remote blocked list | Keep signature/policy review; do not adopt unsigned runtime behavior. |

@@ -1,12 +1,16 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
-import { createNativeFfmpegClient, NativeFfmpegClientError } from '@/src/native/native-ffmpeg-client';
 import { createCaptureRuleEngine } from '@/src/core/capture-rules/capture-rule-engine';
-import { useSettingsStore } from '@/src/state/useSettingsStore';
+import { requestNativeMessagingPermission } from '@/src/native/native-permissions';
 import {
-  NativeHelperStatus,
-  type NativeHelperUiStatus,
-} from '@/src/ui/feedback/NativeHelperStatus';
+  checkNativeHelperReadiness,
+  type NativeHelperDiagnostic,
+  type NativeHelperReadiness,
+} from '@/src/native/native-helper-diagnostics';
+import { getNativeHelperInstallTarget } from '@/src/native/native-helper-links';
+import { useSettingsStore } from '@/src/state/useSettingsStore';
+import { NativeHelperStatus } from '@/src/ui/feedback/NativeHelperStatus';
+import { NativeHelperOnboarding } from '@/src/ui/onboarding/NativeHelperOnboarding';
 import './PopupApp.css';
 
 function linesToList(value: string): string[] {
@@ -20,11 +24,72 @@ function listToLines(value: string[]): string {
   return value.join('\n');
 }
 
+function createPopupDiagnostic(
+  readiness: NativeHelperReadiness,
+  message?: string,
+): NativeHelperDiagnostic {
+  return {
+    readiness,
+    permission:
+      readiness === 'permission-needed'
+        ? 'unknown'
+        : readiness === 'permission-denied'
+          ? 'denied'
+          : 'granted',
+    install:
+      readiness === 'host-missing'
+        ? 'missing'
+        : readiness === 'host-forbidden'
+          ? 'forbidden'
+          : readiness === 'permission-needed' || readiness === 'permission-denied'
+            ? 'unknown'
+            : 'registered',
+    ffmpeg:
+      readiness === 'ffmpeg-missing'
+        ? 'missing'
+        : readiness === 'ready'
+          ? 'available'
+          : 'unknown',
+    hostName: 'com.unshackle.ffmpeg',
+    message,
+    checkedAt: Date.now(),
+  };
+}
+
+function resolveNativeHelperInstallTarget() {
+  const runtimeId = typeof chrome === 'undefined' ? undefined : chrome.runtime?.id;
+  const platform = typeof navigator === 'undefined' ? undefined : navigator.platform;
+  const setupBaseUrl = import.meta.env.VITE_NATIVE_HELPER_SETUP_BASE_URL as string | undefined;
+
+  return getNativeHelperInstallTarget({
+    platform,
+    setupBaseUrl,
+    extensionId: runtimeId,
+  });
+}
+
 function SettingsContent() {
-  const [nativeHelperStatus, setNativeHelperStatus] =
-    useState<NativeHelperUiStatus>('missing');
   const theme = useSettingsStore((s) => s.theme);
   const setTheme = useSettingsStore((s) => s.setTheme);
+  const uiLanguage = useSettingsStore((s) => s.uiLanguage);
+  const setUiLanguage = useSettingsStore((s) => s.setUiLanguage);
+  const nativeHelperOnboardingDismissed = useSettingsStore(
+    (s) => s.nativeHelperOnboardingDismissed,
+  );
+  const setNativeHelperOnboardingDismissed = useSettingsStore(
+    (s) => s.setNativeHelperOnboardingDismissed,
+  );
+  const setNativeHelperPermissionPrompted = useSettingsStore(
+    (s) => s.setNativeHelperPermissionPrompted,
+  );
+  const nativeHelperLastReadiness = useSettingsStore((s) => s.nativeHelperLastReadiness);
+  const setNativeHelperLastReadiness = useSettingsStore((s) => s.setNativeHelperLastReadiness);
+  const onboardingCompleted = useSettingsStore((s) => s.onboardingCompleted);
+  const setOnboardingCompleted = useSettingsStore((s) => s.setOnboardingCompleted);
+  const [nativeHelperDiagnostic, setNativeHelperDiagnostic] =
+    useState<NativeHelperDiagnostic>(() => createPopupDiagnostic(nativeHelperLastReadiness));
+  const [nativeHelperBusy, setNativeHelperBusy] = useState(false);
+  const nativeHelperInstallTarget = resolveNativeHelperInstallTarget();
   const autoDetect = useSettingsStore((s) => s.autoDetectEnabled);
   const toggleAutoDetect = useSettingsStore((s) => s.toggleAutoDetect);
   const autoScanEnabled = useSettingsStore((s) => s.autoScanEnabled);
@@ -77,18 +142,59 @@ function SettingsContent() {
     captureRuleSizePredicate,
   );
 
-  async function checkNativeHelper() {
+  async function refreshNativeHelperDiagnostic() {
+    setNativeHelperBusy(true);
     try {
-      const result = await createNativeFfmpegClient().ping();
-      setNativeHelperStatus(result.ffmpegAvailable ? 'connected' : 'ffmpeg-missing');
+      const next = await checkNativeHelperReadiness();
+      setNativeHelperDiagnostic(next);
+      setNativeHelperLastReadiness(next.readiness);
     } catch (error) {
-      setNativeHelperStatus(
-        error instanceof NativeFfmpegClientError && error.code === 'FFMPEG_NOT_FOUND'
-          ? 'ffmpeg-missing'
-          : 'missing',
+      const next = createPopupDiagnostic(
+        'error',
+        error instanceof Error ? error.message : 'Native helper failed.',
       );
+      setNativeHelperDiagnostic(next);
+      setNativeHelperLastReadiness(next.readiness);
+    } finally {
+      setNativeHelperBusy(false);
     }
   }
+
+  async function enableNativeHelper() {
+    setNativeHelperBusy(true);
+    const granted = await requestNativeMessagingPermission();
+    setNativeHelperPermissionPrompted(true);
+
+    if (!granted) {
+      const next = createPopupDiagnostic(
+        'permission-denied',
+        'Enable native helper access to use FFmpeg export.',
+      );
+      setNativeHelperDiagnostic(next);
+      setNativeHelperLastReadiness(next.readiness);
+      setNativeHelperBusy(false);
+      return;
+    }
+
+    await refreshNativeHelperDiagnostic();
+  }
+
+  function openNativeHelperSetup() {
+    window.open(nativeHelperInstallTarget.href, '_blank', 'noopener,noreferrer');
+  }
+
+  function dismissOnboarding() {
+    setNativeHelperOnboardingDismissed(true);
+  }
+
+  function completeOnboarding() {
+    setOnboardingCompleted(true);
+    setNativeHelperOnboardingDismissed(true);
+  }
+
+  useEffect(() => {
+    void refreshNativeHelperDiagnostic();
+  }, []);
 
   function updateCaptureRules(next: {
     customExtensions?: string[];
@@ -176,6 +282,24 @@ function SettingsContent() {
 
   return (
     <>
+      {!onboardingCompleted && !nativeHelperOnboardingDismissed ? (
+        <NativeHelperOnboarding
+          diagnostic={nativeHelperDiagnostic}
+          variant="first-run"
+          theme={theme}
+          language={uiLanguage}
+          busy={nativeHelperBusy}
+          onThemeChange={setTheme}
+          onLanguageChange={setUiLanguage}
+          onRequestPermission={() => void enableNativeHelper()}
+          onCheckAgain={() => void refreshNativeHelperDiagnostic()}
+          onOpenSetup={openNativeHelperSetup}
+          onDismiss={dismissOnboarding}
+          onComplete={completeOnboarding}
+          installTarget={nativeHelperInstallTarget}
+        />
+      ) : null}
+
       <label className="popup__row">
         <span className="popup__label">Theme</span>
         <select
@@ -358,9 +482,11 @@ function SettingsContent() {
       </label>
 
       <NativeHelperStatus
-        status={nativeHelperStatus}
-        setupHref="docs/native-helper.md"
-        onCheck={() => void checkNativeHelper()}
+        diagnostic={nativeHelperDiagnostic}
+        busy={nativeHelperBusy}
+        onCheck={() => void refreshNativeHelperDiagnostic()}
+        onRequestPermission={() => void enableNativeHelper()}
+        onOpenSetup={openNativeHelperSetup}
       />
 
       <label className="popup__row">

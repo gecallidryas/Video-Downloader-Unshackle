@@ -48,6 +48,11 @@ test('includes unified downloader defaults used by background services', () => {
     defaultActionPerHost: {},
     enableContextMenu: true,
     remoteConfigSecurityMode: 'strict',
+    nativeHelperOnboardingDismissed: false,
+    nativeHelperPermissionPrompted: false,
+    nativeHelperLastReadiness: 'not-checked',
+    onboardingCompleted: false,
+    uiLanguage: 'en',
   });
 });
 
@@ -71,4 +76,20 @@ test('supports theme and preview settings without changing UI structure', () => 
 
   expect(useSettingsStore.getState().theme).toBe('dark');
   expect(useSettingsStore.getState().previewMode).toBe('video');
+});
+
+test('supports native helper onboarding settings', () => {
+  useSettingsStore.getState().setNativeHelperOnboardingDismissed(true);
+  useSettingsStore.getState().setNativeHelperPermissionPrompted(true);
+  useSettingsStore.getState().setNativeHelperLastReadiness('host-missing');
+  useSettingsStore.getState().setOnboardingCompleted(true);
+  useSettingsStore.getState().setUiLanguage('en');
+
+  expect(useSettingsStore.getState()).toMatchObject({
+    nativeHelperOnboardingDismissed: true,
+    nativeHelperPermissionPrompted: true,
+    nativeHelperLastReadiness: 'host-missing',
+    onboardingCompleted: true,
+    uiLanguage: 'en',
+  });
 });

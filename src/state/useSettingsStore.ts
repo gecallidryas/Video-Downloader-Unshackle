@@ -7,9 +7,11 @@ import type {
   PreferredQuality,
   RemoteConfigSecurityMode,
   ThemeName,
+  UiLanguage,
   UiMode,
 } from '@/src/background/settings/settings-store';
 import { DEFAULT_SETTINGS } from '@/src/background/settings/settings-store';
+import type { NativeHelperReadiness } from '@/src/native/native-helper-diagnostics';
 
 export interface SettingsState {
   theme: ThemeName;
@@ -48,8 +50,18 @@ export interface SettingsState {
   captureRuleSizePredicate: string;
   advancedMode: boolean;
   previousSessionLimit: number;
+  nativeHelperOnboardingDismissed: boolean;
+  nativeHelperPermissionPrompted: boolean;
+  nativeHelperLastReadiness: NativeHelperReadiness;
+  onboardingCompleted: boolean;
+  uiLanguage: UiLanguage;
   setAdvancedMode: (enabled: boolean) => void;
   setPreviousSessionLimit: (limit: number) => void;
+  setNativeHelperOnboardingDismissed: (value: boolean) => void;
+  setNativeHelperPermissionPrompted: (value: boolean) => void;
+  setNativeHelperLastReadiness: (value: NativeHelperReadiness) => void;
+  setOnboardingCompleted: (value: boolean) => void;
+  setUiLanguage: (value: UiLanguage) => void;
   setTheme: (theme: ThemeName) => void;
   setAutoScanEnabled: (enabled: boolean) => void;
   setNetworkCaptureEnabled: (enabled: boolean) => void;
@@ -129,6 +141,13 @@ export const useSettingsStore = create<SettingsState>((set) => ({
   setAdvancedMode: (enabled) => set({ advancedMode: enabled }),
   setPreviousSessionLimit: (limit) =>
     set({ previousSessionLimit: Math.max(0, Math.floor(limit)) }),
+  setNativeHelperOnboardingDismissed: (value) =>
+    set({ nativeHelperOnboardingDismissed: value }),
+  setNativeHelperPermissionPrompted: (value) =>
+    set({ nativeHelperPermissionPrompted: value }),
+  setNativeHelperLastReadiness: (value) => set({ nativeHelperLastReadiness: value }),
+  setOnboardingCompleted: (value) => set({ onboardingCompleted: value }),
+  setUiLanguage: (value) => set({ uiLanguage: value }),
   resetCaptureRules: () =>
     set({
       captureRuleCustomExtensions: [],

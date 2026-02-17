@@ -10,6 +10,10 @@ thumbnail or hover-preview assets require it.
 - Node.js 20 or newer.
 - `ffmpeg` and `ffprobe` available on `PATH`.
 
+For the beta/dev PowerShell setup strategy, dependency prompts, repair behavior,
+and deferred signed-installer scope, see
+[`native-helper-powershell-setup.md`](./native-helper-powershell-setup.md).
+
 Install FFmpeg from a trusted package source and confirm both commands work:
 
 ```powershell
