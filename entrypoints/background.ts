@@ -10,8 +10,13 @@ import { createOffscreenManager } from '@/src/background/offscreen/offscreen-man
 import { createNotificationManager } from '@/src/background/notifications/notification-manager';
 import { createDetectionNotifier } from '@/src/background/notifications/detection-notifier';
 import { saveDetectionsOnTabClose } from '@/src/background/state/previous-detections';
-import { createSettingsStore } from '@/src/background/settings/settings-store';
+import {
+  SETTINGS_STORAGE_KEY,
+  createSettingsStore,
+  type UnifiedSettings,
+} from '@/src/background/settings/settings-store';
 import { runBrowserDashExportJob } from '@/src/background/jobs/browser-dash-runner';
+import { runBrowserDirectTrimJob } from '@/src/background/jobs/browser-direct-trim-runner';
 import { runBrowserHlsExportJob } from '@/src/background/jobs/browser-hls-runner';
 import { runNativeExportJob } from '@/src/background/jobs/native-export-runner';
 import {
@@ -28,7 +33,11 @@ import { createTabSnapshotStore } from '@/src/background/state/tab-snapshots';
 import { createTabVideoStatusStore } from '@/src/background/state/tab-video-status';
 import { getSidePanelBehavior } from '@/src/lib/chrome/sidePanel';
 import { probeDirectMedia } from '@/src/core/direct/probe-direct-media';
-import { createNativeFfmpegClient } from '@/src/native/native-ffmpeg-client';
+import { downloadDirectWithRanges } from '@/src/core/download/range-splitter';
+import {
+  createNativeFfmpegClient,
+  type NativeFfmpegClient,
+} from '@/src/native/native-ffmpeg-client';
 import { ensurePreviewClip } from '@/src/core/preview/native-preview-service';
 import { ensureNativeThumbnail } from '@/src/core/thumbs/native-thumbnail-service';
 
@@ -41,8 +50,32 @@ export function initializeBackgroundShell() {
   const historyStore = createHistoryStore();
   const tabSnapshots = createTabSnapshotStore();
   const tabVideoStatus = createTabVideoStatusStore();
-  const nativeClient = createNativeFfmpegClient();
+  let nativeClient: NativeFfmpegClient | undefined;
   const offscreenManager = createOffscreenManager();
+
+  function getNativeClient(): NativeFfmpegClient {
+    nativeClient ??= createNativeFfmpegClient();
+    return nativeClient;
+  }
+
+  function applyLoadedSettings(settings: UnifiedSettings): void {
+    headerContext.updateOptions({
+      captureCredentialHeaders: settings.advancedMode && settings.captureCredentialHeaders,
+    });
+    downloadController.updateSettings({
+      suppressProtectedDownloads: settings.suppressProtectedDownloads,
+      defaultOutputFormat: settings.defaultOutputFormat,
+      defaultQualityPolicy: settings.defaultQualityPolicy,
+      maxConcurrentSegments: settings.maxConcurrentSegments,
+      maxConcurrentSegmentsPerHost: settings.maxConcurrentSegmentsPerHost,
+      segmentTimeoutMs: settings.segmentTimeoutMs,
+      enableNativeFeatures: settings.enableNativeFeatures,
+      enableBrowserFallbacks: settings.enableBrowserFallbacks,
+    });
+    notificationManager.applySettings(settings);
+    detectionNotifier.configure(settings);
+  }
+
   const downloadController = createDownloadController({
     downloadFile: async (candidate, job) => {
       const probe = probeDirectMedia(candidate);
@@ -59,6 +92,39 @@ export function initializeBackgroundShell() {
         downloadId,
       };
     },
+    ...(typeof URL.createObjectURL === 'function'
+      ? {
+          downloadDirectWithRanges: async ({ candidate, job, signal }) => {
+            const probe = probeDirectMedia(candidate);
+            const bytes = await downloadDirectWithRanges({
+              url: probe.url,
+              signal,
+            });
+            const objectUrl = URL.createObjectURL(
+              new Blob([bytes], { type: probe.mimeType }),
+            );
+
+            try {
+              const downloadId = await chrome.downloads.download({
+                url: objectUrl,
+                filename: probe.fileName,
+                saveAs: Boolean(job.selection.saveAs),
+              });
+
+              return {
+                fileName: probe.fileName,
+                mimeType: probe.mimeType,
+                outputUrl: probe.url,
+                downloadId,
+                sizeBytes: bytes.byteLength,
+                notes: ['Browser assembled direct download from HTTP byte ranges.'],
+              };
+            } finally {
+              URL.revokeObjectURL?.(objectUrl);
+            }
+          },
+        }
+      : {}),
     runHls: (input) => {
       const candidate = candidateRegistry
         .get(input.job.tabId)
@@ -91,9 +157,25 @@ export function initializeBackgroundShell() {
       runNativeExportJob({
         candidate,
         job,
-        nativeClient,
+        nativeClient: getNativeClient(),
         jobStore,
       }),
+    browserDirectTrim: ({ candidate, job }) =>
+      runBrowserDirectTrimJob({
+        candidate,
+        job,
+        offscreenRecord: (message) => offscreenManager.sendMessage(message),
+        download: chrome.downloads.download,
+        createObjectUrl:
+          typeof URL.createObjectURL === 'function'
+            ? URL.createObjectURL.bind(URL)
+            : undefined,
+        revokeObjectUrl:
+          typeof URL.revokeObjectURL === 'function'
+            ? URL.revokeObjectURL.bind(URL)
+            : undefined,
+      }),
+    enableNativeFeatures: false,
   });
   const downloadQueue = createDownloadQueue({
     jobStore,
@@ -136,15 +218,20 @@ export function initializeBackgroundShell() {
     },
     ensurePreviewClip: (candidate, options) =>
       ensurePreviewClip(candidate, {
-        nativeClient,
-        offscreenRecord: (message) => offscreenManager.sendMessage(message),
+        ...(settingsStore.get('enableNativeFeatures') ? { nativeClient: getNativeClient() } : {}),
+        ...(settingsStore.get('enableBrowserFallbacks')
+          ? { offscreenRecord: (message) => offscreenManager.sendMessage(message) }
+          : {}),
         ...options,
       }),
     ensureThumbnail: (candidate) =>
       ensureNativeThumbnail(candidate, {
-        nativeClient,
-        offscreenCapture: (message) => offscreenManager.sendMessage(message),
+        ...(settingsStore.get('enableNativeFeatures') ? { nativeClient: getNativeClient() } : {}),
+        ...(settingsStore.get('enableBrowserFallbacks')
+          ? { offscreenCapture: (message) => offscreenManager.sendMessage(message) }
+          : {}),
       }),
+    cancelDownload: (jobId) => downloadController.abort(jobId, { jobStore }),
   });
   const autoScan = createAutoScanController({
     statusStore: tabVideoStatus,
@@ -189,20 +276,15 @@ export function initializeBackgroundShell() {
   chrome.sidePanel.setPanelBehavior(getSidePanelBehavior());
   void settingsStore.load().then((settings) => {
     // Apply settings that require the store to be fully loaded first.
-    headerContext.updateOptions({
-      captureCredentialHeaders: settings.advancedMode && settings.captureCredentialHeaders,
-    });
-    downloadController.updateSettings({
-      suppressProtectedDownloads: settings.suppressProtectedDownloads,
-      defaultOutputFormat: settings.defaultOutputFormat,
-      defaultQualityPolicy: settings.defaultQualityPolicy,
-      maxConcurrentSegments: settings.maxConcurrentSegments,
-      maxConcurrentSegmentsPerHost: settings.maxConcurrentSegmentsPerHost,
-      segmentTimeoutMs: settings.segmentTimeoutMs,
-    });
-    notificationManager.applySettings(settings);
-    detectionNotifier.configure(settings);
+    applyLoadedSettings(settings);
     return contextMenuManager.register();
+  });
+  chrome.storage?.onChanged?.addListener((changes, areaName) => {
+    if (areaName !== 'local' || !changes[SETTINGS_STORAGE_KEY]) {
+      return;
+    }
+
+    void settingsStore.load().then(applyLoadedSettings);
   });
   registerPassiveRequestJournal(requestJournal, undefined, headerContext);
   registerRuntimeRouter(runtimeRouter);

@@ -21,6 +21,7 @@ import type {
   DefaultQualityPolicy,
   OutputFormat,
 } from '@/src/background/settings/settings-store';
+import { isNonRetryableError } from '@/src/core/download/error-classification';
 
 export interface DownloadControllerSettings {
   defaultOutputFormat?: OutputFormat;
@@ -28,6 +29,9 @@ export interface DownloadControllerSettings {
   maxConcurrentSegments?: number;
   maxConcurrentSegmentsPerHost?: number;
   segmentTimeoutMs?: number;
+  enableNativeFeatures?: boolean;
+  enableBrowserFallbacks?: boolean;
+  directRangeMinBytes?: number;
 }
 
 export interface DownloadControllerStartOptions {
@@ -64,15 +68,41 @@ export type RunNativeExportControllerJob = (input: {
   job: DownloadJob;
 }) => Promise<JobOutput>;
 
+export type RunBrowserDirectTrimControllerJob = (input: {
+  candidate: MediaCandidate;
+  job: DownloadJob;
+}) => Promise<JobOutput>;
+
+export interface DirectRangeProbeResult {
+  acceptsRanges: boolean;
+  contentLength?: number;
+}
+
+export type ProbeDirectRangeSupport = (
+  url: string,
+  signal?: AbortSignal,
+) => Promise<DirectRangeProbeResult>;
+
+export type RunDirectRangeControllerJob = (input: {
+  candidate: MediaCandidate;
+  job: DownloadJob;
+  signal?: AbortSignal;
+}) => Promise<JobOutput>;
+
 export interface DownloadControllerOptions {
   downloadFile: DirectDownloadFile;
+  downloadDirectWithRanges?: RunDirectRangeControllerJob;
   runHls: RunHlsControllerJob;
   runDash: RunDashControllerJob;
   nativeExport?: RunNativeExportControllerJob;
+  browserDirectTrim?: RunBrowserDirectTrimControllerJob;
+  probeDirectRange?: ProbeDirectRangeSupport;
   fetchText?: (url: string, init: RequestInit) => Promise<string>;
   cancelDownload?: (downloadId: number) => Promise<void>;
   now?: () => number;
   suppressProtectedDownloads?: boolean;
+  enableNativeFeatures?: boolean;
+  enableBrowserFallbacks?: boolean;
 }
 
 export interface ManagedDownloadOptions extends DownloadControllerStartOptions {
@@ -95,6 +125,7 @@ function failureFromError(error: unknown): JobFailure {
   const message = error instanceof Error ? error.message : 'Download failed';
   const protectedMedia = /protected media|drm|sample-aes/i.test(message);
   const assemblyFailure = /assembl|blob|raw .*export/i.test(message);
+  const nonRetryable = isNonRetryableError(error);
 
   return {
     code: protectedMedia
@@ -103,7 +134,7 @@ function failureFromError(error: unknown): JobFailure {
         ? 'ASSEMBLY_ERROR'
         : 'NETWORK_ERROR',
     message,
-    retryable: !protectedMedia,
+    retryable: !protectedMedia && !nonRetryable,
     detail: error,
   };
 }
@@ -116,6 +147,29 @@ async function defaultFetchText(url: string, init: RequestInit): Promise<string>
   }
 
   return response.text();
+}
+
+async function defaultProbeDirectRange(
+  url: string,
+  signal?: AbortSignal,
+): Promise<DirectRangeProbeResult> {
+  const response = await fetch(url, {
+    method: 'HEAD',
+    cache: 'no-store',
+    credentials: 'include',
+    signal,
+  });
+
+  if (!response.ok) {
+    return { acceptsRanges: false };
+  }
+
+  const contentLength = Number(response.headers.get('Content-Length'));
+
+  return {
+    acceptsRanges: response.headers.get('Accept-Ranges')?.toLowerCase() === 'bytes',
+    ...(Number.isFinite(contentLength) && contentLength > 0 ? { contentLength } : {}),
+  };
 }
 
 function selectionForJob(
@@ -154,8 +208,32 @@ function hasTrim(selection: DownloadSelection): boolean {
   );
 }
 
+async function shouldUseDirectRangeDownload(input: {
+  candidate: MediaCandidate;
+  selection: DownloadSelection;
+  settings: DownloadControllerSettings;
+  signal?: AbortSignal;
+  probeDirectRange: ProbeDirectRangeSupport;
+}): Promise<boolean> {
+  if (
+    input.candidate.protocol !== 'direct' ||
+    !input.candidate.sourceUrl ||
+    isProtected(input.candidate) ||
+    hasTrim(input.selection) ||
+    input.settings.enableBrowserFallbacks === false
+  ) {
+    return false;
+  }
+
+  const minBytes = Math.max(1, input.settings.directRangeMinBytes ?? 50 * 1024 * 1024);
+  const probe = await input.probeDirectRange(input.candidate.sourceUrl, input.signal);
+
+  return probe.acceptsRanges && (probe.contentLength ?? 0) >= minBytes;
+}
+
 export function createDownloadController(options: DownloadControllerOptions) {
   const fetchText = options.fetchText ?? defaultFetchText;
+  const probeDirectRange = options.probeDirectRange ?? defaultProbeDirectRange;
   const now = options.now ?? Date.now;
   const cancelDownload =
     options.cancelDownload ??
@@ -163,7 +241,14 @@ export function createDownloadController(options: DownloadControllerOptions) {
       await chrome.downloads.cancel(downloadId);
     });
   let suppressProtectedDownloads = options.suppressProtectedDownloads;
-  let controllerSettings: DownloadControllerSettings = {};
+  let controllerSettings: DownloadControllerSettings = {
+    ...(options.enableNativeFeatures !== undefined
+      ? { enableNativeFeatures: options.enableNativeFeatures }
+      : {}),
+    ...(options.enableBrowserFallbacks !== undefined
+      ? { enableBrowserFallbacks: options.enableBrowserFallbacks }
+      : {}),
+  };
   const activeAbortControllers = new Map<string, AbortController>();
 
   function registerSignal(
@@ -207,6 +292,8 @@ export function createDownloadController(options: DownloadControllerOptions) {
       ...controllerSettings,
       ...startOptions.settings,
     };
+    const enableNativeFeatures = settings.enableNativeFeatures ?? true;
+    const enableBrowserFallbacks = settings.enableBrowserFallbacks ?? true;
     const selection = selectionForJob(job, {
       ...startOptions,
       settings,
@@ -219,14 +306,47 @@ export function createDownloadController(options: DownloadControllerOptions) {
 
     try {
       if (candidate.protocol === 'direct') {
-        if (hasTrim(selection) && options.nativeExport) {
+        if (
+          hasTrim(selection) &&
+          selection.outputKind === 'webm' &&
+          enableBrowserFallbacks &&
+          options.browserDirectTrim
+        ) {
+          return await options.browserDirectTrim({ candidate, job: controllerJob });
+        }
+
+        if (hasTrim(selection) && enableNativeFeatures && options.nativeExport) {
           try {
             return await options.nativeExport({ candidate, job: controllerJob });
           } catch (error) {
             if (!isNativeFfmpegUnavailableError(error)) {
               throw error;
             }
+            if (!enableBrowserFallbacks) {
+              throw error;
+            }
           }
+        }
+
+        if (hasTrim(selection) && !enableBrowserFallbacks) {
+          throw new Error('Browser fallback downloads are disabled in settings.');
+        }
+
+        if (
+          options.downloadDirectWithRanges &&
+          (await shouldUseDirectRangeDownload({
+            candidate,
+            selection,
+            settings,
+            signal: jobSignal,
+            probeDirectRange,
+          }))
+        ) {
+          return options.downloadDirectWithRanges({
+            candidate,
+            job: controllerJob,
+            signal: jobSignal,
+          });
         }
 
         const output = await options.downloadFile(candidate, controllerJob);
@@ -249,14 +369,21 @@ export function createDownloadController(options: DownloadControllerOptions) {
         throw new Error('Missing manifest URL.');
       }
 
-      if (options.nativeExport) {
+      if (enableNativeFeatures && options.nativeExport) {
         try {
           return await options.nativeExport({ candidate, job: controllerJob });
         } catch (error) {
           if (!isNativeFfmpegUnavailableError(error)) {
             throw error;
           }
+          if (!enableBrowserFallbacks) {
+            throw error;
+          }
         }
+      }
+
+      if (!enableBrowserFallbacks) {
+        throw new Error('Browser fallback downloads are disabled in settings.');
       }
 
       const manifestText = await fetchText(manifestUrl, {
@@ -334,6 +461,10 @@ export function createDownloadController(options: DownloadControllerOptions) {
 
       return completed;
     } catch (error) {
+      if (managedOptions.jobStore.get(job.id)?.phase === 'cancelled') {
+        throw error;
+      }
+
       const failed = managedOptions.jobStore.update(job.id, {
         phase: 'failed',
         failure: failureFromError(error),
@@ -408,6 +539,15 @@ export function createDownloadController(options: DownloadControllerOptions) {
         : {}),
       ...(patch.segmentTimeoutMs !== undefined
         ? { segmentTimeoutMs: patch.segmentTimeoutMs }
+        : {}),
+      ...(patch.enableNativeFeatures !== undefined
+        ? { enableNativeFeatures: patch.enableNativeFeatures }
+        : {}),
+      ...(patch.enableBrowserFallbacks !== undefined
+        ? { enableBrowserFallbacks: patch.enableBrowserFallbacks }
+        : {}),
+      ...(patch.directRangeMinBytes !== undefined
+        ? { directRangeMinBytes: patch.directRangeMinBytes }
         : {}),
     };
   }

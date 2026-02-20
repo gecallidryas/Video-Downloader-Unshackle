@@ -53,13 +53,13 @@ Recommended direction: keep Unshackle as the typed all-in-one extension, use Uni
 | Streaming host plugins | 25-host registry plus safety tests | 25-host baseline | None | Unified remains the host/plugin parity baseline. |
 | HLS parsing | Present | Present | Present via `m3u8-parser` | Compare live-stream's timeline, media group, init-map, and quality handling against Unshackle parser tests. |
 | DASH parsing | Present | Present | Present via `mpd-parser` | Live-stream has basic MPD parser delegation, not a full typed planner. |
-| Direct media download | Present via `chrome.downloads`, native export, and tested direct range helper | Present | Present through job window and File System Access | Range-capable helper now uses HEAD probing and scheduler-managed byte ranges; default direct UI path still uses Chrome downloads. |
-| Segmented download engine | Present in core tests; production path prefers native FFmpeg export and now falls back to browser HLS raw `.ts` and DASH raw `.m4s`/`.bin` when the optional helper is unavailable | Present | Strong custom `MyGet` range/thread engine | Port ideas into `segment-scheduler`, not the JS class hierarchy. |
+| Direct media download | Present via `chrome.downloads`, native export, and production-wired direct range fallback | Present | Present through job window and File System Access | Large range-capable direct files now use HEAD probing plus scheduler-managed byte ranges when browser fallbacks and object URL download support are available; non-range files keep the Chrome downloads path. |
+| Segmented download engine | Present in core tests; production path prefers native FFmpeg export and now falls back to browser HLS raw `.ts` and DASH raw `.m4s`/`.bin` when the optional helper is unavailable; users can disable browser fallback paths separately from native paths | Present | Strong custom `MyGet` range/thread engine | Port ideas into `segment-scheduler`, not the JS class hierarchy. |
 | AES-128 clear-key HLS | Present | Present | Present | Keep clear-key only; never extend into DRM/key extraction. |
 | DRM/protected handling | Detects/protects in several paths; default setting needs review | Broad detection and mixed policy defaults | Mostly blocklist/compliance, not DRM-centric | Release posture should be safe-by-default. |
 | Queue/history | Present | Present | No persistent queue/history, job window only | Unshackle is stronger. |
-| Output conversion | Native FFmpeg helper, MP4/WebM/audio/trim paths plus browser raw HLS/DASH and explicit direct WebM trim recording | FFmpeg/offscreen baseline | Downloads raw stream/media; no FFmpeg mux UI | Native helper remains optional; popup onboarding explains browser downloads still work without it, requests optional `nativeMessaging` from a button, and links Windows users to the beta PowerShell setup wrapper. |
-| Preview | Native preview/thumbnail services with direct offscreen preview and thumbnail fallback when native is unavailable; HLS/DASH generated assets remain native-required without static thumbnails | Preview/thumbnail baseline | MSE/MP4Box preview while downloading | Live-stream's progressive preview concept is useful but should be optional. |
+| Output conversion | Native FFmpeg helper, MP4/WebM/audio/trim paths plus browser raw HLS/DASH and explicit direct WebM trim recording; settings can turn off native features or browser fallbacks independently | FFmpeg/offscreen baseline | Downloads raw stream/media; no FFmpeg mux UI | Native helper remains optional; popup onboarding explains browser downloads still work without it, lets users opt out, requests optional `nativeMessaging` from a button, and links Windows users to setup. |
+| Preview | Native preview/thumbnail services remain optional; with native features disabled, HLS preview uses bundled `hls.js`/browser playback, direct thumbnails use the offscreen browser fallback, and generated native preview assets are not requested | Preview/thumbnail baseline | MSE/MP4Box preview while downloading | Live-stream's progressive preview concept is useful but should be optional. |
 | Context menus | Present | Present | Strong: link, media, selected-link extraction, clear list | Add selected-link extraction parity if not already wired. |
 | Remote policy/blocklist | Strict remote config and blocklist tests | Remote config baseline | Remote/cacheable blocked stream list with owner request process | Adopt owner-request blocklist workflow semantics, not unsigned remote behavior. |
 | Browser portability | Chrome MV3 target | Chrome MV3 | Chrome + Firefox-oriented code paths | Useful as a future portability reference. |
@@ -97,9 +97,9 @@ Status values:
 | SAMPLE-AES/DRM download | not-scope | risky/mixed | unsupported | Preserve block/warn behavior only. |
 | DASH MPD parsing | present | present | present | Keep Unshackle typed parser as canonical. |
 | DASH live/SegmentTimeline robustness | present | present | parser library dependent | Parser and inspector now cover dynamic MPDs and `SegmentTimeline` expansion with tests. |
-| Direct media download | present | present | present | Keep Chrome downloads path; direct range helper is available for range-capable media integrations. |
+| Direct media download | present | present | present | Keep Chrome downloads path for ordinary/non-range files; large range-capable media is routed through the direct range downloader with honest browser-assembly output notes. |
 | File System Access direct writes | gap | not primary | present | Useful for long live streams and large raw downloads; design as optional browser-capability path. |
-| Range splitting of large single files | present | present | present | Added direct media range splitting plus `downloadDirectWithRanges` for range-capable large files. |
+| Range splitting of large single files | present | present | present | Added direct media range splitting plus production controller wiring for range-capable large files. |
 | Broken-pipe recovery and ranged resume | present | present | strong | Scheduler now resumes partial fetches only with validated retained bytes, rejoins recovered data, and lowers effective host concurrency after repeated recoverable failures. |
 | User URL replacement on failed segment | gap | not clear | present | Consider as advanced recovery UI for expired live URLs. |
 | Segment concurrency | present | present | present | Keep settings-driven scheduler; live-stream caps UI threads to 1-5. |
@@ -108,20 +108,20 @@ Status values:
 | Persistent output directory handle | gap | gap/unknown | present | Useful but permission-sensitive; design carefully before adding. |
 | Filename from content-disposition/MIME | present/partial | present | present | Add tests for live-stream's filename fallback rules. |
 | Smart naming templates | present | present | partial | Unified remains baseline. |
-| Online filename resolution | gap/partial | unknown | present setting | Consider only if privacy reviewed; avoid network lookups solely for names unless user initiated. |
+| Online filename resolution | present | unknown | present setting | Side-panel media-card overflow exposes user-initiated HEAD resolution through `resolveOnlineFilename()`; no background lookup happens without a click. |
 | Progressive preview while downloading | present (PreviewModal `downloadedRanges` + `liveSegmentSource`) | present | present with MP4Box/MSE | Optional enrichment; native previews may already cover common path. |
 | Codec sniff via MP4Box | present (`src/core/preview/codec-sniff.ts` + `CodecBadge`) | present | present | Useful for preview compatibility diagnostics. |
-| Queue controls | present | present | gap | Unshackle stronger. |
+| Queue controls | present | present | gap | Unshackle stronger; side-panel cancel now reaches runtime abort and copy URL writes the queued/output URL to clipboard. |
 | History retention/retry/delete | present | present | gap | Unshackle stronger. |
 | Notifications | present | present | minimal badge/title | Unshackle/Unified stronger. |
-| Side panel UX | present | present | gap | Keep Unshackle UX. |
+| Side panel UX | present with live current-tab refresh | present | gap | Keep Unshackle UX. |
 | Popup job details | partial | present | present | Consider a job-details modal/panel for advanced diagnostics. |
-| Native FFmpeg export | present with optional popup permission flow, host/dependency diagnostics, and beta/dev PowerShell setup wrapper | present in source baseline as offscreen/wasm idea; Unshackle uses native helper | gap | Unshackle stronger; keep optional and explicit. Signed MSI/EXE packaging is deferred. |
+| Native FFmpeg export | present with optional popup permission flow, host/dependency diagnostics, beta/dev PowerShell setup, Windows `.exe` native host launcher, and a settings/onboarding switch to disable all native paths; background native client creation is lazy and skipped while native features are disabled | present in source baseline as offscreen/wasm idea; Unshackle uses native helper | improved | Unshackle stronger; keep optional and explicit. Signed MSI packaging is deferred. |
 | MP4/MKV/MP3/WebM outputs | present/partial depending path | present | gap/raw only | Keep improving native helper path. |
 | Trim/cut | present | present | gap | Unshackle stronger. |
 | Remote config refresh | present | present | present remote blocked list | Keep signature/policy review; do not adopt unsigned runtime behavior. |
 | Owner/content-creator exclusion process | partial/docs | partial | present in README/blocklist policy | Add to provider-policy/release docs. |
-| Firefox compatibility | gap | gap | partial | Future roadmap only. |
+| Firefox compatibility | improved | gap | partial | WXT Firefox build/zip scripts and tester coverage exist; the Firefox artifact builds to WXT's `firefox-mv2` output while Chrome remains MV3. |
 
 ---
 
@@ -218,7 +218,7 @@ These are the highest-value enrichment items from the two references, ordered by
 | P0 | Reconcile protected/credential defaults | Unified parity vs safe policy | `src/background/settings/settings-store.ts`, `docs/provider-policy.md` | Decide release posture before more parity claims. |
 | P0 | Production HLS/DASH path audit | Unified + current source | `entrypoints/background.ts`, `src/background/jobs/download-controller.ts` | Native export is the preferred segmented-media path; HLS now falls back to raw `.ts` and DASH to raw `.m4s`/`.bin` when the optional helper is unavailable. |
 | P1 | Broken-pipe/range recovery policy | live-stream `mget/plugins/error.js` | `src/core/download/segment-scheduler.ts`, HLS/DASH/direct runners | Implemented typed non-retry status handling, timeout tuning, and partial-range recovery in the scheduler; direct range downloads are tracked separately. |
-| P1 | Direct range downloader | live-stream `mget/mget.js` | `src/core/direct/*`, `src/core/download/*`, `src/core/storage/*` | Improves large direct files and live/archive downloads. |
+| P1 | Direct range downloader | live-stream `mget/mget.js` | `entrypoints/background.ts`, `src/background/jobs/download-controller.ts`, `src/core/download/range-splitter.ts` | Implemented for large range-capable direct files with HEAD gating, scheduler-managed byte ranges, Chrome-download fallback, and non-retryable status classification. |
 | P1 | Timeline/discontinuity handling | live-stream `index.js` | `src/core/hls/plan-hls-segments.ts`, `src/ui/media/*` | Planner grouping is implemented; UI-level timeline selection remains useful for ad-separated streams and live recordings. |
 | P1 | Init segment cache/dedupe | live-stream `index.js` + cache plugin | `src/core/download/segment-scheduler.ts`, `src/core/storage/*` | Avoid duplicate init fetches and writes. |
 | P2 | Selected-link extraction context menu | live-stream `context.js` | `src/background/context-menu/context-menu.ts`, runtime router | Good power-user feature with low implementation risk. |
@@ -285,21 +285,21 @@ Status meanings in this section:
 | Area | Feature, including small behaviors | puemos implementation | Unshackle parity | Port/use recommendation |
 |---|---|---|---|---|
 | Build | pnpm workspace with separate core/background/popup/design-system packages | Root `package.json`, `pnpm-workspace.yaml` | partial | Useful if Unshackle grows internal packages; not needed immediately. |
-| Build | MV2 build for Firefox and MV3 build for Chromium | `build:mv2`, `build:mv3`, `manifest.json`, `manifest.chrome.json` | gap | Future browser portability reference. |
-| Build | Build all variants at once | `build:all`, `build:all-variants` | gap | Useful release automation pattern. |
+| Build | MV2 build for Firefox and MV3 build for Chromium | `build:mv2`, `build:mv3`, `manifest.json`, `manifest.chrome.json` | improved | Added WXT Firefox build/zip scripts; MV2 is intentionally not shipped from the MV3 codebase. |
+| Build | Build all variants at once | `build:all`, `build:all-variants` | done | `build:all` now builds Chrome and Firefox variants. |
 | Build | Store build vs no-blocklist experimental build | `build-variant.mjs`, `copy-assets.mjs` | gap/review | Strong product-policy pattern; adapt as provider-policy variants if desired. |
 | Build | Experimental build renames extension when blocklist disabled | `copy-assets.mjs` | gap | Good user-visible distinction for non-store builds. |
 | Build | Flat packaged ZIP/XPI artifacts | `build:zip` | present/partial | Unshackle has WXT zip; note flat artifact expectation. |
-| Build | Coverage report and generated badge | `coverage:*`, `coverage-badge.svg` | gap | Useful external credibility signal. |
-| Build | Store/tester guide for manual verification | `FOR-DEAR-TESTERS.md` | partial | Add a release tester guide for Unshackle. |
-| Build | Firefox publish script | `publish-firefox.mjs` | gap | Future only. |
+| Build | Coverage report and generated badge | `coverage:*`, `coverage-badge.svg` | done | Added coverage tooling plus generated badge script. |
+| Build | Store/tester guide for manual verification | `FOR-DEAR-TESTERS.md` | done | Added `docs/release-tester-guide.md`. |
+| Build | Firefox publish script | `publish-firefox.mjs` | improved | Added artifact/credential gate script; AMO upload remains manual until signing is configured. |
 | Policy | Opt-out issue template | `.github/ISSUE_TEMPLATE/opt-out-request.yml` | partial/improved | `docs/OWNER-EXCLUSION.md` now documents the GitHub issue request process and blocklist outcome; a concrete issue template remains future work. |
 | Policy | Store blocklist containing TikTok/Douyin | `blocklist.json` | present broader | Use as example of verified domain opt-out, not as final list. |
 | Policy | Runtime blocklist disable via env | `VITE_NO_BLOCKLIST` | gap/review | Useful for build-time variants, not runtime bypass. |
 | Policy | Privacy statement: no analytics/server/usage data | `PRIVACY.md` | present | `docs/PRIVACY.md` now documents no telemetry, local processing, credential handling, storage, and permissions. |
 | Permissions | MV2 persistent background | `src/assets/manifest.json` | not-scope | Chrome target is MV3; useful only for Firefox roadmap. |
 | Permissions | MV3 service worker plus offscreen document | `manifest.chrome.json`, `offscreen.html` | present | Unshackle already uses offscreen/native patterns. |
-| Permissions | `unlimitedStorage` permission | manifests | gap/review | Consider only if IndexedDB/OPFS quotas require it. |
+| Permissions | `unlimitedStorage` permission | manifests | done | Added for OPFS/IndexedDB browser fallback storage headroom. |
 | Permissions | Minimal host permissions for HTTP/HTTPS | manifests | partial | Useful contrast to `<all_urls>` release hardening. |
 | Detection | XHR-only `.m3u8` network sniffing | `addPlaylistListener.ts` | present broader | Unshackle's classifier is broader; keep. |
 | Detection | HLS MIME type gate | `application/vnd.apple.mpegurl`, `application/x-mpegurl` | present | Keep tests aligned. |
@@ -347,7 +347,7 @@ Status meanings in this section:
 | Selection | Show checking encryption state | `inspectionPending` | present/partial | UX polish. |
 | Selection | Estimated output size from bitrate and duration | Playlist module | done | MediaCard derives `~N MB` from bitrate × duration and surfaces a storage warning marker (P2 #99). |
 | Duration | Fetch level playlist durations from `EXTINF` | `fetchLevelDurationEpic` | partial/gap | Useful for estimate and duration display. |
-| Duration | Concurrent duration fetch limit of 4 | epic mergeMap concurrency | gap | Good small bounded-work pattern. |
+| Duration | Concurrent duration fetch limit of 4 | epic mergeMap concurrency | done | Added `fetchDurationsWithLimit()` with default concurrency 4 and regression coverage. |
 | Preview | HLS preview in popup with native HLS fallback | `PlaylistPreview` | present (`usePreviewPlayer` lazy hls.js fallback) | Unshackle preview path is different; hls.js preview is useful fallback. |
 | Preview | hls.js preview when native HLS unsupported | `Hls.isSupported()` | present (lazy `import('hls.js')` peer) | Consider for side-panel preview without native helper. |
 | Preview | Preview reload button | `PlaylistPreview` | present (reload icon in PreviewModal header) | Small UX improvement. |
@@ -462,7 +462,7 @@ Status meanings in this section:
 | P2 | Add manual HLS URL ingest to side panel | runtime router, side panel | Done: context selection/link flows and side-panel manual ingest cover URL text, raw manifest text, file-loaded text, raw TS lists, and base URL resolution. |
 | P2 | Add HLS preview fallback using hls.js | preview service/UI | Useful when native helper is absent or direct preview is enough. |
 | P2 | Add storage cleanup confirmation and job cancellation policy | job/storage modules | Explicitly cancel active jobs before destructive cleanup. |
-| P3 | Add release tester guide and coverage badge | docs/release | Borrow the shape from `FOR-DEAR-TESTERS.md` and coverage scripts. |
+| P3 | Add release tester guide and coverage badge | docs/release | Done: `docs/release-tester-guide.md`, `coverage`, and `coverage:badge` now cover this. |
 
 Things not to copy literally:
 
@@ -546,7 +546,7 @@ The UI is split across specialized HTML pages: `popup.html` for detected resourc
 | MQTT export | Publishes candidate metadata to configured MQTT broker/topic with auth/QoS options (`js/popup-utils.js`, `options.html`). | gap | Unique reference feature. | Consider a generic webhook/export interface instead of MQTT-specific UI first. |
 | QR codes | Popup can render QR codes for resource URLs (`js/popup.js`, `lib/jquery.qrcode.min.js`). | done | `QRModal.tsx` renders SVG QR through `generate-qr-matrix.ts` (placeholder encoder; flagged for replacement) and refuses URLs whose query carries token/cookie/sig/expires/auth keys. | Library swap needed before shipping QR feature; safety gate already in place. |
 | Local/online FFmpeg | Sends blobs/files to online FFmpeg service or iframe FFmpeg mode (`js/content-script.js`, `js/m3u8.js`, `js/downloader.js`). | review | Unshackle native helper is safer. | Keep processing local/native by default; remote processing must be explicit and redact sensitive headers. |
-| Build/release | `justfile` validates manifest JSON, copies assets, builds zip/CRX with `crx3`, checks icons, lints required files, and has release/status tasks. | partial | puemos has better test/build architecture; cat-catch has practical packaging checks. | Add manifest/icon/package sanity checks to release scripts. |
+| Build/release | `justfile` validates manifest JSON, copies assets, builds zip/CRX with `crx3`, checks icons, lints required files, and has release/status tasks. | done | puemos has better test/build architecture; cat-catch has practical packaging checks. | `scripts/release-checks.mjs` validates package metadata, manifest basics, and required icon assets. |
 | Tests | No conventional test suite or `package.json` was found; changelog mentions m3u8 parser test items, but source tree has no durable harness. | present | puemos remains strongest test reference. | Do not mirror test posture; use cat-catch findings to create Unshackle fixtures. |
 | Documentation | README, localized READMEs, GitBook link, changelog, library license list, and opt-out instructions (`README_en.md`, `CHANGELOG.md`, `lib/third-party-libraries.md`). | partial | More mature public docs than live-stream-downloader; less release/test guidance than puemos. | Add public opt-out, permissions, and safe-header documentation. |
 
@@ -581,10 +581,10 @@ The UI is split across specialized HTML pages: `popup.html` for detected resourc
 | P2 | Add copy/share template engine | row actions, settings | Safe tags for URL, title, filename, extension, size, referer/origin only when permitted; no cookie/auth variables by default. |
 | P2 | Add optional external integration hub | settings/integrations | Done: `src/integrations/external-hub.ts` orchestrates Aria2 + webhook dispatch with per-integration toggles and sensitive-header redaction. |
 | P2 | Add direct URL job panel | queue/downloader UI | Done: `src/ui/media/DirectUrlPanel.tsx` collects URL/filename/referer/origin and shows per-result retry/stop controls. |
-| P2 | Add manifest/icon/package release checks | release scripts | Borrow cat-catch's practical `justfile` checks, but implement in repo-native tooling. |
+| P2 | Add manifest/icon/package release checks | release scripts | Done: `scripts/release-checks.mjs` validates package metadata, manifest basics, and required icons. |
 | P2 | Add public opt-out documentation | docs/release/site policy | Combine cat-catch's README opt-out language with live-stream-downloader's owner-request blocklist concept. |
-| P3 | Add QR/share action for safe resources | row action menu | Done: `QRModal` blocks sharing of URLs with token/cookie/auth/sig/expires query params. |
-| P3 | Add media-control diagnostics panel | side panel tools | Done: `MediaControlPanel` (advancedMode-gated) routes play/pause/PiP/screenshot/seek through typed `media-control-bridge`. |
+| P3 | Add QR/share action for safe resources | row action menu | Done: MediaCard overflow opens `QRModal`, and `isUrlSafeForQr` blocks URLs with token/cookie/auth/sig/expires query params. |
+| P3 | Add media-control diagnostics panel | side panel tools | Done: advanced-mode tool panel mounts `MediaControlPanel`; commands route through `media-control-bridge` to a content-script runtime listener. |
 
 ### Things Not To Copy Literally / Risks
 
@@ -655,7 +655,7 @@ The player layer is shared: helper functions create elements, sanitize titles, f
 | Supported core sites | Main manifest/script targets YouTube desktop/mobile, Dailymotion, Vimeo, and IMDb. | partial | More site-specific than stream-detector; narrower than UnifiedVideoDownloader. | Add host-plugin parity checks for these services where allowed and policy-safe. |
 | Supported plus sites | ViewTube+ includes Repubblica/Gelocal, Corriere, AltoAdige, IlFattoQuotidiano, Mediaset, YouReporter, Google Drive/Docs, Yle Areena, Internet Archive, Streamable, and Facebook. | partial | Complementary to cat-catch generic detection. | Treat as examples of extractor patterns, not a literal supported-site roadmap. |
 | Player replacement | Removes/hides native player nodes and inserts a custom panel/player into the page (`createMyPlayer`, site blocks, `blockVideos`). | review | cat-catch mostly overlays tools; ViewTube fully replaces players. | Keep Unshackle extension UI separate; use replacement only as optional page-assist mode. |
-| Direct playback | Supports HTML5 video, object/embed plugin modes, tab-open, and custom protocol/external player modes (`playMyVideo`). | partial | cat-catch also has custom player/invoke paths. | Prefer native extension preview and external helper handoff; avoid legacy plugin modes. |
+| Direct playback | Supports HTML5 video, object/embed plugin modes, tab-open, and custom protocol/external player modes (`playMyVideo`). | improved | cat-catch also has custom player/invoke paths. | Preview player keeps native fullscreen first and opens the source URL in a new tab only when Chrome denies fullscreen; avoid legacy plugin modes. |
 | Direct download link | Save button creates a direct link for the selected stream and uses sanitized title/definition/extension naming (`saveMyVideo`). | present | Simpler than stream-detector command generation. | Keep direct download as core. Borrow title+quality naming tests. |
 | Quality selection | Builds menus by definitions and containers, selects preferred definition/container, and groups HLS/DASH/audio/video entries (`createMyPlayer`, `selectMyVideo`). | improved | Similar concepts appear in puemos and cat-catch. | Added tested host normalization plus runtime `defaultQualityPolicy` wiring for automatic highest/lowest HLS selection. |
 | HLS detection | Adds "Multi Definition M3U8" and individual M3U8 variants from YouTube HLS, Dailymotion HLS, Yle manifests, and other site data. | present | stream-detector catches HLS passively; ViewTube extracts from site APIs. | Combine passive HLS detection with host extractors that label variants and thumbnails. |
@@ -786,7 +786,7 @@ The core detector is `reference/stream-detector/src/js/background.js`. It listen
 | Source metadata | Stores documentUrl, originUrl, initiator, tab title/url/incognito, hostname, timestamp. | present | Useful and compact. | Keep this in candidate provenance and history. |
 | Storage lifecycle | Persists current `urlStorage`; on startup moves previous entries into `urlStorageRestore`, excluding private-window entries unless no-restore is enabled. | improved | Unshackle persists non-incognito candidates on tab close to `unshackle:previousDetections`, exposes them in the Previous Session view, and uses the `previousSessionLimit` setting to cap saved links. | Matches recall semantics while giving users storage-volume control. |
 | Badge/notifications | Badge increments for detected items; batched notifications summarize one or many detections after debounce. | done | Unshackle ships `detection-notifier.ts` with `notificationMode: each | batched | off` (default `batched`) and 2s coalescing; badge text accumulates total count. | Matches stream-detector behavior with explicit user control. |
-| Popup list | Popup shows type, filename, size, source, timestamp, delete, filter, current/all/previous tabs, copy all, clear list, disable, options. | partial | Side panel exposes Current Tab / All Tabs / Previous Session sub-tabs and count summary, but intentionally omits filter controls for the smaller detected list. | |
+| Popup list | Popup shows type, filename, size, source, timestamp, delete, filter, current/all/previous tabs, copy all, clear list, disable, options. | partial | Side panel exposes Current Tab / All Tabs / Previous Session sub-tabs, live current-tab refresh, and count summary, but intentionally omits filter controls for the smaller detected list. | |
 | Sidebar list | Firefox sidebar has compact filename/delete list with same copy/filter controls (`sidebar.html`, `popup.js`). | done | Side panel hosts the same controls. | |
 | Recent limit | Option to show only a configured number of latest entries (`recentPref`, `recentAmount`). | improved | `previousSessionLimit` controls how many previous-session links are saved and shown; `0` keeps all saved links. | |
 | Filter input | Popup/sidebar filter by filename, tab title, type, or hostname. | not-scope | Removed from Unshackle because detected lists are expected to stay short. | |
@@ -915,7 +915,7 @@ The entire tool is one shell script with no imports, modules, or configuration f
 |---:|---|---|---|
 | P1 | Add sequence-number IV fallback test | `src/core/hls/__tests__/iv-fallback.test.ts`, `src/core/hls/__tests__/parse-hls-manifest.test.ts` | Parser records `EXT-X-MEDIA-SEQUENCE`, and decrypt regression proves omitted-IV fallback uses the HLS media sequence number. |
 | P1 | Add I-frame stream filtering test | `src/core/hls/__tests__/iframe-filtering.test.ts` | Added parser regression proving I-frame-only stream tags are ignored as variants. |
-| P2 | Add "save raw TS" export option | `src/core/export/*`, settings | Done for browser fallback: UI labels HLS as `Save raw TS`; DASH is labeled raw segments and never MP4 unless a real mux path exists. |
+| P2 | Add "save raw TS" export option | `src/core/export/*`, settings | Done for browser fallback: primary action says `Download`; queue/output notes identify raw HLS/DASH fallback output and never claim MP4 unless a real mux path exists. |
 | P2 | Add bulk retry pass after initial download | `src/core/download/segment-scheduler.ts` | Two-pass approach (download all, then retry all failures once) is a useful complement to per-segment retry. |
 | P2 | Add auto-highest quality selection policy | `src/core/hls/select-hls-variant.ts`, settings | Add configurable default quality policy (highest/lowest/ask). |
 | P2 | Add sidecar subtitle download option | `src/core/export/*`, UI | Users may prefer sidecar files over muxed subtitles. |

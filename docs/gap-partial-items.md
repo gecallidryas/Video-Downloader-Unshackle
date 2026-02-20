@@ -11,7 +11,7 @@ Extracted from `feature-parity-report.md` across all 8 reference analyses. Every
 | 1 | `suppressProtectedDownloads` defaults to `false` | review | Unified baseline | Decide release default before shipping. |
 | 2 | `captureCredentialHeaders` defaults to `true`; stores Cookie/Authorization | review | Policy risk | Change release default to safe headers (referer/origin) only. |
 | 3 | Request header context forwards sensitive headers | review | live-stream (referer/origin only), stream-detector, cat-catch | Strip cookies/auth by default; allow explicit per-download consent. |
-| 4 | Production HLS/DASH path audit — confirm native export is intended default | done | Unified | Native export remains preferred and optional; production HLS falls back to browser raw `.ts`, DASH falls back to raw `.m4s`/`.bin`, and direct preview/thumbnail/explicit WebM trim use offscreen browser fallbacks when the native helper is unavailable. Popup onboarding now requests optional `nativeMessaging`, distinguishes permission/host/dependency readiness states, and links to the beta PowerShell setup wrapper. |
+| 4 | Production HLS/DASH path audit — confirm native export is intended default | improved | Unified | Native export remains optional and setting-gated; when native features are off the background starts with native disabled, lazily creates the native client only for native-enabled paths, and browser fallbacks cover raw HLS/DASH saves, HLS preview playback, direct thumbnail capture, and explicit WebM trim. |
 | 5 | Safe default policy against store/experimental build split | gap | puemos | Store-safe and experimental build variants are cleaner than one permissive default. |
 | 6 | Protected-content refusal checks for deep capture modes | gap | cat-catch (has it, risky) | Any MSE/recorder/deep-search feature must refuse DRM/protected media. |
 | 7 | First-class stream detector classifier fixtures | gap | stream-detector | HLS, DASH, HDS, MSS, VTT, SRT, TTML, DFXP, MP4/M4S, TS, AAC, MP3, OGG/OPUS, WebM. |
@@ -27,8 +27,8 @@ Extracted from `feature-parity-report.md` across all 8 reference analyses. Every
 | # | Item | Status | Stronger in | Action |
 |---|---|---|---|---|
 | 10 | Broken-pipe recovery and ranged resume | done | live-stream (strong) | Scheduler retries partial fetches with validated retained bytes, resumes ranges only when safe, rejoins bytes, and lowers effective host concurrency after repeated recoverable failures. |
-| 11 | Range splitting of large single files | done | live-stream, Unified | Added tested `splitIntoRanges` utility for fixed-size direct media chunks. |
-| 12 | Direct range downloader | done | live-stream | Added `downloadDirectWithRanges` with HEAD probing, range-capable chunk downloads through the scheduler, and ordered assembly. |
+| 11 | Range splitting of large single files | done | live-stream, Unified | Production direct downloads now probe HEAD range support and route large range-capable files through scheduler-managed byte ranges when browser fallbacks are enabled. |
+| 12 | Direct range downloader | done | live-stream | Wired `downloadDirectWithRanges` into the background controller with Chrome-download fallback for non-range media and non-retryable status handling for ranged failures. |
 | 13 | Timeline/discontinuity handling | done | live-stream (user timeline choice), Unified | Added discontinuity grouping plus planner policy surface; UI-level user choice remains future repair/UX work. |
 | 14 | Init segment cache/dedupe | done | live-stream, puemos | Added URI+byterange init segment cache and scheduler dedupe for duplicate init fetches. |
 | 15 | Do not retry HTTP status errors (403/404) | done | puemos, stream-detector | Added `SegmentFetchError`, non-retryable HTTP status classification, and scheduler no-retry coverage. |
@@ -106,8 +106,8 @@ Extracted from `feature-parity-report.md` across all 8 reference analyses. Every
 | 67 | Low storage banner component | gap/partial | puemos | Add if near quota warnings matter. |
 | 68 | Storage summary in Settings and Downloads footer | partial | puemos | Strong UX pattern; constant visibility. |
 | 69 | Auto delete after save setting | gap/partial | puemos | Useful storage-saving option. |
-| 70 | Cleanup cancels active jobs first | partial | puemos | Consistency behavior. |
-| 71 | "Save raw TS" export option | done | hls_downloader (`-f` flag), cat-catch | Browser HLS fallback exports raw `.ts` through `chrome.downloads`, UI labels it `Save raw TS`, and DASH raw fallback labels raw segments without claiming MP4. |
+| 70 | Cleanup cancels active jobs first | improved | puemos | Runtime `CANCEL_DOWNLOAD` now reaches the controller abort path, queue UI cancel is wired, and queue/controller completion paths preserve `cancelled` instead of overwriting it with failed/completed state. |
+| 71 | "Save raw TS" export option | done | hls_downloader (`-f` flag), cat-catch | Browser HLS fallback exports raw `.ts` through `chrome.downloads`; the primary user action is labeled `Download` while queue/output notes remain explicit about raw fallback output. |
 | 72 | Sidecar subtitle download option | partial | hls_downloader | Users may prefer sidecar files over muxed subtitles. |
 | 73 | Force-export of partial HLS downloads | partial | m3u8-downloader, cat-catch | Download already-completed segments without waiting for full job. |
 | 74 | Streaming write feature detection | partial | m3u8-downloader | Browser fallback currently uses Blob assembly with honest queue notes; File System Access / OPFS streaming feature detection remains follow-up work for large outputs. |
@@ -137,7 +137,7 @@ Extracted from `feature-parity-report.md` across all 8 reference analyses. Every
 | 84 | Popup job details modal/panel | done | live-stream, Unified | PopupApp now accepts `jobs` prop; selecting a job opens a detail view with progress, segments done/failed, speed, elapsed, and error; back button returns to list. |
 | 85 | Progressive preview while downloading | done | live-stream (MP4Box/MSE), Unified | `PreviewModal` accepts `downloadedRanges` + `liveSegmentSource` props and renders a green/gray progress strip over the scrub area; MSE byte-pumping wires through `run-hls-job.ts` orchestrator. |
 | 86 | Codec sniff via MP4Box | done | live-stream, Unified | `src/core/preview/codec-sniff.ts` parses MP4 `ftyp`/`moov` brand tokens + TS sync bytes (avc1, hvc1, vp09, av01, mp4a, Opus, ...); `CodecBadge` renders detected codec with warning style when `canPlayType` rejects it. |
-| 87 | hls.js preview when native HLS unsupported | done | puemos | `usePreviewPlayer` hook checks `canPlayType('application/vnd.apple.mpegurl')` and lazy `import('hls.js')` only when needed; degrades gracefully if peer is absent. |
+| 87 | hls.js preview when native HLS unsupported | improved | puemos | `hls.js` is now bundled, non-native HLS preview opens the manifest directly in `PreviewModal`, and generated native preview assets are skipped when native features are disabled. |
 | 88 | Preview reload button | done | puemos | Refresh icon button in `PreviewModal` header bumps `key` to destroy and recreate the player. |
 | 89 | Preview duration callback | done | puemos | `PreviewModal` fires `onDurationResolved(durationSec)` on `loadedmetadata`. |
 | 90 | Copy all playlist URLs (bulk copy) | ~~partial~~ done | puemos | MediaCard overflow menu wires `onCopyAllUrls` callback. |
@@ -152,7 +152,7 @@ Extracted from `feature-parity-report.md` across all 8 reference analyses. Every
 | 99 | Estimated output size from bitrate and duration | ~~partial~~ done | puemos | MediaCard shows `~N MB` estimate from bitrate × duration and a ⚠ marker when over `remainingStorageBytes`. |
 | 100 | Duplicate handling (duplicate URL/filename filtering) | ~~partial~~ improved | cat-catch | DuplicateBadge primitive plus MediaCard `duplicateCount`/`onDuplicateClick` props; grouping logic still pending parent integration. |
 | 101 | Badge/command coverage (pause, clear, open parser) | done | cat-catch | Registered `pause-all`, `clear-completed`, `open-side-panel` in `wxt.config.ts` manifest commands with Ctrl+Shift+P/X/D suggested keys; PopupApp footer lists shortcuts. |
-| 102 | Current/all/previous candidate views | improved | stream-detector | SidePanelApp exposes Current Tab / All Tabs / Previous Session sub-tabs; previous detections persist newest-first and `previousSessionLimit` controls how many links are saved. |
+| 102 | Current/all/previous candidate views | improved | stream-detector | SidePanelApp exposes Current Tab / All Tabs / Previous Session sub-tabs, refreshes the current tab while open, and persists previous detections newest-first with `previousSessionLimit` controlling how many links are saved. |
 | 103 | Recent-only compact mode | done | stream-detector | "Recent only" toggle limits list to the last 20 detections, with a "Show N more" button to expand. |
 | 104 | Debounced notifications and badge mode | done | stream-detector | `detection-notifier.ts` batches detection events in a 2s window with `notificationMode: each | batched | off` setting (default batched); badge accumulates total. |
 | 105 | Multi-field stream filtering | removed/not-scope | stream-detector | Removed the chip filter menu and stream-filter helper; the side panel keeps simpler current/all/previous views instead. |
@@ -205,24 +205,24 @@ Extracted from `feature-parity-report.md` across all 8 reference analyses. Every
 
 | # | Item | Status | Stronger in | Action |
 |---|---|---|---|---|
-| 133 | Firefox compatibility / MV2 build | gap | live-stream, puemos, stream-detector | Future roadmap only. |
-| 134 | Build all variants at once | gap | puemos | Release automation pattern. |
-| 135 | Coverage report and generated badge | gap | puemos | External credibility signal. |
-| 136 | Firefox publish script | gap | puemos | Future only. |
-| 137 | Storybook for components | gap | puemos | Visual QA if design system grows. |
-| 138 | `unlimitedStorage` permission | gap/review | puemos | Consider only if quotas require it. |
-| 139 | ffmpeg.wasm as optional fallback | gap by design | puemos | Wasm can be optional fallback when native helper absent. |
-| 140 | mux.js as lightweight browser-only TS-to-MP4 fallback | gap / P3 planned | m3u8-downloader, cat-catch | Deferred by design; browser fallback currently exports honest raw HLS/DASH outputs and does not transmux or label them MP4. |
-| 141 | Online filename resolution | gap/partial | live-stream | Privacy-sensitive; only if user-initiated. |
-| 142 | Manifest/icon/package release checks | partial | cat-catch | Practical packaging sanity checks. |
-| 143 | Release tester guide | partial | puemos (`FOR-DEAR-TESTERS.md`) | Borrow shape from puemos. |
-| 144 | Localization keys for stream categories | partial | stream-detector | HLS/DASH/HDS/MSS/subtitle labels translatable. |
-| 145 | MQTT/webhook generic export | gap | cat-catch | Generic webhook first; MQTT only after export model exists. |
-| 146 | Custom CSS for UI | gap/not-scope | cat-catch | Power-user only; avoid unless accessible. |
-| 147 | Redirect-header-preservation test | partial | FastestBilibiliDownloader | Ensure Referer survives HTTP redirects. |
-| 148 | Relative URL resolution fixtures for nested paths | partial | hls_downloader | Mixed absolute/relative within same manifest. |
-| 149 | Concurrent duration fetch limit | gap | puemos | Good small bounded-work pattern. |
-| 150 | Test URL / demo flow in debug mode | gap/partial | m3u8-downloader | Quick validation aid. |
+| 133 | Firefox compatibility / MV2 build | improved | live-stream, puemos, stream-detector | Added Firefox build/zip scripts and release tester coverage; Chrome builds MV3 and Firefox builds WXT's `firefox-mv2` artifact. |
+| 134 | Build all variants at once | done | puemos | Added `build:all` to build Chrome and Firefox variants in one release command. |
+| 135 | Coverage report and generated badge | done | puemos | Added `coverage` and `coverage:badge` scripts with `@vitest/coverage-v8`, `scripts/coverage-badge.mjs`, and generated `docs/coverage-badge.svg`. |
+| 136 | Firefox publish script | improved | puemos | Added `scripts/publish-firefox.mjs` credential/artifact gate; upload remains manual until AMO signing is configured. |
+| 137 | Storybook for components | deferred/not-scope | puemos | Kept out of scope for now; release tester guide and existing component tests remain visual QA until the design system needs Storybook. |
+| 138 | `unlimitedStorage` permission | done | puemos | Added `unlimitedStorage` to manifest permissions for OPFS/IndexedDB browser fallback storage headroom. |
+| 139 | ffmpeg.wasm as optional fallback | deferred/by-design | puemos | Native remains optional and browser fallback stays non-native-only; ffmpeg.wasm is deferred because it adds large wasm/runtime policy surface. |
+| 140 | mux.js as lightweight browser-only TS-to-MP4 fallback | deferred/by-design | m3u8-downloader, cat-catch | Browser fallback labels user actions as Download while queue/output notes remain honest about raw fallback output; browser transmuxing remains deferred until a bounded mux policy lands. |
+| 141 | Online filename resolution | done | live-stream | MediaCard overflow now exposes user-initiated `resolveOnlineFilename()` using HEAD, browser-managed credentials, redirects, and Content-Disposition parsing. |
+| 142 | Manifest/icon/package release checks | done | cat-catch | Added `scripts/release-checks.mjs`, `release:check`, manifest icons, and tests for release metadata sanity. |
+| 143 | Release tester guide | done | puemos (`FOR-DEAR-TESTERS.md`) | Added `docs/release-tester-guide.md` with non-native fallback smoke tests and regression gates. |
+| 144 | Localization keys for stream categories | done | stream-detector | Added stable `stream.category.*` keys and default labels; media-card adapter exposes category labels for direct/HLS/DASH/HDS/MSS/audio/subtitle candidates. |
+| 145 | MQTT/webhook generic export | done | cat-catch | Closed as generic webhook-first: advanced MediaCard integration action dispatches through opt-in `external-hub.ts`; webhook export redacts sensitive headers and MQTT remains intentionally not added. |
+| 146 | Custom CSS for UI | deferred/not-scope | cat-catch | Kept intentionally out of scope for accessibility and supportability; no arbitrary CSS injection is shipped. |
+| 147 | Redirect-header-preservation test | done | FastestBilibiliDownloader | Added `fetchFollowingRedirectsWithHeaders()` test ensuring Referer/Origin are passed with `redirect: follow`. |
+| 148 | Relative URL resolution fixtures for nested paths | done | hls_downloader | Added nested relative fixture coverage for HLS init maps, keys, and segments. |
+| 149 | Concurrent duration fetch limit | done | puemos | HLS master hydration uses `fetchDurationsWithLimit()` with a default limit of 4 for level duration probes, with concurrency regression coverage. |
+| 150 | Test URL / demo flow in debug mode | done | m3u8-downloader | Advanced side-panel tools expose `Add demo media`, backed by `createDemoMediaCandidates()` safe direct/HLS demo candidates and tests. |
 
 ---
 

@@ -4,6 +4,7 @@ import { createHistoryStore } from '../history-store';
 import { createJobStore } from '../job-store';
 import { createDownloadController } from '../download-controller';
 import { NativeFfmpegClientError } from '@/src/native/native-ffmpeg-client';
+import { SegmentFetchError } from '@/src/core/download/error-classification';
 
 function candidate(overrides: Partial<MediaCandidate> = {}): MediaCandidate {
   return {
@@ -43,6 +44,109 @@ function job(candidateId = 'candidate-1'): DownloadJob {
 }
 
 describe('download controller decision flow', () => {
+  test('routes range-capable large direct media through the browser range downloader', async () => {
+    const downloadFile = vi.fn();
+    const downloadDirectWithRanges = vi.fn().mockResolvedValue({
+      fileName: 'direct-video.mp4',
+      mimeType: 'video/mp4',
+      sizeBytes: 6_000_000,
+      notes: ['Browser assembled direct download from HTTP byte ranges.'],
+    } satisfies JobOutput);
+    const controller = createDownloadController({
+      downloadFile,
+      downloadDirectWithRanges,
+      runHls: vi.fn(),
+      runDash: vi.fn(),
+      probeDirectRange: vi.fn().mockResolvedValue({
+        acceptsRanges: true,
+        contentLength: 6_000_000,
+      }),
+    });
+
+    const output = await controller.start(candidate(), job(), {
+      settings: {
+        enableBrowserFallbacks: true,
+        directRangeMinBytes: 5_000_000,
+      },
+    });
+
+    expect(downloadDirectWithRanges).toHaveBeenCalledWith({
+      candidate: expect.objectContaining({ protocol: 'direct' }),
+      job: expect.objectContaining({ id: 'job-1' }),
+      signal: expect.any(AbortSignal),
+    });
+    expect(downloadFile).not.toHaveBeenCalled();
+    expect(output.notes).toContain('Browser assembled direct download from HTTP byte ranges.');
+  });
+
+  test('falls back to chrome downloads when direct media does not support ranges', async () => {
+    const downloadFile = vi.fn().mockResolvedValue({
+      fileName: 'direct-video.mp4',
+      mimeType: 'video/mp4',
+      downloadId: 42,
+    } satisfies JobOutput);
+    const downloadDirectWithRanges = vi.fn();
+    const controller = createDownloadController({
+      downloadFile,
+      downloadDirectWithRanges,
+      runHls: vi.fn(),
+      runDash: vi.fn(),
+      probeDirectRange: vi.fn().mockResolvedValue({
+        acceptsRanges: false,
+        contentLength: 6_000_000,
+      }),
+    });
+
+    const output = await controller.start(candidate(), job(), {
+      settings: {
+        enableBrowserFallbacks: true,
+        directRangeMinBytes: 5_000_000,
+      },
+    });
+
+    expect(downloadDirectWithRanges).not.toHaveBeenCalled();
+    expect(downloadFile).toHaveBeenCalledOnce();
+    expect(output).toMatchObject({ downloadId: 42 });
+  });
+
+  test('records non-retryable direct range status failures', async () => {
+    const jobStore = createJobStore(() => 500);
+    const historyStore = createHistoryStore(() => 500);
+    const downloadDirectWithRanges = vi
+      .fn()
+      .mockRejectedValue(new SegmentFetchError(404, 'Not Found'));
+    const controller = createDownloadController({
+      downloadFile: vi.fn(),
+      downloadDirectWithRanges,
+      runHls: vi.fn(),
+      runDash: vi.fn(),
+      probeDirectRange: vi.fn().mockResolvedValue({
+        acceptsRanges: true,
+        contentLength: 6_000_000,
+      }),
+    });
+    const queuedJob = jobStore.create(candidate(), { mode: 'best' });
+
+    await expect(
+      controller.runManaged(candidate(), queuedJob, {
+        jobStore,
+        historyStore,
+        settings: {
+          enableBrowserFallbacks: true,
+          directRangeMinBytes: 5_000_000,
+        },
+      }),
+    ).rejects.toThrow('Segment fetch failed: 404 Not Found');
+
+    expect(jobStore.get(queuedJob.id)).toMatchObject({
+      phase: 'failed',
+      failure: {
+        code: 'NETWORK_ERROR',
+        retryable: false,
+      },
+    });
+  });
+
   test('routes direct media without trim through chrome downloads', async () => {
     const downloadFile = vi.fn().mockResolvedValue({
       fileName: 'direct-video.mp4',
@@ -155,6 +259,61 @@ describe('download controller decision flow', () => {
     expect(output).toEqual({ fileName: 'hls.mp4', mimeType: 'video/mp4' });
   });
 
+  test('does not fall back to browser HLS when browser fallbacks are disabled', async () => {
+    const nativeExport = vi.fn().mockRejectedValue(
+      new NativeFfmpegClientError(
+        'NATIVE_UNAVAILABLE',
+        'Native messaging API is unavailable.',
+      ),
+    );
+    const runHls = vi.fn();
+    const fetchText = vi.fn();
+    const controller = createDownloadController({
+      downloadFile: vi.fn(),
+      runHls,
+      runDash: vi.fn(),
+      fetchText,
+      nativeExport,
+      enableBrowserFallbacks: false,
+    });
+
+    await expect(
+      controller.start(
+        candidate({ protocol: 'hls', sourceUrl: undefined, manifestUrl: 'https://cdn.example.com/master.m3u8' }),
+        job(),
+        { selection: { mode: 'best' } },
+      ),
+    ).rejects.toThrow('Native messaging API is unavailable.');
+
+    expect(fetchText).not.toHaveBeenCalled();
+    expect(runHls).not.toHaveBeenCalled();
+  });
+
+  test('skips native export when native features are disabled', async () => {
+    const nativeExport = vi.fn();
+    const runHls = vi.fn().mockResolvedValue({ fileName: 'hls.ts', mimeType: 'video/mp2t' });
+    const fetchText = vi
+      .fn()
+      .mockResolvedValue('#EXTM3U\n#EXTINF:1,\nseg.ts\n#EXT-X-ENDLIST');
+    const controller = createDownloadController({
+      downloadFile: vi.fn(),
+      runHls,
+      runDash: vi.fn(),
+      fetchText,
+      nativeExport,
+      enableNativeFeatures: false,
+    });
+
+    await controller.start(
+      candidate({ protocol: 'hls', sourceUrl: undefined, manifestUrl: 'https://cdn.example.com/master.m3u8' }),
+      job(),
+      { selection: { mode: 'best' } },
+    );
+
+    expect(nativeExport).not.toHaveBeenCalled();
+    expect(runHls).toHaveBeenCalledOnce();
+  });
+
   test('falls back to a full direct download with a trim note when native trim is unavailable', async () => {
     const nativeExport = vi.fn().mockRejectedValue(
       new NativeFfmpegClientError(
@@ -185,6 +344,48 @@ describe('download controller decision flow', () => {
       notes: [
         'Trim is not supported for direct downloads yet; downloaded the full file.',
       ],
+    });
+  });
+
+  test('routes explicit browser WebM trim through the browser direct trim runner', async () => {
+    const nativeExport = vi.fn();
+    const downloadFile = vi.fn();
+    const browserDirectTrim = vi.fn().mockResolvedValue({
+      fileName: 'Direct video.trim.webm',
+      mimeType: 'video/webm',
+      downloadId: 45,
+      notes: ['Browser-recorded WebM clip; not an original-quality stream copy.'],
+    } satisfies JobOutput);
+    const controller = createDownloadController({
+      downloadFile,
+      runHls: vi.fn(),
+      runDash: vi.fn(),
+      nativeExport,
+      browserDirectTrim,
+    });
+
+    const output = await controller.start(candidate(), job(), {
+      selection: {
+        mode: 'best',
+        outputKind: 'webm',
+        trim: { startSec: 5, endSec: 10 },
+      },
+    });
+
+    expect(browserDirectTrim).toHaveBeenCalledWith({
+      candidate: expect.objectContaining({ protocol: 'direct' }),
+      job: expect.objectContaining({
+        selection: expect.objectContaining({
+          outputKind: 'webm',
+          trim: { startSec: 5, endSec: 10 },
+        }),
+      }),
+    });
+    expect(nativeExport).not.toHaveBeenCalled();
+    expect(downloadFile).not.toHaveBeenCalled();
+    expect(output).toMatchObject({
+      fileName: 'Direct video.trim.webm',
+      mimeType: 'video/webm',
     });
   });
 
