@@ -80,7 +80,7 @@ describe('browser media capability resolver', () => {
     });
   });
 
-  test('resolves HLS browser fallback as raw TS', () => {
+  test('resolves HLS browser fallback as mux.js MP4 when enabled', () => {
     expect(
       resolveBrowserDownloadCapability({
         candidate: candidate({
@@ -90,6 +90,27 @@ describe('browser media capability resolver', () => {
           mimeType: 'application/vnd.apple.mpegurl',
         }),
         selection: selection(),
+        browserTransmuxWithMuxJs: true,
+      }),
+    ).toMatchObject({
+      available: true,
+      capability: 'hls-muxjs-mp4',
+      outputExtension: 'mp4',
+      outputMimeType: 'video/mp4',
+    });
+  });
+
+  test('resolves HLS browser fallback as raw TS when mux.js transmux is disabled', () => {
+    expect(
+      resolveBrowserDownloadCapability({
+        candidate: candidate({
+          protocol: 'hls',
+          sourceUrl: undefined,
+          manifestUrl: 'https://cdn.example.com/master.m3u8',
+          mimeType: 'application/vnd.apple.mpegurl',
+        }),
+        selection: selection(),
+        browserTransmuxWithMuxJs: false,
       }),
     ).toMatchObject({
       available: true,
@@ -97,6 +118,53 @@ describe('browser media capability resolver', () => {
       outputExtension: 'ts',
       outputMimeType: 'video/mp2t',
     });
+  });
+
+  test('disables HLS and DASH browser fallback exports when fallback setting is off', () => {
+    expect(
+      resolveBrowserDownloadCapability({
+        candidate: candidate({
+          protocol: 'hls',
+          sourceUrl: undefined,
+          manifestUrl: 'https://cdn.example.com/master.m3u8',
+        }),
+        selection: selection(),
+        enableBrowserFallbacks: false,
+      }),
+    ).toMatchObject({
+      available: false,
+      capability: 'native-required',
+      reason: 'Browser fallback exports are disabled in settings.',
+    });
+
+    expect(
+      resolveBrowserDownloadCapability({
+        candidate: candidate({
+          protocol: 'dash',
+          sourceUrl: undefined,
+          manifestUrl: 'https://cdn.example.com/manifest.mpd',
+        }),
+        selection: selection(),
+        enableBrowserFallbacks: false,
+      }),
+    ).toMatchObject({
+      available: false,
+      capability: 'native-required',
+    });
+  });
+
+  test('disables browser-generated direct previews and thumbnails when fallback setting is off', () => {
+    expect(resolveBrowserPreviewCapability(candidate(), { enableBrowserFallbacks: false }))
+      .toMatchObject({
+        available: false,
+        capability: 'native-required',
+      });
+
+    expect(resolveBrowserThumbnailCapability(candidate(), { enableBrowserFallbacks: false }))
+      .toMatchObject({
+        available: false,
+        capability: 'native-required',
+      });
   });
 
   test('resolves DASH browser fallback as raw segments', () => {
@@ -178,7 +246,7 @@ describe('browser media capability resolver', () => {
     });
   });
 
-  test('resolves direct preview to browser recording and HLS preview to native required', () => {
+  test('resolves direct preview and HLS preview to browser playback without native', () => {
     expect(resolveBrowserPreviewCapability(candidate())).toMatchObject({
       available: true,
       capability: 'direct-preview-recording',
@@ -194,8 +262,8 @@ describe('browser media capability resolver', () => {
         }),
       ),
     ).toMatchObject({
-      available: false,
-      capability: 'native-required',
+      available: true,
+      capability: 'hls-browser-preview',
     });
   });
 });

@@ -10,7 +10,13 @@ import type {
   UiLanguage,
   UiMode,
 } from '@/src/background/settings/settings-store';
-import { DEFAULT_SETTINGS } from '@/src/background/settings/settings-store';
+import {
+  DEFAULT_SETTINGS,
+  SETTINGS_STORAGE_KEY,
+  normalizeSettings,
+  type SettingsStorageAdapter,
+  type UnifiedSettings,
+} from '@/src/background/settings/settings-store';
 import type { NativeHelperReadiness } from '@/src/native/native-helper-diagnostics';
 
 export interface SettingsState {
@@ -49,7 +55,16 @@ export interface SettingsState {
   captureRuleMinSizeBytes: number;
   captureRuleSizePredicate: string;
   advancedMode: boolean;
+  aria2Enabled: boolean;
+  aria2RpcUrl: string;
+  aria2Secret: string;
+  webhookEnabled: boolean;
+  webhookUrl: string;
   previousSessionLimit: number;
+  enableNativeFeatures: boolean;
+  enableBrowserFallbacks: boolean;
+  browserTransmuxWithMuxJs: boolean;
+  browserTransmuxMaxBytes: number;
   nativeHelperOnboardingDismissed: boolean;
   nativeHelperPermissionPrompted: boolean;
   nativeHelperLastReadiness: NativeHelperReadiness;
@@ -57,6 +72,10 @@ export interface SettingsState {
   uiLanguage: UiLanguage;
   setAdvancedMode: (enabled: boolean) => void;
   setPreviousSessionLimit: (limit: number) => void;
+  setEnableNativeFeatures: (enabled: boolean) => void;
+  setEnableBrowserFallbacks: (enabled: boolean) => void;
+  setBrowserTransmuxWithMuxJs: (enabled: boolean) => void;
+  setBrowserTransmuxMaxBytes: (value: number) => void;
   setNativeHelperOnboardingDismissed: (value: boolean) => void;
   setNativeHelperPermissionPrompted: (value: boolean) => void;
   setNativeHelperLastReadiness: (value: NativeHelperReadiness) => void;
@@ -87,73 +106,138 @@ export interface SettingsState {
   resetCaptureRules: () => void;
 }
 
-export const useSettingsStore = create<SettingsState>((set) => ({
-  ...DEFAULT_SETTINGS,
-  autoDetectEnabled: true,
-  downloadPath: 'Downloads',
-  notificationsEnabled: true,
-  setTheme: (theme) => {
-    document.documentElement.setAttribute('data-theme', theme);
-    set({ theme });
-  },
-  setAutoScanEnabled: (enabled) =>
-    set({ autoScanEnabled: enabled, autoDetectEnabled: enabled }),
-  setNetworkCaptureEnabled: (enabled) => set({ networkCaptureEnabled: enabled }),
-  setMaxConcurrentDownloads: (value) =>
-    set({ maxConcurrentDownloads: Math.max(1, Math.floor(value)) }),
-  setMaxConcurrentSegments: (value) =>
-    set({ maxConcurrentSegments: Math.max(1, Math.floor(value)) }),
-  setPreferredAudioLanguage: (language) => set({ preferredAudioLanguage: language }),
-  setNamingTemplate: (template) => set({ namingTemplate: template }),
-  setPreviewMode: (mode) => set({ previewMode: mode }),
-  setPreviewFormat: (format) => set({ previewFormat: format }),
-  toggleAutoDetect: () =>
-    set((s) => ({
-      autoDetectEnabled: !s.autoDetectEnabled,
-      autoScanEnabled: !s.autoDetectEnabled,
-    })),
-  toggleNotifications: () =>
-    set((s) => ({
-      notificationsEnabled: !s.notificationsEnabled,
-      showNotifications: !s.notificationsEnabled,
-    })),
-  setDownloadPath: (path) => set({ downloadPath: path }),
-  setPreferredQuality: (q) => set({ preferredQuality: q }),
-  setDefaultOutputFormat: (format) => set({ defaultOutputFormat: format }),
-  toggleContextMenu: () =>
-    set((s) => ({ enableContextMenu: !s.enableContextMenu })),
-  setCaptureRules: (rules) =>
-    set({
-      ...(rules.customExtensions
-        ? { captureRuleCustomExtensions: rules.customExtensions }
-        : {}),
-      ...(rules.customContentTypes
-        ? { captureRuleCustomContentTypes: rules.customContentTypes }
-        : {}),
-      ...(rules.urlBlacklist ? { captureRuleUrlBlacklist: rules.urlBlacklist } : {}),
-      ...(rules.minSizeBytes !== undefined
-        ? { captureRuleMinSizeBytes: Math.max(0, Math.floor(rules.minSizeBytes)) }
-        : {}),
-      ...(rules.sizePredicate !== undefined
-        ? { captureRuleSizePredicate: rules.sizePredicate }
-        : {}),
-    }),
-  setAdvancedMode: (enabled) => set({ advancedMode: enabled }),
-  setPreviousSessionLimit: (limit) =>
-    set({ previousSessionLimit: Math.max(0, Math.floor(limit)) }),
-  setNativeHelperOnboardingDismissed: (value) =>
-    set({ nativeHelperOnboardingDismissed: value }),
-  setNativeHelperPermissionPrompted: (value) =>
-    set({ nativeHelperPermissionPrompted: value }),
-  setNativeHelperLastReadiness: (value) => set({ nativeHelperLastReadiness: value }),
-  setOnboardingCompleted: (value) => set({ onboardingCompleted: value }),
-  setUiLanguage: (value) => set({ uiLanguage: value }),
-  resetCaptureRules: () =>
-    set({
-      captureRuleCustomExtensions: [],
-      captureRuleCustomContentTypes: [],
-      captureRuleUrlBlacklist: [],
-      captureRuleMinSizeBytes: 0,
-      captureRuleSizePredicate: '',
-    }),
-}));
+type SettingsActionKey = {
+  [K in keyof SettingsState]: SettingsState[K] extends (...args: never[]) => unknown ? K : never;
+}[keyof SettingsState];
+
+type PersistableSettingsState = Omit<SettingsState, SettingsActionKey>;
+type SettingsStatePatch =
+  | Partial<SettingsState>
+  | ((state: SettingsState) => Partial<SettingsState>);
+
+function defaultStorage(): SettingsStorageAdapter | undefined {
+  return globalThis.chrome?.storage?.local;
+}
+
+function toStoredSettings(state: SettingsState): UnifiedSettings {
+  const persistable = Object.fromEntries(
+    Object.entries(state).filter(([, value]) => typeof value !== 'function'),
+  ) as PersistableSettingsState;
+
+  return normalizeSettings({
+    ...persistable,
+    showNotifications: state.notificationsEnabled,
+    autoScanEnabled: state.autoScanEnabled,
+  });
+}
+
+function persistSettingsState(state: SettingsState): void {
+  void defaultStorage()?.set({
+    [SETTINGS_STORAGE_KEY]: toStoredSettings(state),
+  });
+}
+
+export async function hydrateSettingsStore(
+  storage: SettingsStorageAdapter | undefined = defaultStorage(),
+): Promise<void> {
+  if (!storage) {
+    return;
+  }
+
+  const stored = await storage.get(SETTINGS_STORAGE_KEY);
+  if (!Object.prototype.hasOwnProperty.call(stored, SETTINGS_STORAGE_KEY)) {
+    document.documentElement.setAttribute('data-theme', useSettingsStore.getState().theme);
+    return;
+  }
+
+  const settings = normalizeSettings(stored[SETTINGS_STORAGE_KEY]);
+  document.documentElement.setAttribute('data-theme', settings.theme);
+  useSettingsStore.setState({
+    ...settings,
+    autoDetectEnabled: settings.autoScanEnabled,
+    notificationsEnabled: settings.showNotifications,
+  });
+}
+
+export const useSettingsStore = create<SettingsState>((set, get) => {
+  const setPersisted = (patch: SettingsStatePatch) => {
+    set(patch);
+    persistSettingsState(get());
+  };
+
+  return {
+    ...DEFAULT_SETTINGS,
+    autoDetectEnabled: true,
+    downloadPath: 'Downloads',
+    notificationsEnabled: true,
+    setTheme: (theme) => {
+      document.documentElement.setAttribute('data-theme', theme);
+      setPersisted({ theme });
+    },
+    setAutoScanEnabled: (enabled) =>
+      setPersisted({ autoScanEnabled: enabled, autoDetectEnabled: enabled }),
+    setNetworkCaptureEnabled: (enabled) => setPersisted({ networkCaptureEnabled: enabled }),
+    setMaxConcurrentDownloads: (value) =>
+      setPersisted({ maxConcurrentDownloads: Math.max(1, Math.floor(value)) }),
+    setMaxConcurrentSegments: (value) =>
+      setPersisted({ maxConcurrentSegments: Math.max(1, Math.floor(value)) }),
+    setPreferredAudioLanguage: (language) => setPersisted({ preferredAudioLanguage: language }),
+    setNamingTemplate: (template) => setPersisted({ namingTemplate: template }),
+    setPreviewMode: (mode) => setPersisted({ previewMode: mode }),
+    setPreviewFormat: (format) => setPersisted({ previewFormat: format }),
+    toggleAutoDetect: () =>
+      setPersisted((s) => ({
+        autoDetectEnabled: !s.autoDetectEnabled,
+        autoScanEnabled: !s.autoDetectEnabled,
+      })),
+    toggleNotifications: () =>
+      setPersisted((s) => ({
+        notificationsEnabled: !s.notificationsEnabled,
+        showNotifications: !s.notificationsEnabled,
+      })),
+    setDownloadPath: (path) => setPersisted({ downloadPath: path }),
+    setPreferredQuality: (q) => setPersisted({ preferredQuality: q }),
+    setDefaultOutputFormat: (format) => setPersisted({ defaultOutputFormat: format }),
+    toggleContextMenu: () =>
+      setPersisted((s) => ({ enableContextMenu: !s.enableContextMenu })),
+    setCaptureRules: (rules) =>
+      setPersisted({
+        ...(rules.customExtensions
+          ? { captureRuleCustomExtensions: rules.customExtensions }
+          : {}),
+        ...(rules.customContentTypes
+          ? { captureRuleCustomContentTypes: rules.customContentTypes }
+          : {}),
+        ...(rules.urlBlacklist ? { captureRuleUrlBlacklist: rules.urlBlacklist } : {}),
+        ...(rules.minSizeBytes !== undefined
+          ? { captureRuleMinSizeBytes: Math.max(0, Math.floor(rules.minSizeBytes)) }
+          : {}),
+        ...(rules.sizePredicate !== undefined
+          ? { captureRuleSizePredicate: rules.sizePredicate }
+          : {}),
+      }),
+    setAdvancedMode: (enabled) => setPersisted({ advancedMode: enabled }),
+    setPreviousSessionLimit: (limit) =>
+      setPersisted({ previousSessionLimit: Math.max(0, Math.floor(limit)) }),
+    setEnableNativeFeatures: (enabled) => setPersisted({ enableNativeFeatures: enabled }),
+    setEnableBrowserFallbacks: (enabled) => setPersisted({ enableBrowserFallbacks: enabled }),
+    setBrowserTransmuxWithMuxJs: (enabled) => setPersisted({ browserTransmuxWithMuxJs: enabled }),
+    setBrowserTransmuxMaxBytes: (value) =>
+      setPersisted({ browserTransmuxMaxBytes: Math.max(1, Math.floor(value)) }),
+    setNativeHelperOnboardingDismissed: (value) =>
+      setPersisted({ nativeHelperOnboardingDismissed: value }),
+    setNativeHelperPermissionPrompted: (value) =>
+      setPersisted({ nativeHelperPermissionPrompted: value }),
+    setNativeHelperLastReadiness: (value) => setPersisted({ nativeHelperLastReadiness: value }),
+    setOnboardingCompleted: (value) => setPersisted({ onboardingCompleted: value }),
+    setUiLanguage: (value) => setPersisted({ uiLanguage: value }),
+    resetCaptureRules: () =>
+      setPersisted({
+        captureRuleCustomExtensions: [],
+        captureRuleCustomContentTypes: [],
+        captureRuleUrlBlacklist: [],
+        captureRuleMinSizeBytes: 0,
+        captureRuleSizePredicate: '',
+      }),
+  };
+});

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { createCaptureRuleEngine } from '@/src/core/capture-rules/capture-rule-engine';
 import { requestNativeMessagingPermission } from '@/src/native/native-permissions';
@@ -8,8 +8,10 @@ import {
   type NativeHelperReadiness,
 } from '@/src/native/native-helper-diagnostics';
 import { getNativeHelperInstallTarget } from '@/src/native/native-helper-links';
-import { useSettingsStore } from '@/src/state/useSettingsStore';
-import { NativeHelperStatus } from '@/src/ui/feedback/NativeHelperStatus';
+import {
+  hydrateSettingsStore,
+  useSettingsStore,
+} from '@/src/state/useSettingsStore';
 import { NativeHelperOnboarding } from '@/src/ui/onboarding/NativeHelperOnboarding';
 import './PopupApp.css';
 
@@ -68,6 +70,8 @@ function resolveNativeHelperInstallTarget() {
   });
 }
 
+const PROJECT_SOURCE_URL = 'https://github.com/gecallidryas/Video-Downloader-Unshackle';
+
 function SettingsContent() {
   const theme = useSettingsStore((s) => s.theme);
   const setTheme = useSettingsStore((s) => s.setTheme);
@@ -89,6 +93,7 @@ function SettingsContent() {
   const [nativeHelperDiagnostic, setNativeHelperDiagnostic] =
     useState<NativeHelperDiagnostic>(() => createPopupDiagnostic(nativeHelperLastReadiness));
   const [nativeHelperBusy, setNativeHelperBusy] = useState(false);
+  const mountedRef = useRef(false);
   const nativeHelperInstallTarget = resolveNativeHelperInstallTarget();
   const autoDetect = useSettingsStore((s) => s.autoDetectEnabled);
   const toggleAutoDetect = useSettingsStore((s) => s.toggleAutoDetect);
@@ -118,6 +123,14 @@ function SettingsContent() {
   const toggleContextMenu = useSettingsStore((s) => s.toggleContextMenu);
   const advancedMode = useSettingsStore((s) => s.advancedMode);
   const setAdvancedMode = useSettingsStore((s) => s.setAdvancedMode);
+  const enableNativeFeatures = useSettingsStore((s) => s.enableNativeFeatures);
+  const setEnableNativeFeatures = useSettingsStore((s) => s.setEnableNativeFeatures);
+  const enableBrowserFallbacks = useSettingsStore((s) => s.enableBrowserFallbacks);
+  const setEnableBrowserFallbacks = useSettingsStore((s) => s.setEnableBrowserFallbacks);
+  const browserTransmuxWithMuxJs = useSettingsStore((s) => s.browserTransmuxWithMuxJs);
+  const setBrowserTransmuxWithMuxJs = useSettingsStore((s) => s.setBrowserTransmuxWithMuxJs);
+  const browserTransmuxMaxBytes = useSettingsStore((s) => s.browserTransmuxMaxBytes);
+  const setBrowserTransmuxMaxBytes = useSettingsStore((s) => s.setBrowserTransmuxMaxBytes);
   const previousSessionLimit = useSettingsStore((s) => s.previousSessionLimit);
   const setPreviousSessionLimit = useSettingsStore((s) => s.setPreviousSessionLimit);
   const captureRuleCustomExtensions = useSettingsStore((s) => s.captureRuleCustomExtensions);
@@ -146,9 +159,15 @@ function SettingsContent() {
     setNativeHelperBusy(true);
     try {
       const next = await checkNativeHelperReadiness();
+      if (!mountedRef.current) {
+        return;
+      }
       setNativeHelperDiagnostic(next);
       setNativeHelperLastReadiness(next.readiness);
     } catch (error) {
+      if (!mountedRef.current) {
+        return;
+      }
       const next = createPopupDiagnostic(
         'error',
         error instanceof Error ? error.message : 'Native helper failed.',
@@ -156,7 +175,9 @@ function SettingsContent() {
       setNativeHelperDiagnostic(next);
       setNativeHelperLastReadiness(next.readiness);
     } finally {
-      setNativeHelperBusy(false);
+      if (mountedRef.current) {
+        setNativeHelperBusy(false);
+      }
     }
   }
 
@@ -183,6 +204,10 @@ function SettingsContent() {
     window.open(nativeHelperInstallTarget.href, '_blank', 'noopener,noreferrer');
   }
 
+  function openProjectSource() {
+    window.open(PROJECT_SOURCE_URL, '_blank', 'noopener,noreferrer');
+  }
+
   function dismissOnboarding() {
     setNativeHelperOnboardingDismissed(true);
   }
@@ -193,7 +218,13 @@ function SettingsContent() {
   }
 
   useEffect(() => {
+    mountedRef.current = true;
+    void hydrateSettingsStore();
     void refreshNativeHelperDiagnostic();
+
+    return () => {
+      mountedRef.current = false;
+    };
   }, []);
 
   function updateCaptureRules(next: {
@@ -294,8 +325,11 @@ function SettingsContent() {
           onRequestPermission={() => void enableNativeHelper()}
           onCheckAgain={() => void refreshNativeHelperDiagnostic()}
           onOpenSetup={openNativeHelperSetup}
+          onOpenSource={openProjectSource}
           onDismiss={dismissOnboarding}
           onComplete={completeOnboarding}
+          nativeFeaturesEnabled={enableNativeFeatures}
+          onNativeFeaturesChange={setEnableNativeFeatures}
           installTarget={nativeHelperInstallTarget}
         />
       ) : null}
@@ -481,13 +515,72 @@ function SettingsContent() {
         </select>
       </label>
 
-      <NativeHelperStatus
-        diagnostic={nativeHelperDiagnostic}
-        busy={nativeHelperBusy}
-        onCheck={() => void refreshNativeHelperDiagnostic()}
-        onRequestPermission={() => void enableNativeHelper()}
-        onOpenSetup={openNativeHelperSetup}
-      />
+      <label className="popup__row popup__row--with-help">
+        <span>
+          <span className="popup__label">Native FFmpeg features</span>
+          <span className="popup__help">
+            Uses native messaging for merged HLS/DASH, trims, and local FFmpeg output.
+          </span>
+        </span>
+        <input
+          type="checkbox"
+          role="checkbox"
+          aria-label="Native FFmpeg features"
+          checked={enableNativeFeatures}
+          onChange={(event) => setEnableNativeFeatures(event.target.checked)}
+          className="popup__toggle"
+        />
+      </label>
+
+      <label className="popup__row popup__row--with-help">
+        <span>
+          <span className="popup__label">Browser fallbacks</span>
+          <span className="popup__help">
+            Allows HLS/DASH saves and browser-generated WebM preview or trim paths.
+          </span>
+        </span>
+        <input
+          type="checkbox"
+          role="checkbox"
+          aria-label="Browser fallbacks"
+          checked={enableBrowserFallbacks}
+          onChange={(event) => setEnableBrowserFallbacks(event.target.checked)}
+          className="popup__toggle"
+        />
+      </label>
+
+      <label className="popup__row popup__row--with-help">
+        <span>
+          <span className="popup__label">mux.js HLS MP4 fallback</span>
+          <span className="popup__help">
+            Converts downloaded MPEG-TS HLS segments to MP4 in the browser when native export is unavailable.
+          </span>
+        </span>
+        <input
+          type="checkbox"
+          role="checkbox"
+          aria-label="mux.js HLS MP4 fallback"
+          checked={browserTransmuxWithMuxJs}
+          onChange={(event) => setBrowserTransmuxWithMuxJs(event.target.checked)}
+          className="popup__toggle"
+          disabled={!enableBrowserFallbacks}
+        />
+      </label>
+
+      <label className="popup__row">
+        <span className="popup__label">mux.js size limit (MB)</span>
+        <input
+          aria-label="mux.js size limit"
+          type="number"
+          min={1}
+          value={Math.round(browserTransmuxMaxBytes / 1024 / 1024)}
+          onChange={(event) =>
+            setBrowserTransmuxMaxBytes(Number(event.target.value) * 1024 * 1024)
+          }
+          className="popup__input"
+          disabled={!enableBrowserFallbacks || !browserTransmuxWithMuxJs}
+        />
+      </label>
 
       <label className="popup__row">
         <span className="popup__label">Context menu</span>

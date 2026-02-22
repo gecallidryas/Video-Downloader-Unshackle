@@ -6,11 +6,13 @@ import type {
 export type BrowserExportCapability =
   | 'direct-download'
   | 'direct-webm-recording'
+  | 'hls-muxjs-mp4'
   | 'hls-raw-ts'
   | 'dash-raw-segments'
   | 'static-thumbnail'
   | 'direct-frame-thumbnail'
   | 'direct-preview-recording'
+  | 'hls-browser-preview'
   | 'native-required'
   | 'unsupported';
 
@@ -26,6 +28,12 @@ export interface ResolveBrowserDownloadCapabilityInput {
   candidate: MediaCandidate;
   selection?: DownloadSelection;
   allowBrowserRecording?: boolean;
+  enableBrowserFallbacks?: boolean;
+  browserTransmuxWithMuxJs?: boolean;
+}
+
+export interface ResolveBrowserAssetCapabilityOptions {
+  enableBrowserFallbacks?: boolean;
 }
 
 function protectedResult(reason = 'Protected media is blocked.'): BrowserCapabilityResult {
@@ -42,6 +50,10 @@ function nativeRequired(reason: string): BrowserCapabilityResult {
     capability: 'native-required',
     reason,
   };
+}
+
+function browserFallbackDisabled(): BrowserCapabilityResult {
+  return nativeRequired('Browser fallback exports are disabled in settings.');
 }
 
 function unsupported(reason: string): BrowserCapabilityResult {
@@ -90,6 +102,7 @@ export function resolveBrowserDownloadCapability(
   input: ResolveBrowserDownloadCapabilityInput,
 ): BrowserCapabilityResult {
   const { candidate, selection, allowBrowserRecording } = input;
+  const enableBrowserFallbacks = input.enableBrowserFallbacks ?? true;
 
   if (isBlockedProtection(candidate)) {
     return protectedResult();
@@ -101,6 +114,10 @@ export function resolveBrowserDownloadCapability(
     }
 
     if (hasTrim(selection)) {
+      if (!enableBrowserFallbacks && selection?.outputKind === 'webm') {
+        return browserFallbackDisabled();
+      }
+
       if (allowBrowserRecording) {
         return {
           available: true,
@@ -122,19 +139,27 @@ export function resolveBrowserDownloadCapability(
   }
 
   if (candidate.protocol === 'hls') {
+    if (!enableBrowserFallbacks) {
+      return browserFallbackDisabled();
+    }
+
     if (!hasManifestUrl(candidate)) {
       return unsupported('HLS browser export requires a manifest URL.');
     }
 
     return {
       available: true,
-      capability: 'hls-raw-ts',
-      outputExtension: 'ts',
-      outputMimeType: 'video/mp2t',
+      capability: input.browserTransmuxWithMuxJs === false ? 'hls-raw-ts' : 'hls-muxjs-mp4',
+      outputExtension: input.browserTransmuxWithMuxJs === false ? 'ts' : 'mp4',
+      outputMimeType: input.browserTransmuxWithMuxJs === false ? 'video/mp2t' : 'video/mp4',
     };
   }
 
   if (candidate.protocol === 'dash') {
+    if (!enableBrowserFallbacks) {
+      return browserFallbackDisabled();
+    }
+
     if (!hasManifestUrl(candidate)) {
       return unsupported('DASH browser export requires a manifest URL.');
     }
@@ -152,12 +177,17 @@ export function resolveBrowserDownloadCapability(
 
 export function resolveBrowserPreviewCapability(
   candidate: MediaCandidate,
+  options: ResolveBrowserAssetCapabilityOptions = {},
 ): BrowserCapabilityResult {
   if (isBlockedProtection(candidate)) {
     return protectedResult();
   }
 
   if (candidate.protocol === 'direct') {
+    if (options.enableBrowserFallbacks === false) {
+      return browserFallbackDisabled();
+    }
+
     if (!hasDirectUrl(candidate)) {
       return unsupported('Direct browser preview requires a source URL.');
     }
@@ -170,17 +200,30 @@ export function resolveBrowserPreviewCapability(
     };
   }
 
-  if (
-    (candidate.protocol === 'hls' || candidate.protocol === 'dash') &&
-    hasStaticThumbnail(candidate)
-  ) {
+  if (candidate.protocol === 'hls') {
+    if (options.enableBrowserFallbacks === false) {
+      return browserFallbackDisabled();
+    }
+
+    if (!hasManifestUrl(candidate)) {
+      return unsupported('HLS browser preview requires a manifest URL.');
+    }
+
+    return {
+      available: true,
+      capability: 'hls-browser-preview',
+      outputMimeType: 'application/vnd.apple.mpegurl',
+    };
+  }
+
+  if (candidate.protocol === 'dash' && hasStaticThumbnail(candidate)) {
     return {
       available: true,
       capability: 'static-thumbnail',
     };
   }
 
-  if (candidate.protocol === 'hls' || candidate.protocol === 'dash') {
+  if (candidate.protocol === 'dash') {
     return nativeRequired('Generated HLS and DASH previews require the native helper.');
   }
 
@@ -189,6 +232,7 @@ export function resolveBrowserPreviewCapability(
 
 export function resolveBrowserThumbnailCapability(
   candidate: MediaCandidate,
+  options: ResolveBrowserAssetCapabilityOptions = {},
 ): BrowserCapabilityResult {
   if (isBlockedProtection(candidate)) {
     return protectedResult();
@@ -202,6 +246,10 @@ export function resolveBrowserThumbnailCapability(
   }
 
   if (candidate.protocol === 'direct') {
+    if (options.enableBrowserFallbacks === false) {
+      return browserFallbackDisabled();
+    }
+
     if (!hasDirectUrl(candidate)) {
       return unsupported('Direct browser thumbnail capture requires a source URL.');
     }

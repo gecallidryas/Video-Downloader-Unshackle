@@ -32,6 +32,8 @@ export interface DownloadControllerSettings {
   enableNativeFeatures?: boolean;
   enableBrowserFallbacks?: boolean;
   directRangeMinBytes?: number;
+  browserTransmuxWithMuxJs?: boolean;
+  browserTransmuxMaxBytes?: number;
 }
 
 export interface DownloadControllerStartOptions {
@@ -49,6 +51,8 @@ export type RunHlsControllerJob = (input: {
   maxConcurrentPerHost?: number;
   segmentTimeoutMs?: number;
   qualityPolicy?: DefaultQualityPolicy;
+  browserTransmuxWithMuxJs?: boolean;
+  browserTransmuxMaxBytes?: number;
   signal?: AbortSignal;
 }) => Promise<JobOutput>;
 
@@ -242,6 +246,8 @@ export function createDownloadController(options: DownloadControllerOptions) {
     });
   let suppressProtectedDownloads = options.suppressProtectedDownloads;
   let controllerSettings: DownloadControllerSettings = {
+    browserTransmuxWithMuxJs: true,
+    browserTransmuxMaxBytes: 150 * 1024 * 1024,
     ...(options.enableNativeFeatures !== undefined
       ? { enableNativeFeatures: options.enableNativeFeatures }
       : {}),
@@ -418,6 +424,8 @@ export function createDownloadController(options: DownloadControllerOptions) {
           allowProtected,
           signal: jobSignal,
           qualityPolicy: settings.defaultQualityPolicy,
+          browserTransmuxWithMuxJs: settings.browserTransmuxWithMuxJs,
+          browserTransmuxMaxBytes: settings.browserTransmuxMaxBytes,
           ...concurrencyFields,
         });
       }
@@ -548,6 +556,12 @@ export function createDownloadController(options: DownloadControllerOptions) {
         : {}),
       ...(patch.directRangeMinBytes !== undefined
         ? { directRangeMinBytes: patch.directRangeMinBytes }
+        : {}),
+      ...(patch.browserTransmuxWithMuxJs !== undefined
+        ? { browserTransmuxWithMuxJs: patch.browserTransmuxWithMuxJs }
+        : {}),
+      ...(patch.browserTransmuxMaxBytes !== undefined
+        ? { browserTransmuxMaxBytes: patch.browserTransmuxMaxBytes }
         : {}),
     };
   }

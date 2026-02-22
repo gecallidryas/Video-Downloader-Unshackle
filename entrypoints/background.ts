@@ -71,6 +71,8 @@ export function initializeBackgroundShell() {
       segmentTimeoutMs: settings.segmentTimeoutMs,
       enableNativeFeatures: settings.enableNativeFeatures,
       enableBrowserFallbacks: settings.enableBrowserFallbacks,
+      browserTransmuxWithMuxJs: settings.browserTransmuxWithMuxJs,
+      browserTransmuxMaxBytes: settings.browserTransmuxMaxBytes,
     });
     notificationManager.applySettings(settings);
     detectionNotifier.configure(settings);

@@ -118,6 +118,70 @@ describe('browser HLS export runner', () => {
     });
   });
 
+  test('transmuxes TS segments to MP4 when mux.js browser fallback is enabled', async () => {
+    const manifest = parseHlsManifest({
+      manifestUrl: 'https://cdn.example.com/hls/prog.m3u8',
+      content: ['#EXTM3U', '#EXTINF:4,', 'segment.ts', '#EXT-X-ENDLIST'].join('\n'),
+    });
+    const createObjectUrl = vi.fn().mockReturnValue('blob:mp4-hls');
+    const download = vi.fn().mockResolvedValue(78);
+
+    await expect(
+      runBrowserHlsExportJob({
+        candidate: candidate(),
+        job: job(),
+        manifest,
+        fetchBytes: vi.fn().mockResolvedValue(new Uint8Array([0x47, 1, 2])),
+        createObjectUrl,
+        download,
+        browserTransmuxWithMuxJs: true,
+        browserTransmuxMaxBytes: 10_000,
+        transmuxTsToMp4: vi.fn().mockResolvedValue({
+          bytes: new Uint8Array([0, 0, 0, 24, 0x66, 0x74, 0x79, 0x70]),
+          mimeType: 'video/mp4',
+        }),
+      }),
+    ).resolves.toMatchObject({
+      fileName: 'playlist.mp4',
+      mimeType: 'video/mp4',
+      outputUrl: 'blob:mp4-hls',
+      downloadId: 78,
+      sizeBytes: 8,
+      notes: ['Browser transmuxed MPEG-TS HLS segments to MP4 with mux.js.'],
+    });
+
+    expect(download).toHaveBeenCalledWith({
+      url: 'blob:mp4-hls',
+      filename: 'playlist.mp4',
+      saveAs: false,
+    });
+  });
+
+  test('falls back to raw TS with an explicit note when mux.js transmux fails', async () => {
+    const manifest = parseHlsManifest({
+      manifestUrl: 'https://cdn.example.com/hls/prog.m3u8',
+      content: ['#EXTM3U', '#EXTINF:4,', 'segment.ts', '#EXT-X-ENDLIST'].join('\n'),
+    });
+
+    await expect(
+      runBrowserHlsExportJob({
+        candidate: candidate(),
+        job: job(),
+        manifest,
+        fetchBytes: vi.fn().mockResolvedValue(new Uint8Array([0x47, 1, 2])),
+        createObjectUrl: vi.fn().mockReturnValue('blob:raw-hls'),
+        download: vi.fn().mockResolvedValue(79),
+        browserTransmuxWithMuxJs: true,
+        browserTransmuxMaxBytes: 10_000,
+        transmuxTsToMp4: vi.fn().mockRejectedValue(new Error('unsupported stream')),
+      }),
+    ).resolves.toMatchObject({
+      fileName: 'playlist.ts',
+      mimeType: 'video/mp2t',
+      notes: ['mux.js transmux failed: unsupported stream. Saved raw MPEG-TS segments.'],
+    });
+  });
+
   test('fetches AES-128 key bytes with credentials included', async () => {
     const key = new Uint8Array([
       0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07,

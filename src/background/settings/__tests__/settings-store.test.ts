@@ -54,12 +54,16 @@ describe('background settings store', () => {
       webhookUrl: '',
       previousSessionLimit: 50,
       externalPlayerProfiles: [],
+      enableNativeFeatures: true,
+      enableBrowserFallbacks: true,
+      browserTransmuxWithMuxJs: true,
+      browserTransmuxMaxBytes: 157_286_400,
       nativeHelperOnboardingDismissed: false,
       nativeHelperPermissionPrompted: false,
       nativeHelperLastReadiness: 'not-checked',
       onboardingCompleted: false,
       uiLanguage: 'en',
-      _schemaVersion: 11,
+      _schemaVersion: 12,
     });
   });
 
@@ -68,6 +72,16 @@ describe('background settings store', () => {
     const settings = await store.load();
 
     expect(settings.advancedMode).toBe(false);
+  });
+
+  test('native features, browser fallbacks, and mux.js transmux default to enabled', async () => {
+    const store = createSettingsStore();
+    const settings = await store.load();
+
+    expect(settings.enableNativeFeatures).toBe(true);
+    expect(settings.enableBrowserFallbacks).toBe(true);
+    expect(settings.browserTransmuxWithMuxJs).toBe(true);
+    expect(settings.browserTransmuxMaxBytes).toBe(157_286_400);
   });
 
   test('captureCredentialHeaders defaults to false', async () => {
@@ -192,6 +206,10 @@ describe('background settings store', () => {
           nativeHelperOnboardingDismissed: 'yes',
           nativeHelperPermissionPrompted: 1,
           nativeHelperLastReadiness: 'surprised',
+          enableNativeFeatures: 'yes',
+          enableBrowserFallbacks: 0,
+          browserTransmuxWithMuxJs: 'yes',
+          browserTransmuxMaxBytes: -1,
           onboardingCompleted: 'done',
           uiLanguage: 'fr',
           _schemaVersion: 1,
@@ -205,9 +223,13 @@ describe('background settings store', () => {
       nativeHelperOnboardingDismissed: false,
       nativeHelperPermissionPrompted: false,
       nativeHelperLastReadiness: 'not-checked',
+      enableNativeFeatures: true,
+      enableBrowserFallbacks: true,
+      browserTransmuxWithMuxJs: true,
+      browserTransmuxMaxBytes: 157_286_400,
       onboardingCompleted: false,
       uiLanguage: 'en',
-      _schemaVersion: 11,
+      _schemaVersion: 12,
     });
   });
 });

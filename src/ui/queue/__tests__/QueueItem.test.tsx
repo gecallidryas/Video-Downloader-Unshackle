@@ -92,14 +92,14 @@ describe('QueueItem overflow menu', () => {
     expect(onCopyCommand).toHaveBeenCalledWith('yt-dlp', 'job-1');
   });
 
-  test('renders raw HLS output filename, MIME type, and notes', () => {
+  test('renders raw HLS fallback filename, MIME type, and notes', () => {
     render(
       <QueueItem
         item={{
           ...baseItem,
           outputLabel: 'stream.ts',
           outputMimeType: 'video/mp2t',
-          notes: ['Browser raw TS export; mux.js is deferred.'],
+          notes: ['mux.js transmux failed: unsupported stream. Saved raw MPEG-TS segments.'],
         }}
         onAction={() => {}}
       />,
@@ -107,7 +107,7 @@ describe('QueueItem overflow menu', () => {
 
     expect(screen.getByText('stream.ts')).toBeInTheDocument();
     expect(screen.getByText('video/mp2t')).toBeInTheDocument();
-    expect(screen.getByText(/browser raw ts export/i)).toBeInTheDocument();
+    expect(screen.getByText(/saved raw mpeg-ts segments/i)).toBeInTheDocument();
   });
 
   test('renders raw DASH and browser-recorded trim outputs honestly', () => {

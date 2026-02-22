@@ -6,8 +6,17 @@
   "scripts": {
     "dev": "wxt",
     "build": "wxt build",
+    "build:chrome": "wxt build --browser chrome",
+    "build:firefox": "wxt build --browser firefox",
+    "build:all": "npm run build:chrome && npm run build:firefox",
     "zip": "wxt zip",
+    "zip:chrome": "wxt zip --browser chrome",
+    "zip:firefox": "wxt zip --browser firefox",
     "test": "vitest run --config vitest.config.ts",
+    "coverage": "vitest run --config vitest.config.ts --coverage --pool=vmThreads --maxWorkers=4",
+    "coverage:badge": "node scripts/coverage-badge.mjs",
+    "release:check": "node scripts/release-checks.mjs",
+    "publish:firefox": "node scripts/publish-firefox.mjs",
     "native:build": "tsc -p native/ffmpeg-helper/tsconfig.json",
     "native:test": "vitest run --config vitest.config.ts native/ffmpeg-helper/src",
     "native:setup:windows": "powershell -ExecutionPolicy Bypass -File native/ffmpeg-helper/scripts/setup-windows.ps1",
@@ -16,8 +25,8 @@
     "postinstall": "wxt prepare"
   },
   "dependencies": {
-    "@rolldown/binding-win32-x64-msvc": "^1.0.0",
-    "lightningcss-win32-x64-msvc": "^1.32.0",
+    "hls.js": "^1.6.16",
+    "mux.js": "^6.3.0",
     "react": "19.2.5",
     "react-dom": "19.2.5",
     "zustand": "^5.0.12"
@@ -30,6 +39,7 @@
     "@types/chrome": "0.1.25",
     "@types/react": "19.2.2",
     "@types/react-dom": "19.2.2",
+    "@vitest/coverage-v8": "4.1.5",
     "@wxt-dev/module-react": "1.2.2",
     "jsdom": "27.0.1",
     "typescript": "6.0.3",

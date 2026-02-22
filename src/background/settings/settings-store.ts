@@ -88,6 +88,10 @@ export interface UnifiedSettings {
   webhookUrl: string;
   previousSessionLimit: number;
   externalPlayerProfiles: ExternalPlayerProfile[];
+  enableNativeFeatures: boolean;
+  enableBrowserFallbacks: boolean;
+  browserTransmuxWithMuxJs: boolean;
+  browserTransmuxMaxBytes: number;
   nativeHelperOnboardingDismissed: boolean;
   nativeHelperPermissionPrompted: boolean;
   nativeHelperLastReadiness: NativeHelperReadiness;
@@ -146,12 +150,16 @@ export const DEFAULT_SETTINGS: UnifiedSettings = {
   webhookUrl: '',
   previousSessionLimit: 50,
   externalPlayerProfiles: [],
+  enableNativeFeatures: true,
+  enableBrowserFallbacks: true,
+  browserTransmuxWithMuxJs: true,
+  browserTransmuxMaxBytes: 150 * 1024 * 1024,
   nativeHelperOnboardingDismissed: false,
   nativeHelperPermissionPrompted: false,
   nativeHelperLastReadiness: 'not-checked',
   onboardingCompleted: false,
   uiLanguage: 'en',
-  _schemaVersion: 11,
+  _schemaVersion: 12,
 };
 
 const nativeHelperReadinessValues = new Set<NativeHelperReadiness>([
@@ -261,7 +269,7 @@ function normalizeProviderDefaults(
   return result;
 }
 
-function normalizeSettings(value: unknown): UnifiedSettings {
+export function normalizeSettings(value: unknown): UnifiedSettings {
   const incoming =
     typeof value === 'object' && value !== null
       ? (value as Partial<UnifiedSettings>)
@@ -345,6 +353,23 @@ function normalizeSettings(value: unknown): UnifiedSettings {
         ? Number(incoming.previousSessionLimit)
         : DEFAULT_SETTINGS.previousSessionLimit,
     externalPlayerProfiles: normalizeExternalPlayerProfiles(incoming.externalPlayerProfiles),
+    enableNativeFeatures:
+      typeof incoming.enableNativeFeatures === 'boolean'
+        ? incoming.enableNativeFeatures
+        : DEFAULT_SETTINGS.enableNativeFeatures,
+    enableBrowserFallbacks:
+      typeof incoming.enableBrowserFallbacks === 'boolean'
+        ? incoming.enableBrowserFallbacks
+        : DEFAULT_SETTINGS.enableBrowserFallbacks,
+    browserTransmuxWithMuxJs:
+      typeof incoming.browserTransmuxWithMuxJs === 'boolean'
+        ? incoming.browserTransmuxWithMuxJs
+        : DEFAULT_SETTINGS.browserTransmuxWithMuxJs,
+    browserTransmuxMaxBytes:
+      Number.isInteger(incoming.browserTransmuxMaxBytes) &&
+      Number(incoming.browserTransmuxMaxBytes) > 0
+        ? Number(incoming.browserTransmuxMaxBytes)
+        : DEFAULT_SETTINGS.browserTransmuxMaxBytes,
     nativeHelperOnboardingDismissed:
       typeof incoming.nativeHelperOnboardingDismissed === 'boolean'
         ? incoming.nativeHelperOnboardingDismissed
