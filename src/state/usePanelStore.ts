@@ -30,6 +30,33 @@ export interface PanelStoreState {
   setErrorMessage: (errorMessage: string | null) => void;
 }
 
+function mergeCandidateMediaItems(
+  candidates: MediaCandidate[],
+  currentItems: DetectedMedia[],
+): DetectedMedia[] {
+  const currentById = new Map(currentItems.map((item) => [item.id, item]));
+
+  return candidates.map((candidate) => {
+    const next = toDetectedMedia(candidate);
+    const current = currentById.get(candidate.id);
+
+    if (!current) {
+      return next;
+    }
+
+    return {
+      ...next,
+      selectedQuality: current.selectedQuality,
+      selectedAudioTrackIds: current.selectedAudioTrackIds,
+      selectedSubtitleTrackIds: current.selectedSubtitleTrackIds,
+      trim: current.trim,
+      previewAssetUrl: current.previewAssetUrl,
+      previewLoading: current.previewLoading,
+      thumbnailUrl: current.thumbnailUrl ?? next.thumbnailUrl,
+    };
+  });
+}
+
 export const usePanelStore = create<PanelStoreState>((set, get) => ({
   surfaceState: 'detecting',
   candidates: [],
@@ -61,11 +88,11 @@ export const usePanelStore = create<PanelStoreState>((set, get) => ({
     }
   },
   setCandidates: (candidates) =>
-    set({
+    set((state) => ({
       candidates,
-      mediaItems: candidates.map(toDetectedMedia),
+      mediaItems: mergeCandidateMediaItems(candidates, state.mediaItems),
       surfaceState: candidates.length > 0 ? 'results' : 'empty',
-    }),
+    })),
   removeItem: (id) =>
     set((state) => {
       const mediaItems = state.mediaItems.filter((item) => item.id !== id);

@@ -102,8 +102,10 @@ export function initializeBackgroundShell() {
               url: probe.url,
               signal,
             });
+            const buffer = new ArrayBuffer(bytes.byteLength);
+            new Uint8Array(buffer).set(bytes);
             const objectUrl = URL.createObjectURL(
-              new Blob([bytes], { type: probe.mimeType }),
+              new Blob([buffer], { type: probe.mimeType }),
             );
 
             try {
