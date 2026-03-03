@@ -1,1 +1,0 @@
-import{n as e}from"./tokens-Dm9E6Fw1.js";var t=e(e=>({records:[],setRecords:t=>e({records:t.map(e=>({...e}))}),upsertRecord:t=>e(e=>({records:[...e.records.filter(e=>e.id!==t.id),{...t}]})),clearAll:()=>e({records:[]}),removeRecord:t=>e(e=>({records:e.records.filter(e=>e.id!==t)}))}));export{t};
