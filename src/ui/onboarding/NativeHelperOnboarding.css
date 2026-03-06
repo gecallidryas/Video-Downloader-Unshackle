@@ -1,127 +1,188 @@
-.native-helper-onboarding {
+.native-helper-onboarding-modal {
+  position: fixed;
+  inset: 0;
   display: grid;
-  gap: 6px;
-  width: 100%;
-  max-width: 276px;
-  padding: 8px;
-  border: 1px solid var(--outline);
-  border-radius: var(--radius);
-  background: var(--surface-container-lowest);
+  place-items: center;
+  padding: 16px;
+  background: color-mix(in srgb, var(--scrim, #121212) 54%, transparent);
   color: var(--on-surface);
   box-sizing: border-box;
 }
 
+.native-helper-onboarding {
+  display: grid;
+  gap: 14px;
+  width: min(420px, 100%);
+  max-height: calc(100dvh - 32px);
+  overflow: auto;
+  padding: 16px;
+  border: 1px solid var(--outline);
+  border-radius: 8px;
+  background: var(--surface);
+  box-shadow: 0 18px 52px color-mix(in srgb, var(--scrim, #121212) 42%, transparent);
+  box-sizing: border-box;
+}
+
 .native-helper-onboarding__header,
-.native-helper-onboarding__row,
-.native-helper-onboarding__actions {
+.native-helper-onboarding__actions,
+.native-helper-onboarding__nav {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 6px;
+  gap: 8px;
 }
 
 .native-helper-onboarding__title {
   margin: 0;
-  font-size: 13px;
-  line-height: 18px;
-  font-weight: 600;
+  font-size: 15px;
+  line-height: 20px;
+  font-weight: 700;
 }
 
 .native-helper-onboarding__status,
 .native-helper-onboarding__copy,
-.native-helper-onboarding__features,
-.native-helper-onboarding__diagnostics {
+.native-helper-onboarding__nav span,
+.native-helper-onboarding__card-copy {
   margin: 0;
   color: var(--on-surface-variant);
   font-size: var(--text-label-size);
   line-height: var(--text-label-lh);
 }
 
-.native-helper-onboarding__grid {
+.native-helper-onboarding__screen {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--outline-variant, var(--outline));
+}
+
+.native-helper-onboarding__eyebrow {
+  margin: 0;
+  color: var(--primary);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.native-helper-onboarding__headline {
+  margin: 0;
+  color: var(--on-surface);
+  font-size: 19px;
+  line-height: 24px;
+  font-weight: 750;
+}
+
+.native-helper-onboarding__close {
+  width: 28px;
+  height: 28px;
+  border: 1px solid var(--outline);
+  border-radius: 999px;
+  background: var(--surface-container-low);
+  color: var(--on-surface);
+  font-weight: 700;
+}
+
+.native-helper-onboarding__card-list,
+.native-helper-onboarding__rows {
+  display: grid;
+  gap: 8px;
+}
+
+.native-helper-onboarding__card {
+  position: relative;
+  display: grid;
   gap: 4px;
+  padding: 12px;
+  border: 1px solid var(--outline);
+  border-radius: 8px;
+  background: var(--surface-container-lowest);
+  cursor: pointer;
 }
 
-.native-helper-onboarding__grid span,
-.native-helper-onboarding__native-step {
-  border: 1px solid var(--outline-variant, var(--outline));
-  border-radius: var(--radius);
-  background: var(--surface-container);
+.native-helper-onboarding__card input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
 }
 
-.native-helper-onboarding__grid span {
-  padding: 5px 6px;
-  font-size: var(--text-label-size);
-  font-weight: 600;
+.native-helper-onboarding__card--selected {
+  border-color: var(--primary);
+  background: color-mix(in srgb, var(--primary-container) 58%, var(--surface));
 }
 
-.native-helper-onboarding__features {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 3px 8px;
-  padding-left: 16px;
-}
-
+.native-helper-onboarding__card-title,
 .native-helper-onboarding__label {
+  color: var(--on-surface);
   font-size: var(--text-body-size);
-  font-weight: 500;
+  font-weight: 650;
 }
 
-.native-helper-onboarding__segmented {
-  display: inline-flex;
+.native-helper-onboarding__row--panel {
+  display: grid;
   gap: 4px;
-}
-
-.native-helper-onboarding__choice {
-  display: inline-flex;
-  align-items: center;
-  gap: 3px;
-  font-size: 11px;
+  padding: 10px 12px;
+  border: 1px solid var(--outline-variant, var(--outline));
+  border-radius: 8px;
+  background: var(--surface-container-lowest);
 }
 
 .native-helper-onboarding__select,
 .native-helper-onboarding button {
-  min-height: 24px;
+  min-height: 30px;
   border: 1px solid var(--outline);
-  border-radius: var(--radius);
-  background: var(--surface);
+  border-radius: 6px;
+  background: var(--surface-container-low);
   color: var(--on-surface);
   font-family: var(--font-base);
   font-size: 11px;
 }
 
+.native-helper-onboarding__primary {
+  background: var(--primary-container);
+  border-color: var(--primary);
+  color: var(--on-primary-container, var(--on-surface));
+}
+
 .native-helper-onboarding button {
   cursor: pointer;
-  padding: 0 8px;
+  padding: 0 12px;
+  transition: transform 150ms, background-color 150ms, border-color 150ms;
+}
+
+.native-helper-onboarding button:active {
+  transform: translateY(1px);
+}
+
+.native-helper-onboarding button:focus-visible,
+.native-helper-onboarding input:focus-visible,
+.native-helper-onboarding select:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-glow);
+  border-color: var(--primary);
 }
 
 .native-helper-onboarding button:disabled {
-  cursor: wait;
-  opacity: 0.6;
+  cursor: not-allowed;
+  opacity: 0.55;
 }
 
-.native-helper-onboarding__ghost {
-  background: transparent;
-}
-
-.native-helper-onboarding__native-step {
-  display: grid;
-  gap: 4px;
-  padding: 6px;
+.native-helper-onboarding__nav {
+  border-top: 1px solid var(--outline-variant, var(--outline));
+  padding-top: 8px;
 }
 
 .native-helper-onboarding__diagnostics {
   border-top: 1px solid var(--outline-variant, var(--outline));
-  padding-top: 4px;
+  padding-top: 6px;
 }
 
 .native-helper-onboarding__diagnostics input {
   display: inline-block;
   margin: 4px 4px 0 0;
-  max-width: 118px;
+  max-width: 156px;
   border: 1px solid var(--outline-variant, var(--outline));
-  border-radius: var(--radius);
+  border-radius: 6px;
   background: var(--surface);
   color: var(--on-surface-variant);
   font-family: var(--font-mono);

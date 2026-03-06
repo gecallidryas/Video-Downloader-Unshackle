@@ -177,10 +177,29 @@ function createMockStream(): MediaStream {
 
 describe('recordPreviewClip', () => {
   let originalCreateElement: typeof document.createElement;
+  let createObjectUrl: ReturnType<typeof vi.fn>;
+  let revokeObjectUrl: ReturnType<typeof vi.fn>;
 
   beforeEach(() => {
     originalCreateElement = document.createElement.bind(document);
     vi.useFakeTimers();
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: true,
+        blob: vi.fn().mockResolvedValue(new Blob(['video'], { type: 'video/mp4' })),
+      }),
+    );
+    createObjectUrl = vi.fn().mockReturnValue('blob:offscreen-video');
+    revokeObjectUrl = vi.fn();
+    Object.defineProperty(URL, 'createObjectURL', {
+      configurable: true,
+      value: createObjectUrl,
+    });
+    Object.defineProperty(URL, 'revokeObjectURL', {
+      configurable: true,
+      value: revokeObjectUrl,
+    });
   });
 
   afterEach(() => {
@@ -220,6 +239,9 @@ describe('recordPreviewClip', () => {
     });
 
     expect((mockVideo as any).captureStream).toHaveBeenCalled();
+    expect(fetch).toHaveBeenCalledWith('https://cdn.example.com/video.mp4', { credentials: 'include' });
+    expect((mockVideo as HTMLVideoElement).src).toBe('blob:offscreen-video');
+    expect(revokeObjectUrl).toHaveBeenCalledWith('blob:offscreen-video');
   });
 
   test('sets video.currentTime to startSec (clamped to duration)', async () => {
@@ -382,5 +404,20 @@ describe('recordPreviewClip', () => {
     await vi.advanceTimersByTimeAsync(0);
 
     await expectation;
+  });
+
+  test('rejects before recording when the media fetch fails', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: false,
+        status: 404,
+        statusText: 'Not Found',
+      }),
+    );
+
+    await expect(recordPreviewClip(defaultOptions())).rejects.toThrow(
+      'Failed to fetch media for browser preview: 404 Not Found',
+    );
   });
 });

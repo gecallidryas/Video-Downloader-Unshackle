@@ -1,9 +1,13 @@
 import { fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { vi } from 'vitest';
+import { afterEach, vi } from 'vitest';
 import { VideoPlayer, formatTime } from '../VideoPlayer';
 
 function noopRef() {}
+
+afterEach(() => {
+  vi.restoreAllMocks();
+});
 
 test('renders video element and play overlay when paused', () => {
   render(
@@ -89,4 +93,46 @@ test('double click seeks backward on the left half and forward on the right half
 
   fireEvent.doubleClick(video, { clientX: 175 });
   expect(video.currentTime).toBe(50);
+});
+
+test('opens the preview source in a new tab when native fullscreen is rejected', async () => {
+  const user = userEvent.setup();
+  const openSpy = vi.spyOn(window, 'open').mockImplementation(() => null);
+  render(
+    <VideoPlayer videoRef={noopRef} sourceUrl="https://cdn.example.com/test.mp4" playerKey={0} />,
+  );
+
+  const player = screen.getByRole('group', { name: /video player/i });
+  Object.defineProperty(player, 'requestFullscreen', {
+    configurable: true,
+    value: vi.fn().mockRejectedValue(new Error('Denied by side panel')),
+  });
+
+  await user.click(screen.getByRole('button', { name: /fullscreen/i }));
+
+  expect(openSpy).toHaveBeenCalledWith(
+    'https://cdn.example.com/test.mp4',
+    '_blank',
+    'noopener,noreferrer',
+  );
+  expect(player).not.toHaveClass('vp--fallback-fullscreen');
+  expect(screen.getByRole('button', { name: /fullscreen/i })).toBeInTheDocument();
+});
+
+test('does not open a new tab when native fullscreen succeeds', async () => {
+  const user = userEvent.setup();
+  const openSpy = vi.spyOn(window, 'open').mockImplementation(() => null);
+  render(
+    <VideoPlayer videoRef={noopRef} sourceUrl="https://cdn.example.com/test.mp4" playerKey={0} />,
+  );
+
+  const player = screen.getByRole('group', { name: /video player/i });
+  Object.defineProperty(player, 'requestFullscreen', {
+    configurable: true,
+    value: vi.fn().mockResolvedValue(undefined),
+  });
+
+  await user.click(screen.getByRole('button', { name: /fullscreen/i }));
+
+  expect(openSpy).not.toHaveBeenCalled();
 });

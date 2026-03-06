@@ -22,6 +22,10 @@ export interface PanelStoreState {
   setQuality: (id: string, quality: string) => void;
   setAudioTracks: (id: string, trackIds: string[]) => void;
   setSubtitleTracks: (id: string, trackIds: string[]) => void;
+  setSubtitleOutput: (
+    id: string,
+    output: NonNullable<DownloadSelection['subtitleOutput']>,
+  ) => void;
   setTrim: (id: string, trim: DetectedMedia['trim']) => void;
   getDownloadSelection: (id: string) => DownloadSelection | undefined;
   upsertQueueJob: (job: DownloadJob) => void;
@@ -49,6 +53,7 @@ function mergeCandidateMediaItems(
       selectedQuality: current.selectedQuality,
       selectedAudioTrackIds: current.selectedAudioTrackIds,
       selectedSubtitleTrackIds: current.selectedSubtitleTrackIds,
+      selectedSubtitleOutput: current.selectedSubtitleOutput,
       trim: current.trim,
       previewAssetUrl: current.previewAssetUrl,
       previewLoading: current.previewLoading,
@@ -121,7 +126,20 @@ export const usePanelStore = create<PanelStoreState>((set, get) => ({
   setSubtitleTracks: (id, trackIds) =>
     set((state) => ({
       mediaItems: state.mediaItems.map((item) =>
-        item.id === id ? { ...item, selectedSubtitleTrackIds: trackIds } : item,
+        item.id === id
+          ? {
+              ...item,
+              selectedSubtitleTrackIds: trackIds,
+              selectedSubtitleOutput:
+                trackIds.length > 0 ? item.selectedSubtitleOutput ?? 'embed' : undefined,
+            }
+          : item,
+      ),
+    })),
+  setSubtitleOutput: (id, output) =>
+    set((state) => ({
+      mediaItems: state.mediaItems.map((item) =>
+        item.id === id ? { ...item, selectedSubtitleOutput: output } : item,
       ),
     })),
   setTrim: (id, trim) =>
@@ -145,6 +163,9 @@ export const usePanelStore = create<PanelStoreState>((set, get) => ({
         : {}),
       ...(item.selectedSubtitleTrackIds?.length
         ? { subtitleTrackIds: item.selectedSubtitleTrackIds }
+        : {}),
+      ...(item.selectedSubtitleTrackIds?.length && item.selectedSubtitleOutput
+        ? { subtitleOutput: item.selectedSubtitleOutput }
         : {}),
       ...(item.trim ? { trim: item.trim } : {}),
     };

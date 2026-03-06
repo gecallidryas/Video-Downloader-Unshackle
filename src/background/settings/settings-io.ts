@@ -8,13 +8,29 @@ type SettingsImportResult =
   | { valid: false; error: string };
 
 const SETTINGS_KEYS = Object.keys(DEFAULT_SETTINGS) as Array<keyof UnifiedSettings>;
+const SECRET_SETTING_KEYS = new Set<string>([
+  'aria2Secret',
+  'webhookUrl',
+]);
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
+function isSecretKey(key: string): boolean {
+  const normalized = key.toLowerCase();
+
+  return (
+    SECRET_SETTING_KEYS.has(key) ||
+    normalized.includes('secret') ||
+    normalized.includes('token') ||
+    normalized.includes('authorization') ||
+    normalized.includes('cookie')
+  );
+}
+
 function isExportableKey(key: keyof UnifiedSettings): boolean {
-  return !key.startsWith('_') || key === '_schemaVersion';
+  return (!key.startsWith('_') || key === '_schemaVersion') && !isSecretKey(key);
 }
 
 export function exportSettings(settings: Partial<UnifiedSettings> & Record<string, unknown>): string {

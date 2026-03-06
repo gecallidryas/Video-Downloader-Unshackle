@@ -2,9 +2,19 @@ export interface JobBucketStore {
   deleteBucket(jobId: string): Promise<void>;
 }
 
+export interface JobMetadataStore {
+  delete(jobId: string): Promise<void>;
+}
+
+export interface JobSubtitleStore {
+  deleteJob(jobId: string): Promise<void>;
+}
+
 export interface CleanupJobStorageOptions {
   indexedDb?: JobBucketStore;
   opfs?: JobBucketStore;
+  metadata?: JobMetadataStore;
+  subtitles?: JobSubtitleStore;
 }
 
 export interface CleanupJobStorageResult {
@@ -31,6 +41,18 @@ export async function cleanupJobStorage(
         errors.push(error instanceof Error ? error.message : String(error));
       }
     }
+  }
+
+  try {
+    await options.metadata?.delete(jobId);
+  } catch (error) {
+    errors.push(error instanceof Error ? error.message : String(error));
+  }
+
+  try {
+    await options.subtitles?.deleteJob(jobId);
+  } catch (error) {
+    errors.push(error instanceof Error ? error.message : String(error));
   }
 
   return {

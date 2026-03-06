@@ -136,6 +136,39 @@ describe('browser DASH export runner', () => {
     });
   });
 
+  test('writes DASH browser exports directly to disk when a writer is supplied', async () => {
+    const manifest = parseMpd({
+      manifestUrl: 'https://cdn.example.com/dash/manifest.mpd',
+      content: [
+        '<MPD mediaPresentationDuration="PT4S">',
+        '<Period><AdaptationSet contentType="video"><Representation id="v1">',
+        '<BaseURL>video.mp4</BaseURL>',
+        '</Representation></AdaptationSet></Period>',
+        '</MPD>',
+      ].join(''),
+    });
+    const writeFile = vi.fn(async () => undefined);
+    const download = vi.fn();
+
+    await expect(
+      runBrowserDashExportJob({
+        candidate: candidate(),
+        job: job(),
+        manifest,
+        fetchBytes: vi.fn().mockResolvedValue(new Uint8Array([9])),
+        writeFile,
+        download,
+      }),
+    ).resolves.toMatchObject({
+      fileName: 'dash-movie.bin',
+      outputUrl: 'file-system-access://dash-movie.bin',
+      notes: ['Saved directly to the selected output folder.'],
+    });
+
+    expect(writeFile).toHaveBeenCalledWith('dash-movie.bin', new Uint8Array([9]));
+    expect(download).not.toHaveBeenCalled();
+  });
+
   test('passes scheduling options through to the DASH job', async () => {
     const manifest = parseMpd({
       manifestUrl: 'https://cdn.example.com/dash/manifest.mpd',

@@ -191,6 +191,34 @@ describe('downloads export', () => {
     }
   });
 
+  test('writes blob exports directly to disk when a File System Access writer is available', async () => {
+    const blob = new Blob([new Uint8Array([1, 2, 3])], { type: 'video/mp2t' });
+    const writeFile = vi.fn(async () => undefined);
+    const createObjectUrl = vi.fn();
+    const download = vi.fn();
+
+    await expect(
+      exportBlobDownload({
+        blob,
+        filename: 'raw.ts',
+        mimeType: 'video/mp2t',
+        writeFile,
+        createObjectUrl,
+        download,
+      }),
+    ).resolves.toMatchObject({
+      fileName: 'raw.ts',
+      mimeType: 'video/mp2t',
+      outputUrl: 'file-system-access://raw.ts',
+      sizeBytes: 3,
+      notes: ['Saved directly to the selected output folder.'],
+    });
+
+    expect(writeFile).toHaveBeenCalledWith('raw.ts', new Uint8Array([1, 2, 3]));
+    expect(createObjectUrl).not.toHaveBeenCalled();
+    expect(download).not.toHaveBeenCalled();
+  });
+
   test('names raw HLS output as TS even when display name ends in MP4', () => {
     expect(
       rawSegmentOutputName({

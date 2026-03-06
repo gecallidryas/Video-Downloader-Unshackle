@@ -28,6 +28,7 @@ import {
 } from '@/src/core/direct/start-direct-download';
 import { parseHlsManifest } from '@/src/core/hls/parse-hls-manifest';
 import { createManualHlsIngestEvidence } from '@/src/core/hls/manual-hls-ingest';
+import { fetchDurationsWithLimit } from '@/src/core/probe/duration-fetcher';
 import type { CandidateEvidence } from '@/src/core/candidates/classify-candidate';
 
 export interface DrmDetectionRecord {
@@ -43,6 +44,7 @@ export interface RuntimeRouterDependencies {
   jobStore?: JobStore;
   historyStore?: HistoryStore;
   downloadQueue?: DownloadQueue;
+  cancelDownload?: (jobId: string) => Promise<{ cancelled: boolean; downloadId?: number }>;
   downloadFile?: DirectDownloadFile;
   requestJournal?: RequestJournal;
   fetchManifest?: (url: string) => Promise<string>;
@@ -54,6 +56,7 @@ export interface RuntimeRouterDependencies {
   getQueueStats?: () => QueueStats | Promise<QueueStats>;
   requestHostAccess?: (originPattern: string) => Promise<boolean>;
   drmDetections?: Map<string, DrmDetectionRecord[]>;
+  recordDetection?: (hostname: string, count: number) => void;
 }
 
 export interface RuntimeRouter {
@@ -85,12 +88,26 @@ type RoutedRuntimeRequest = Extract<
       | 'INGEST_IQIYI_CONFIG'
       | 'DRM_DETECTED'
       | 'GET_CANDIDATES'
+      | 'GET_ALL_CANDIDATES'
       | 'GET_QUEUE_STATS'
       | 'REQUEST_HOST_ACCESS'
       | 'GET_PREVIEW_ASSET'
       | 'GET_THUMBNAIL_ASSET'
       | 'DEBUG_GET_EVIDENCE'
-      | 'START_DOWNLOAD';
+      | 'START_DOWNLOAD'
+      | 'CANCEL_DOWNLOAD'
+      | 'GET_JOB'
+      | 'GET_JOBS'
+      | 'RETRY_DOWNLOAD'
+      | 'RESAVE_DOWNLOAD'
+      | 'REMOVE_DOWNLOAD'
+      | 'CLEAR_COMPLETED_DOWNLOADS'
+      | 'PAUSE_ALL_DOWNLOADS'
+      | 'INGEST_DIRECT_URL'
+      | 'RETRY_HLS_SEGMENT'
+      | 'RETRY_FAILED_HLS_SEGMENTS'
+      | 'EXPORT_PARTIAL_HLS'
+      | 'UPDATE_HLS_SEGMENT_RANGE';
   }
 >;
 
@@ -100,12 +117,26 @@ const handledRequestTypes = new Set<RoutedRuntimeRequest['type']>([
   'INGEST_IQIYI_CONFIG',
   'DRM_DETECTED',
   'GET_CANDIDATES',
+  'GET_ALL_CANDIDATES',
   'GET_QUEUE_STATS',
   'REQUEST_HOST_ACCESS',
   'GET_PREVIEW_ASSET',
   'GET_THUMBNAIL_ASSET',
   'DEBUG_GET_EVIDENCE',
   'START_DOWNLOAD',
+  'CANCEL_DOWNLOAD',
+  'GET_JOB',
+  'GET_JOBS',
+  'RETRY_DOWNLOAD',
+  'RESAVE_DOWNLOAD',
+  'REMOVE_DOWNLOAD',
+  'CLEAR_COMPLETED_DOWNLOADS',
+  'PAUSE_ALL_DOWNLOADS',
+  'INGEST_DIRECT_URL',
+  'RETRY_HLS_SEGMENT',
+  'RETRY_FAILED_HLS_SEGMENTS',
+  'EXPORT_PARTIAL_HLS',
+  'UPDATE_HLS_SEGMENT_RANGE',
 ]);
 
 function buildDefaultQueueStats(): QueueStats {
@@ -180,8 +211,36 @@ async function hydrateManifestCandidate(
         manifestUrl: candidate.manifestUrl,
         content: await fetchManifest(candidate.manifestUrl),
       });
+      const variantDurations =
+        manifest.playlistKind === 'master'
+          ? await fetchDurationsWithLimit(
+              manifest.variants
+                .map((variant) => variant.url)
+                .filter((url): url is string => typeof url === 'string' && url.length > 0),
+              async (url) => {
+                try {
+                  return parseHlsManifest({
+                    manifestUrl: url,
+                    content: await fetchManifest(url),
+                  }).durationSec;
+                } catch {
+                  return undefined;
+                }
+              },
+            )
+          : [];
+      const durationSec =
+        manifest.durationSec ??
+        variantDurations.reduce<number | undefined>(
+          (maxDuration, duration) =>
+            duration === undefined
+              ? maxDuration
+              : Math.max(maxDuration ?? 0, duration),
+          undefined,
+        );
       const hydrated: MediaCandidate = {
         ...candidate,
+        durationSec,
         protection: manifest.protection,
         status:
           manifest.protection.kind === 'drm' || manifest.protection.kind === 'unknown'
@@ -242,10 +301,11 @@ async function getCandidatesForTab(
       ),
     );
 
-    dependencies.candidateRegistry.set(
-      tabId,
-      dedupeCandidates([...dependencies.candidateRegistry.get(tabId), ...hydrated]),
-    );
+    const existing = dependencies.candidateRegistry.get(tabId);
+    const merged = dedupeCandidates([...existing, ...hydrated]);
+
+    dependencies.candidateRegistry.set(tabId, merged);
+    recordNewDetections(dependencies, existing, merged);
 
     return dependencies.candidateRegistry.get(tabId);
   }
@@ -261,6 +321,96 @@ function dedupeCandidates(candidates: MediaCandidate[]): MediaCandidate[] {
   }
 
   return Array.from(byId.values());
+}
+
+function hostnameForCandidate(candidate: MediaCandidate): string {
+  const url =
+    candidate.origin ||
+    candidate.pageUrl ||
+    candidate.sourceUrl ||
+    candidate.manifestUrl ||
+    '';
+
+  try {
+    return new URL(url).hostname;
+  } catch {
+    return url || 'unknown host';
+  }
+}
+
+function recordNewDetections(
+  dependencies: RuntimeRouterDependencies,
+  existing: MediaCandidate[],
+  merged: MediaCandidate[],
+): void {
+  if (!dependencies.recordDetection) {
+    return;
+  }
+
+  const existingIds = new Set(existing.map((candidate) => candidate.id));
+  const countsByHostname = new Map<string, number>();
+
+  for (const candidate of merged) {
+    if (existingIds.has(candidate.id)) {
+      continue;
+    }
+
+    const hostname = hostnameForCandidate(candidate);
+    countsByHostname.set(hostname, (countsByHostname.get(hostname) ?? 0) + 1);
+  }
+
+  for (const [hostname, count] of countsByHostname) {
+    dependencies.recordDetection(hostname, count);
+  }
+}
+
+function candidateFromDirectUrl(input: Extract<RuntimeRequest, { type: 'INGEST_DIRECT_URL' }>['payload']): MediaCandidate {
+  let origin = input.origin ?? '';
+  try {
+    origin ||= new URL(input.url).origin;
+  } catch {
+    origin ||= '';
+  }
+  const filename = input.filename?.trim();
+  const displayName =
+    filename ||
+    (() => {
+      try {
+        return new URL(input.url).pathname.split('/').filter(Boolean).pop() || input.url;
+      } catch {
+        return input.url;
+      }
+    })();
+
+  return {
+    id: `manual-direct:${input.tabId}:${input.url}`,
+    tabId: input.tabId,
+    mediaKind: 'video',
+    protocol: 'direct',
+    status: 'ready',
+    pageUrl: input.referer ?? input.url,
+    origin,
+    displayName,
+    sourceUrl: input.url,
+    fileExtensionHint: displayName.includes('.') ? displayName.split('.').pop() : undefined,
+    protection: { kind: 'none' },
+    variants: [],
+    audioTracks: [],
+    subtitleTracks: [],
+    evidence: [
+      {
+        source: 'user',
+        confidence: 0.95,
+        url: input.url,
+        initiatorUrl: input.referer,
+        notes: ['manual-ingest:direct-url'],
+        createdAt: Date.now(),
+      },
+    ],
+    preview: { playable: true, adapter: 'native' },
+    createdAt: Date.now(),
+    updatedAt: Date.now(),
+  };
 }
 
 function normalizeHostAccessPattern(origin: string): string {
@@ -332,6 +482,7 @@ async function ingestContentEvidence(
   const merged = dedupeCandidates([...existing, ...hydrated]);
 
   dependencies.candidateRegistry.set(senderSnapshot.tabId, merged);
+  recordNewDetections(dependencies, existing, merged);
 
   return merged;
 }
@@ -471,6 +622,7 @@ export function createRuntimeRouter(
           const merged = dedupeCandidates([...existing, ...hydrated]);
 
           dependencies.candidateRegistry.set(tabId, merged);
+          recordNewDetections(dependencies, existing, merged);
 
           return createRuntimeResponse(
             'INGEST_MANUAL_HLS_RESULT',
@@ -521,6 +673,7 @@ export function createRuntimeRouter(
           const merged = dedupeCandidates([...existing, ...hydrated]);
 
           dependencies.candidateRegistry.set(senderSnapshot.tabId, merged);
+          recordNewDetections(dependencies, existing, merged);
 
           return createRuntimeResponse(
             'INGEST_IQIYI_CONFIG_RESULT',
@@ -562,6 +715,14 @@ export function createRuntimeRouter(
           return createRuntimeResponse(
             'GET_CANDIDATES_RESULT',
             { candidates },
+            request.requestId,
+          );
+        }
+
+        case 'GET_ALL_CANDIDATES': {
+          return createRuntimeResponse(
+            'GET_ALL_CANDIDATES_RESULT',
+            { candidates: dependencies.candidateRegistry.all() },
             request.requestId,
           );
         }
@@ -795,6 +956,262 @@ export function createRuntimeRouter(
               request.requestId,
             );
           }
+        }
+
+        case 'CANCEL_DOWNLOAD': {
+          const result = dependencies.cancelDownload
+            ? await dependencies.cancelDownload(request.payload.jobId)
+            : { cancelled: Boolean(dependencies.downloadQueue?.cancel(request.payload.jobId)) };
+
+          return createRuntimeResponse(
+            'CANCEL_DOWNLOAD_RESULT',
+            result,
+            request.requestId,
+          );
+        }
+
+        case 'GET_JOB': {
+          return createRuntimeResponse(
+            'GET_JOB_RESULT',
+            { job: dependencies.jobStore?.get(request.payload.jobId) },
+            request.requestId,
+          );
+        }
+
+        case 'GET_JOBS': {
+          return createRuntimeResponse(
+            'GET_JOBS_RESULT',
+            { jobs: dependencies.jobStore?.list() ?? [] },
+            request.requestId,
+          );
+        }
+
+        case 'RETRY_DOWNLOAD': {
+          const queued = dependencies.downloadQueue?.retry(request.payload.jobId) ?? false;
+          void dependencies.downloadQueue?.drain();
+
+          return createRuntimeResponse(
+            'RETRY_DOWNLOAD_RESULT',
+            { job: dependencies.jobStore?.get(request.payload.jobId), queued },
+            request.requestId,
+          );
+        }
+
+        case 'RESAVE_DOWNLOAD': {
+          const job = dependencies.jobStore?.get(request.payload.jobId);
+          const candidate = job
+            ? dependencies.candidateRegistry.findById(job.candidateId)
+            : undefined;
+
+          if (!job || !candidate || !dependencies.downloadQueue) {
+            return createRuntimeErrorResponse(
+              'NOT_FOUND',
+              `Job not found or cannot be re-saved: ${request.payload.jobId}`,
+              request.requestId,
+            );
+          }
+
+          const nextJob = dependencies.downloadQueue.enqueue(candidate, job.selection);
+          void dependencies.downloadQueue.drain();
+
+          return createRuntimeResponse(
+            'RESAVE_DOWNLOAD_RESULT',
+            { job: nextJob, queued: true },
+            request.requestId,
+          );
+        }
+
+        case 'REMOVE_DOWNLOAD': {
+          const removed = Boolean(dependencies.jobStore?.delete(request.payload.jobId));
+
+          return createRuntimeResponse(
+            'REMOVE_DOWNLOAD_RESULT',
+            { removed },
+            request.requestId,
+          );
+        }
+
+        case 'CLEAR_COMPLETED_DOWNLOADS': {
+          const removedIds = dependencies.downloadQueue?.clearCompleted() ?? [];
+
+          return createRuntimeResponse(
+            'CLEAR_COMPLETED_DOWNLOADS_RESULT',
+            { removedIds },
+            request.requestId,
+          );
+        }
+
+        case 'PAUSE_ALL_DOWNLOADS': {
+          const pausedIds: string[] = [];
+          for (const job of dependencies.jobStore?.list() ?? []) {
+            if (['queued', 'preparing', 'fetching', 'decrypting', 'transmuxing', 'assembling', 'finalizing', 'exporting'].includes(job.phase)) {
+              dependencies.jobStore?.update(job.id, { phase: 'paused' });
+              pausedIds.push(job.id);
+            }
+          }
+
+          return createRuntimeResponse(
+            'PAUSE_ALL_DOWNLOADS_RESULT',
+            { pausedIds },
+            request.requestId,
+          );
+        }
+
+        case 'INGEST_DIRECT_URL': {
+          if (!dependencies.jobStore || !dependencies.historyStore) {
+            return createRuntimeErrorResponse(
+              'NOT_CONFIGURED',
+              'Direct download services are not configured.',
+              request.requestId,
+            );
+          }
+
+          const candidate = candidateFromDirectUrl(request.payload);
+          const existing = dependencies.candidateRegistry.get(candidate.tabId);
+          const merged = dedupeCandidates([...existing, candidate]);
+          dependencies.candidateRegistry.set(candidate.tabId, merged);
+          recordNewDetections(dependencies, existing, merged);
+          const job = dependencies.downloadQueue
+            ? dependencies.downloadQueue.enqueue(candidate, { mode: 'best' })
+            : undefined;
+          void dependencies.downloadQueue?.drain();
+
+          return createRuntimeResponse(
+            'INGEST_DIRECT_URL_RESULT',
+            { candidate, job },
+            request.requestId,
+          );
+        }
+
+        case 'RETRY_HLS_SEGMENT': {
+          const job = dependencies.jobStore?.get(request.payload.jobId);
+
+          if (!job || !dependencies.jobStore) {
+            return createRuntimeErrorResponse(
+              'NOT_FOUND',
+              `Job not found: ${request.payload.jobId}`,
+              request.requestId,
+            );
+          }
+
+          const updated = dependencies.jobStore.update(job.id, {
+            phase: 'queued',
+            failure: undefined,
+            progressPct: 0,
+            segmentStatuses: (job.segmentStatuses ?? []).map((segment) =>
+              segment.index === request.payload.segmentIndex
+                ? { ...segment, status: 'pending' as const, error: undefined }
+                : segment,
+            ),
+          });
+          const queued = dependencies.downloadQueue?.retry(job.id) ?? true;
+          void dependencies.downloadQueue?.drain();
+
+          return createRuntimeResponse(
+            'RETRY_HLS_SEGMENT_RESULT',
+            { job: updated, queued },
+            request.requestId,
+          );
+        }
+
+        case 'RETRY_FAILED_HLS_SEGMENTS': {
+          const job = dependencies.jobStore?.get(request.payload.jobId);
+
+          if (!job || !dependencies.jobStore) {
+            return createRuntimeErrorResponse(
+              'NOT_FOUND',
+              `Job not found: ${request.payload.jobId}`,
+              request.requestId,
+            );
+          }
+
+          const updated = dependencies.jobStore.update(job.id, {
+            phase: 'queued',
+            failure: undefined,
+            progressPct: 0,
+            segmentStatuses: (job.segmentStatuses ?? []).map((segment) =>
+              segment.status === 'failed'
+                ? { ...segment, status: 'pending' as const, error: undefined }
+                : segment,
+            ),
+          });
+          const queued = dependencies.downloadQueue?.retry(job.id) ?? true;
+          void dependencies.downloadQueue?.drain();
+
+          return createRuntimeResponse(
+            'RETRY_FAILED_HLS_SEGMENTS_RESULT',
+            { job: updated, queued },
+            request.requestId,
+          );
+        }
+
+        case 'UPDATE_HLS_SEGMENT_RANGE': {
+          const job = dependencies.jobStore?.get(request.payload.jobId);
+
+          if (!job || !dependencies.jobStore) {
+            return createRuntimeErrorResponse(
+              'NOT_FOUND',
+              `Job not found: ${request.payload.jobId}`,
+              request.requestId,
+            );
+          }
+
+          const updated = dependencies.jobStore.update(job.id, {
+            selectedSegmentRange: request.payload.range,
+            selection: {
+              ...job.selection,
+              segmentRange: request.payload.range,
+              hlsTimelinePolicy: 'selected-range',
+            },
+            hlsTimelinePolicy: 'selected-range',
+          });
+
+          return createRuntimeResponse(
+            'UPDATE_HLS_SEGMENT_RANGE_RESULT',
+            { job: updated },
+            request.requestId,
+          );
+        }
+
+        case 'EXPORT_PARTIAL_HLS': {
+          const job = dependencies.jobStore?.get(request.payload.jobId);
+
+          if (!job || !dependencies.jobStore) {
+            return createRuntimeErrorResponse(
+              'NOT_FOUND',
+              `Job not found: ${request.payload.jobId}`,
+              request.requestId,
+            );
+          }
+
+          const updated = dependencies.jobStore.update(job.id, {
+            phase: 'queued',
+            failure: undefined,
+            progressPct: 0,
+            selectedSegmentRange: request.payload.range,
+            selection: {
+              ...job.selection,
+              segmentRange: request.payload.range,
+              hlsTimelinePolicy: 'selected-range',
+            },
+            hlsTimelinePolicy: 'selected-range',
+            segmentStatuses: (job.segmentStatuses ?? []).map((segment) => ({
+              ...segment,
+              status:
+                segment.index >= request.payload.range.start &&
+                segment.index <= request.payload.range.end
+                  ? 'pending'
+                  : 'skipped',
+            })),
+          });
+          const queued = dependencies.downloadQueue?.retry(job.id) ?? true;
+          void dependencies.downloadQueue?.drain();
+
+          return createRuntimeResponse(
+            'EXPORT_PARTIAL_HLS_RESULT',
+            { job: updated, queued },
+            request.requestId,
+          );
         }
 
         default:

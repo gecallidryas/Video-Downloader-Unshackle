@@ -143,4 +143,33 @@ describe('QueueItem overflow menu', () => {
     expect(screen.getByText('video/webm')).toBeInTheDocument();
     expect(screen.getByText(/browser-recorded webm clip/i)).toBeInTheDocument();
   });
+
+  test('renders HLS segment status controls and emits retry/range actions', async () => {
+    const user = userEvent.setup();
+    const onAction = vi.fn();
+    const onSegmentRetry = vi.fn();
+    render(
+      <QueueItem
+        item={{
+          ...baseItem,
+          status: 'failed',
+          segments: [
+            { index: 0, status: 'done' },
+            { index: 1, status: 'failed' },
+          ],
+          selectedSegmentRange: { start: 0, end: 1 },
+        }}
+        onAction={onAction}
+        onSegmentRetry={onSegmentRetry}
+      />,
+    );
+
+    await user.click(screen.getByRole('gridcell', { name: /segment 1 failed/i }));
+    await user.click(screen.getByRole('button', { name: /retry failed segments/i }));
+    await user.click(screen.getByRole('button', { name: /export selected range/i }));
+
+    expect(onSegmentRetry).toHaveBeenCalledWith('job-1', 1);
+    expect(onAction).toHaveBeenCalledWith('retry-failed-segments', 'job-1');
+    expect(onAction).toHaveBeenCalledWith('export-partial', 'job-1');
+  });
 });

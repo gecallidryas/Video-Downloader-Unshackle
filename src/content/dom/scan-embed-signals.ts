@@ -1,4 +1,5 @@
 import type { DetectionEvidence } from '@/video_downloader_types_skeleton';
+import { isEmptyLink } from '@/src/core/naming/filename-resolver';
 
 export interface EmbedSignalScanOptions {
   now?: () => number;
@@ -8,7 +9,7 @@ export interface EmbedSignalScanOptions {
 function resolveUrl(value: string | null | undefined, pageUrl: string): string | undefined {
   const raw = value?.trim();
 
-  if (!raw) {
+  if (!raw || isEmptyLink(raw)) {
     return undefined;
   }
 

@@ -21,6 +21,27 @@ describe('settings I/O', () => {
     expect(parsed._headerProfile).toBeUndefined();
   });
 
+  test('redacts first-class integration secrets from settings exports', () => {
+    const exported = exportSettings({
+      ...DEFAULT_SETTINGS,
+      aria2Enabled: true,
+      aria2Secret: 'aria2-token',
+      webhookEnabled: true,
+      webhookUrl: 'https://hooks.example/very-secret-path',
+      futureAccessToken: 'future-token',
+    });
+    const parsed = JSON.parse(exported);
+
+    expect(parsed.aria2Enabled).toBe(true);
+    expect(parsed.webhookEnabled).toBe(true);
+    expect(parsed.aria2Secret).toBeUndefined();
+    expect(parsed.webhookUrl).toBeUndefined();
+    expect(parsed.futureAccessToken).toBeUndefined();
+    expect(exported).not.toContain('aria2-token');
+    expect(exported).not.toContain('very-secret-path');
+    expect(exported).not.toContain('future-token');
+  });
+
   test('imports settings with current version validation', () => {
     const json = JSON.stringify({
       advancedMode: false,

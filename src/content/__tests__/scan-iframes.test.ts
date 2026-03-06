@@ -63,4 +63,16 @@ describe('scanIframes', () => {
     expect(result.domEvidence).toHaveLength(0);
     expect(result.embedEvidence).toHaveLength(0);
   });
+
+  test('ignores empty iframe links', () => {
+    const page = document.implementation.createHTMLDocument('page');
+    page.body.innerHTML = '<iframe src="#"></iframe><iframe src="javascript:void(0)"></iframe>';
+
+    const result = scanIframes(page, {
+      pageUrl: 'https://example.com/watch',
+      getFrameDocument: () => undefined,
+    });
+
+    expect(result.embedEvidence).toHaveLength(0);
+  });
 });

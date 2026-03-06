@@ -1,4 +1,4 @@
-const DEFAULT_DOCS_HREF = 'docs/native-helper.md';
+const DEFAULT_DOCS_HREF = 'native-helper.html';
 const SETUP_VERSION = '0.1.0';
 
 export type NativeHelperInstallTarget =

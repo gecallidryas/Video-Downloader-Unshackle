@@ -5,6 +5,7 @@ import {
   type QueueViewItem,
   type QueueViewStatus,
 } from './QueueItem';
+import type { SegmentRange } from '@/src/ui/shared/SegmentGrid';
 import './QueueView.css';
 
 type DownloadsTab = 'active' | 'failed' | 'completed';
@@ -27,6 +28,9 @@ interface QueueViewProps {
   items: QueueViewItem[];
   historyRecords?: HistoryRow[];
   onAction: (action: QueueAction, id: string) => void;
+  onSegmentRetry?: (id: string, segmentIndex: number) => void;
+  onSegmentRangeChange?: (id: string, range: SegmentRange) => void;
+  onCopyCommand?: (profileId: string, id: string) => void;
 }
 
 const tabStatus: Record<'active' | 'failed', QueueViewStatus[]> = {
@@ -37,6 +41,10 @@ const tabStatus: Record<'active' | 'failed', QueueViewStatus[]> = {
 function tabCount(items: QueueViewItem[], tab: 'active' | 'failed'): number {
   const statuses = new Set(tabStatus[tab]);
   return items.filter((item) => statuses.has(item.status)).length;
+}
+
+function completedCount(items: QueueViewItem[], historyRecords: HistoryRow[]): number {
+  return items.filter((item) => item.status === 'completed').length + historyRecords.length;
 }
 
 function formatBytes(bytes?: number): string {
@@ -51,19 +59,26 @@ function formatDate(ts: number): string {
   return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
 }
 
-export function QueueView({ items, historyRecords = [], onAction }: QueueViewProps) {
+export function QueueView({
+  items,
+  historyRecords = [],
+  onAction,
+  onSegmentRetry,
+  onSegmentRangeChange,
+  onCopyCommand,
+}: QueueViewProps) {
   const [activeTab, setActiveTab] = useState<DownloadsTab>('active');
   const counts = useMemo(
     () => ({
       active: tabCount(items, 'active'),
       failed: tabCount(items, 'failed'),
-      completed: historyRecords.length,
+      completed: completedCount(items, historyRecords),
     }),
     [items, historyRecords],
   );
-  const visibleItems = activeTab !== 'completed'
-    ? items.filter((item) => tabStatus[activeTab].includes(item.status))
-    : [];
+  const visibleItems = activeTab === 'completed'
+    ? items.filter((item) => item.status === 'completed')
+    : items.filter((item) => tabStatus[activeTab].includes(item.status));
 
   return (
     <section className="queue-view" aria-label="Downloads">
@@ -84,8 +99,19 @@ export function QueueView({ items, historyRecords = [], onAction }: QueueViewPro
 
       <div className="queue-view__list">
         {activeTab === 'completed' ? (
-          historyRecords.length > 0 ? (
-            historyRecords.map((record) => (
+          visibleItems.length > 0 || historyRecords.length > 0 ? (
+            <>
+              {visibleItems.map((item) => (
+                <QueueItem
+                  key={item.id}
+                  item={item}
+                  onAction={onAction}
+                  onSegmentRetry={onSegmentRetry}
+                  onSegmentRangeChange={onSegmentRangeChange}
+                  onCopyCommand={onCopyCommand}
+                />
+              ))}
+              {historyRecords.map((record) => (
               <div key={record.id} className="queue-item">
                 <div className="queue-item__main">
                   <div className="queue-item__title">{record.displayName}</div>
@@ -114,13 +140,21 @@ export function QueueView({ items, historyRecords = [], onAction }: QueueViewPro
                   ) : null}
                 </div>
               </div>
-            ))
+              ))}
+            </>
           ) : (
             <div className="queue-view__empty">No completed downloads yet.</div>
           )
         ) : visibleItems.length > 0 ? (
           visibleItems.map((item) => (
-            <QueueItem key={item.id} item={item} onAction={onAction} />
+            <QueueItem
+              key={item.id}
+              item={item}
+              onAction={onAction}
+              onSegmentRetry={onSegmentRetry}
+              onSegmentRangeChange={onSegmentRangeChange}
+              onCopyCommand={onCopyCommand}
+            />
           ))
         ) : (
           <div className="queue-view__empty">

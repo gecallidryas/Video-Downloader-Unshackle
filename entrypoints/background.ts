@@ -1,8 +1,13 @@
 import { defineBackground } from 'wxt/utils/define-background';
-import type { MediaCandidate } from '@/video_downloader_types_skeleton';
+import type {
+  JobSegmentStatus,
+  MediaCandidate,
+  SegmentPlan,
+} from '@/video_downloader_types_skeleton';
 import { createCandidateRegistry } from '@/src/background/candidates/candidate-registry';
 import { createContextMenuManager } from '@/src/background/context-menu/context-menu';
 import { createDownloadController } from '@/src/background/jobs/download-controller';
+import { cleanupJobStorage } from '@/src/background/jobs/cleanup-job-storage';
 import { createDownloadQueue } from '@/src/background/jobs/download-queue';
 import { createHistoryStore } from '@/src/background/jobs/history-store';
 import { createJobStore } from '@/src/background/jobs/job-store';
@@ -28,6 +33,7 @@ import {
   registerPassiveRequestJournal,
 } from '@/src/background/network/request-journal';
 import { createHeaderContextStore } from '@/src/background/network/header-context';
+import { registerBackgroundCommandHandlers } from '@/src/background/commands/background-commands';
 import { createAutoScanController } from '@/src/background/scanning/auto-scan';
 import { createTabSnapshotStore } from '@/src/background/state/tab-snapshots';
 import { createTabVideoStatusStore } from '@/src/background/state/tab-video-status';
@@ -40,6 +46,16 @@ import {
 } from '@/src/native/native-ffmpeg-client';
 import { ensurePreviewClip } from '@/src/core/preview/native-preview-service';
 import { ensureNativeThumbnail } from '@/src/core/thumbs/native-thumbnail-service';
+import { createBucketMetadataStore } from '@/src/core/storage/bucket-metadata-store';
+import {
+  createFileSystemAccessStore,
+  loadPersistedOutputDirectoryHandle,
+  type FileSystemAccessStore,
+} from '@/src/core/storage/file-system-access-store';
+import { createIndexedDbFragmentStore } from '@/src/core/storage/indexeddb-fragment-store';
+import { createInMemorySubtitleStore } from '@/src/core/storage/subtitle-store';
+import { detectStreamingWriteCapabilities } from '@/src/core/capabilities/streaming-write-capabilities';
+import type { SegmentProgressEvent } from '@/src/core/download/progress-events';
 
 export function initializeBackgroundShell() {
   const candidateRegistry = createCandidateRegistry();
@@ -48,9 +64,13 @@ export function initializeBackgroundShell() {
   const settingsStore = createSettingsStore();
   const jobStore = createJobStore();
   const historyStore = createHistoryStore();
+  const fragmentStore = createIndexedDbFragmentStore();
+  const bucketMetadataStore = createBucketMetadataStore();
+  const subtitleStore = createInMemorySubtitleStore();
   const tabSnapshots = createTabSnapshotStore();
   const tabVideoStatus = createTabVideoStatusStore();
   let nativeClient: NativeFfmpegClient | undefined;
+  let fileSystemAccessStore: FileSystemAccessStore | undefined;
   const offscreenManager = createOffscreenManager();
 
   function getNativeClient(): NativeFfmpegClient {
@@ -58,9 +78,98 @@ export function initializeBackgroundShell() {
     return nativeClient;
   }
 
+  function initializeHlsSegmentStatuses(jobId: string, plan: SegmentPlan): void {
+    jobStore.update(jobId, {
+      totalSegments: plan.segments.length,
+      selectedSegmentRange: plan.segments.length > 0
+        ? {
+            start: Math.min(...plan.segments.map((segment) => segment.index)),
+            end: Math.max(...plan.segments.map((segment) => segment.index)),
+          }
+        : undefined,
+      hlsTimelinePolicy: jobStore.get(jobId)?.selection.hlsTimelinePolicy ?? 'full',
+      segmentStatuses: plan.segments.map<JobSegmentStatus>((segment) => ({
+        index: segment.index,
+        url: segment.url,
+        status: 'pending',
+      })),
+    });
+  }
+
+  function updateHlsSegmentProgress(jobId: string, event: SegmentProgressEvent): void {
+    const job = jobStore.get(jobId);
+
+    if (!job) {
+      return;
+    }
+
+    const segmentStatuses = job.segmentStatuses ?? [];
+    const nextStatuses = event.segment
+      ? segmentStatuses.map((segment) =>
+          segment.index === event.segment?.index
+            ? {
+                ...segment,
+                status: event.status ?? segment.status,
+                updatedAt: Date.now(),
+              }
+            : segment,
+        )
+      : segmentStatuses;
+    const completed = event.downloaded + event.failed;
+    const progressPct =
+      event.total > 0 ? Math.round((completed / event.total) * 100) : job.progressPct;
+
+    jobStore.update(jobId, {
+      progressPct,
+      currentSegment: event.segment?.index ?? job.currentSegment,
+      totalSegments: event.total,
+      segmentStatuses: nextStatuses,
+    });
+  }
+
+  async function getDirectToDiskWriter():
+    Promise<((filename: string, data: Uint8Array) => Promise<void>) | undefined> {
+    if (!settingsStore.get('useDirectToDisk')) {
+      return undefined;
+    }
+
+    const directoryHandle = await loadPersistedOutputDirectoryHandle();
+    const environment = globalThis as {
+      WritableStream?: unknown;
+      navigator?: { storage?: { getDirectory?: unknown } };
+    };
+    const capabilities = detectStreamingWriteCapabilities({
+      WritableStream: environment.WritableStream,
+      navigator: environment.navigator,
+      persistedOutputDirectory: Boolean(directoryHandle),
+    });
+
+    if (!capabilities.persistedOutputDirectory || !directoryHandle) {
+      return undefined;
+    }
+
+    fileSystemAccessStore = createFileSystemAccessStore({
+      initialDirectoryHandle: directoryHandle,
+    });
+
+    if (!(await fileSystemAccessStore.verifyWritePermission())) {
+      return undefined;
+    }
+
+    return (filename, data) => fileSystemAccessStore?.writeFile(filename, data) ?? Promise.resolve();
+  }
+
   function applyLoadedSettings(settings: UnifiedSettings): void {
     headerContext.updateOptions({
       captureCredentialHeaders: settings.advancedMode && settings.captureCredentialHeaders,
+    });
+    requestJournal.updateCaptureRules({
+      customExtensions: settings.captureRuleCustomExtensions,
+      customContentTypes: settings.captureRuleCustomContentTypes,
+      blacklist: settings.captureRuleUrlBlacklist,
+      minSizeBytes: settings.captureRuleMinSizeBytes,
+      sizePredicate: settings.captureRuleSizePredicate,
+      regexRules: settings.captureRuleRegexRules,
     });
     downloadController.updateSettings({
       suppressProtectedDownloads: settings.suppressProtectedDownloads,
@@ -73,6 +182,7 @@ export function initializeBackgroundShell() {
       enableBrowserFallbacks: settings.enableBrowserFallbacks,
       browserTransmuxWithMuxJs: settings.browserTransmuxWithMuxJs,
       browserTransmuxMaxBytes: settings.browserTransmuxMaxBytes,
+      autoDeleteAfterSave: settings.autoDeleteAfterSave,
     });
     notificationManager.applySettings(settings);
     detectionNotifier.configure(settings);
@@ -129,7 +239,7 @@ export function initializeBackgroundShell() {
           },
         }
       : {}),
-    runHls: (input) => {
+    runHls: async (input) => {
       const candidate = candidateRegistry
         .get(input.job.tabId)
         .find((item) => item.id === input.job.candidateId);
@@ -137,13 +247,18 @@ export function initializeBackgroundShell() {
       if (!candidate) {
         throw new Error(`Candidate not found: ${input.job.candidateId}`);
       }
+
+      const writeFile = await getDirectToDiskWriter();
 
       return runBrowserHlsExportJob({
         ...input,
         candidate,
+        ...(writeFile ? { writeFile } : {}),
+        onPlan: (plan) => initializeHlsSegmentStatuses(input.job.id, plan),
+        onProgress: (event) => updateHlsSegmentProgress(input.job.id, event),
       });
     },
-    runDash: (input) => {
+    runDash: async (input) => {
       const candidate = candidateRegistry
         .get(input.job.tabId)
         .find((item) => item.id === input.job.candidateId);
@@ -152,9 +267,12 @@ export function initializeBackgroundShell() {
         throw new Error(`Candidate not found: ${input.job.candidateId}`);
       }
 
+      const writeFile = await getDirectToDiskWriter();
+
       return runBrowserDashExportJob({
         ...input,
         candidate,
+        ...(writeFile ? { writeFile } : {}),
       });
     },
     nativeExport: ({ candidate, job }) =>
@@ -163,6 +281,7 @@ export function initializeBackgroundShell() {
         job,
         nativeClient: getNativeClient(),
         jobStore,
+        subtitleStore,
       }),
     browserDirectTrim: ({ candidate, job }) =>
       runBrowserDirectTrimJob({
@@ -180,6 +299,16 @@ export function initializeBackgroundShell() {
             : undefined,
       }),
     enableNativeFeatures: false,
+    cleanupAfterSave: (jobId) =>
+      cleanupJobStorage(jobId, {
+        indexedDb: fragmentStore,
+        metadata: bucketMetadataStore,
+        subtitles: subtitleStore,
+      }).then((result) => {
+        if (!result.ok) {
+          throw new Error(result.errors.join('; '));
+        }
+      }),
   });
   const downloadQueue = createDownloadQueue({
     jobStore,
@@ -202,6 +331,24 @@ export function initializeBackgroundShell() {
       }
 
       return completedJob.output;
+    },
+  });
+  const notificationManager = createNotificationManager(chrome.runtime);
+  const detectionNotifier = createDetectionNotifier({
+    emit: ({ count, hostname }) => {
+      void chrome.runtime
+        .sendMessage({
+          type: 'SHOW_WARNING',
+          payload: {
+            text: `${count} new ${count === 1 ? 'stream' : 'streams'} detected on ${hostname}`,
+            warningType: 'info',
+            autoHideMs: 4500,
+          },
+        })
+        .catch(() => undefined);
+    },
+    setBadge: (text) => {
+      chrome.action?.setBadgeText?.({ text }).catch?.(() => undefined);
     },
   });
   const runtimeRouter = createRuntimeRouter({
@@ -236,30 +383,13 @@ export function initializeBackgroundShell() {
           : {}),
       }),
     cancelDownload: (jobId) => downloadController.abort(jobId, { jobStore }),
+    recordDetection: (hostname, count) => detectionNotifier.recordDetection(hostname, count),
   });
   const autoScan = createAutoScanController({
     statusStore: tabVideoStatus,
     scanTab: async (tabId) => candidateRegistry.get(tabId),
     getSettings: () => ({ autoScanEnabled: settingsStore.get('autoScanEnabled') }),
     action: chrome.action,
-  });
-  const notificationManager = createNotificationManager(chrome.runtime);
-  const detectionNotifier = createDetectionNotifier({
-    emit: ({ count, hostname }) => {
-      void chrome.runtime
-        .sendMessage({
-          type: 'SHOW_WARNING',
-          payload: {
-            text: `${count} new ${count === 1 ? 'stream' : 'streams'} detected on ${hostname}`,
-            warningType: 'info',
-            autoHideMs: 4500,
-          },
-        })
-        .catch(() => undefined);
-    },
-    setBadge: (text) => {
-      chrome.action?.setBadgeText?.({ text }).catch?.(() => undefined);
-    },
   });
   const ingestContextCandidate = (candidate: MediaCandidate) => {
     candidateRegistry.set(candidate.tabId, [
@@ -291,6 +421,14 @@ export function initializeBackgroundShell() {
     void settingsStore.load().then(applyLoadedSettings);
   });
   registerPassiveRequestJournal(requestJournal, undefined, headerContext);
+  registerBackgroundCommandHandlers({
+    commands: chrome.commands,
+    sidePanel: chrome.sidePanel,
+    windows: chrome.windows,
+    tabs: chrome.tabs,
+    jobStore,
+    downloadQueue,
+  });
   registerRuntimeRouter(runtimeRouter);
   chrome.tabs?.onRemoved?.addListener((tabId, removeInfo) => {
     autoScan.handleTabRemoved(tabId);

@@ -27,6 +27,8 @@ export class RuntimeClientError extends Error {
 
 export interface RuntimeClient {
   getCandidates(tabId: number): Promise<MediaCandidate[]>;
+  getAllCandidates(): Promise<MediaCandidate[]>;
+  getJobs(): Promise<DownloadJob[]>;
   ingestManualHls(input: {
     tabId: number;
     pageUrl: string;
@@ -40,6 +42,23 @@ export interface RuntimeClient {
   getPreviewAsset(candidateId: string, options?: { format?: PreviewAssetFormat }): Promise<GeneratedAssetResult>;
   getThumbnailAsset(candidateId: string): Promise<GeneratedAssetResult>;
   startDownload(candidateId: string, selection: DownloadSelection): Promise<DownloadJob>;
+  cancelDownload(jobId: string): Promise<{ cancelled: boolean; downloadId?: number }>;
+  retrySegment(jobId: string, segmentIndex: number): Promise<DownloadJob | undefined>;
+  retryFailedSegments(jobId: string): Promise<DownloadJob | undefined>;
+  exportPartialHls(jobId: string, range: { start: number; end: number }): Promise<DownloadJob | undefined>;
+  updateHlsSegmentRange(jobId: string, range: { start: number; end: number }): Promise<DownloadJob | undefined>;
+  retryDownload(jobId: string): Promise<DownloadJob | undefined>;
+  resaveDownload(jobId: string): Promise<DownloadJob | undefined>;
+  removeDownload(jobId: string): Promise<boolean>;
+  clearCompletedDownloads(): Promise<string[]>;
+  pauseAllDownloads(): Promise<string[]>;
+  ingestDirectUrl(input: {
+    tabId: number;
+    url: string;
+    filename?: string;
+    referer?: string;
+    origin?: string;
+  }): Promise<DownloadJob | undefined>;
 }
 
 async function defaultTransport(
@@ -96,6 +115,34 @@ export function createRuntimeClient(
       }
 
       return response.payload.candidates;
+    },
+
+    async getAllCandidates() {
+      const response = await transport(createRuntimeRequest('GET_ALL_CANDIDATES', {}));
+
+      if (isRuntimeErrorResponse(response)) {
+        throw new RuntimeClientError(response.payload.message, response.payload.code, response.payload.detail);
+      }
+
+      if (response.type !== 'GET_ALL_CANDIDATES_RESULT') {
+        throw new RuntimeClientError(`Unexpected runtime response: ${response.type}`, 'UNEXPECTED_RESPONSE');
+      }
+
+      return response.payload.candidates;
+    },
+
+    async getJobs() {
+      const response = await transport(createRuntimeRequest('GET_JOBS', {}));
+
+      if (isRuntimeErrorResponse(response)) {
+        throw new RuntimeClientError(response.payload.message, response.payload.code, response.payload.detail);
+      }
+
+      if (response.type !== 'GET_JOBS_RESULT') {
+        throw new RuntimeClientError(`Unexpected runtime response: ${response.type}`, 'UNEXPECTED_RESPONSE');
+      }
+
+      return response.payload.jobs;
     },
 
     async getQueueStats() {
@@ -234,6 +281,159 @@ export function createRuntimeClient(
         );
       }
 
+      return response.payload.job;
+    },
+
+    async cancelDownload(jobId) {
+      const response = await transport(
+        createRuntimeRequest('CANCEL_DOWNLOAD', { jobId }),
+      );
+
+      if (isRuntimeErrorResponse(response)) {
+        throw new RuntimeClientError(
+          response.payload.message,
+          response.payload.code,
+          response.payload.detail,
+        );
+      }
+
+      if (response.type !== 'CANCEL_DOWNLOAD_RESULT') {
+        throw new RuntimeClientError(
+          `Unexpected runtime response: ${response.type}`,
+          'UNEXPECTED_RESPONSE',
+        );
+      }
+
+      return response.payload;
+    },
+
+    async retrySegment(jobId, segmentIndex) {
+      const response = await transport(
+        createRuntimeRequest('RETRY_HLS_SEGMENT', { jobId, segmentIndex }),
+      );
+
+      if (isRuntimeErrorResponse(response)) {
+        throw new RuntimeClientError(response.payload.message, response.payload.code, response.payload.detail);
+      }
+
+      if (response.type !== 'RETRY_HLS_SEGMENT_RESULT') {
+        throw new RuntimeClientError(`Unexpected runtime response: ${response.type}`, 'UNEXPECTED_RESPONSE');
+      }
+
+      return response.payload.job;
+    },
+
+    async retryFailedSegments(jobId) {
+      const response = await transport(
+        createRuntimeRequest('RETRY_FAILED_HLS_SEGMENTS', { jobId }),
+      );
+
+      if (isRuntimeErrorResponse(response)) {
+        throw new RuntimeClientError(response.payload.message, response.payload.code, response.payload.detail);
+      }
+
+      if (response.type !== 'RETRY_FAILED_HLS_SEGMENTS_RESULT') {
+        throw new RuntimeClientError(`Unexpected runtime response: ${response.type}`, 'UNEXPECTED_RESPONSE');
+      }
+
+      return response.payload.job;
+    },
+
+    async exportPartialHls(jobId, range) {
+      const response = await transport(
+        createRuntimeRequest('EXPORT_PARTIAL_HLS', { jobId, range }),
+      );
+
+      if (isRuntimeErrorResponse(response)) {
+        throw new RuntimeClientError(response.payload.message, response.payload.code, response.payload.detail);
+      }
+
+      if (response.type !== 'EXPORT_PARTIAL_HLS_RESULT') {
+        throw new RuntimeClientError(`Unexpected runtime response: ${response.type}`, 'UNEXPECTED_RESPONSE');
+      }
+
+      return response.payload.job;
+    },
+
+    async updateHlsSegmentRange(jobId, range) {
+      const response = await transport(
+        createRuntimeRequest('UPDATE_HLS_SEGMENT_RANGE', { jobId, range }),
+      );
+
+      if (isRuntimeErrorResponse(response)) {
+        throw new RuntimeClientError(response.payload.message, response.payload.code, response.payload.detail);
+      }
+
+      if (response.type !== 'UPDATE_HLS_SEGMENT_RANGE_RESULT') {
+        throw new RuntimeClientError(`Unexpected runtime response: ${response.type}`, 'UNEXPECTED_RESPONSE');
+      }
+
+      return response.payload.job;
+    },
+
+    async retryDownload(jobId) {
+      const response = await transport(createRuntimeRequest('RETRY_DOWNLOAD', { jobId }));
+      if (isRuntimeErrorResponse(response)) {
+        throw new RuntimeClientError(response.payload.message, response.payload.code, response.payload.detail);
+      }
+      if (response.type !== 'RETRY_DOWNLOAD_RESULT') {
+        throw new RuntimeClientError(`Unexpected runtime response: ${response.type}`, 'UNEXPECTED_RESPONSE');
+      }
+      return response.payload.job;
+    },
+
+    async resaveDownload(jobId) {
+      const response = await transport(createRuntimeRequest('RESAVE_DOWNLOAD', { jobId }));
+      if (isRuntimeErrorResponse(response)) {
+        throw new RuntimeClientError(response.payload.message, response.payload.code, response.payload.detail);
+      }
+      if (response.type !== 'RESAVE_DOWNLOAD_RESULT') {
+        throw new RuntimeClientError(`Unexpected runtime response: ${response.type}`, 'UNEXPECTED_RESPONSE');
+      }
+      return response.payload.job;
+    },
+
+    async removeDownload(jobId) {
+      const response = await transport(createRuntimeRequest('REMOVE_DOWNLOAD', { jobId }));
+      if (isRuntimeErrorResponse(response)) {
+        throw new RuntimeClientError(response.payload.message, response.payload.code, response.payload.detail);
+      }
+      if (response.type !== 'REMOVE_DOWNLOAD_RESULT') {
+        throw new RuntimeClientError(`Unexpected runtime response: ${response.type}`, 'UNEXPECTED_RESPONSE');
+      }
+      return response.payload.removed;
+    },
+
+    async clearCompletedDownloads() {
+      const response = await transport(createRuntimeRequest('CLEAR_COMPLETED_DOWNLOADS', {}));
+      if (isRuntimeErrorResponse(response)) {
+        throw new RuntimeClientError(response.payload.message, response.payload.code, response.payload.detail);
+      }
+      if (response.type !== 'CLEAR_COMPLETED_DOWNLOADS_RESULT') {
+        throw new RuntimeClientError(`Unexpected runtime response: ${response.type}`, 'UNEXPECTED_RESPONSE');
+      }
+      return response.payload.removedIds;
+    },
+
+    async pauseAllDownloads() {
+      const response = await transport(createRuntimeRequest('PAUSE_ALL_DOWNLOADS', {}));
+      if (isRuntimeErrorResponse(response)) {
+        throw new RuntimeClientError(response.payload.message, response.payload.code, response.payload.detail);
+      }
+      if (response.type !== 'PAUSE_ALL_DOWNLOADS_RESULT') {
+        throw new RuntimeClientError(`Unexpected runtime response: ${response.type}`, 'UNEXPECTED_RESPONSE');
+      }
+      return response.payload.pausedIds;
+    },
+
+    async ingestDirectUrl(input) {
+      const response = await transport(createRuntimeRequest('INGEST_DIRECT_URL', input));
+      if (isRuntimeErrorResponse(response)) {
+        throw new RuntimeClientError(response.payload.message, response.payload.code, response.payload.detail);
+      }
+      if (response.type !== 'INGEST_DIRECT_URL_RESULT') {
+        throw new RuntimeClientError(`Unexpected runtime response: ${response.type}`, 'UNEXPECTED_RESPONSE');
+      }
       return response.payload.job;
     },
   };

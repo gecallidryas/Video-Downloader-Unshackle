@@ -196,6 +196,55 @@ describe('runNativeExportJob', () => {
     ]);
   });
 
+  test('keeps MP4 output and reports subtitle sidecars when sidecar output is selected', async () => {
+    const store = createInMemorySubtitleStore();
+    const client = nativeClient();
+
+    const output = await runNativeExportJob({
+      candidate: candidate({
+        protocol: 'hls',
+        displayName: 'Clear video.mp4',
+        sourceUrl: undefined,
+        manifestUrl: 'https://cdn.example.com/master.m3u8',
+        subtitleTracks: [
+          {
+            id: 'sub-en',
+            kind: 'subtitle',
+            language: 'en',
+            label: 'English',
+            format: 'vtt',
+            url: 'https://cdn.example.com/subs/en.vtt',
+          },
+        ],
+      }),
+      job: job({
+        id: 'job-sidecar-subtitles',
+        selection: {
+          mode: 'best',
+          subtitleTrackIds: ['sub-en'],
+          subtitleOutput: 'sidecar',
+        },
+      }),
+      nativeClient: client,
+      subtitleStore: store,
+      fetchText: vi.fn().mockResolvedValue('WEBVTT\n\n00:00.000 --> 00:01.000\nhello'),
+    });
+
+    expect(client.exportMedia).toHaveBeenCalledWith(
+      expect.objectContaining({
+        outputKind: 'mp4',
+        outputName: 'Clear video.mp4',
+      }),
+    );
+    expect(output.sidecarOutputs).toEqual([
+      {
+        fileName: 'Clear video.en.vtt',
+        mimeType: 'text/vtt',
+        sizeBytes: 37,
+      },
+    ]);
+  });
+
   test('rejects protected media before invoking the native helper', async () => {
     const client = nativeClient();
 

@@ -133,12 +133,23 @@ describe('download abort and cleanup paths', () => {
         .mockResolvedValueOnce(undefined)
         .mockRejectedValueOnce(new Error('opfs cleanup failed')),
     };
-    await expect(cleanupJobStorage('job-9', { indexedDb: storage, opfs: storage })).resolves.toEqual({
+    const metadata = { delete: vi.fn().mockResolvedValue(undefined) };
+    const subtitles = { deleteJob: vi.fn().mockResolvedValue(undefined) };
+    await expect(
+      cleanupJobStorage('job-9', {
+        indexedDb: storage,
+        opfs: storage,
+        metadata,
+        subtitles,
+      }),
+    ).resolves.toEqual({
       ok: false,
       errors: ['opfs cleanup failed'],
     });
     expect(storage.deleteBucket).toHaveBeenCalledWith('job-9');
     expect(storage.deleteBucket).toHaveBeenCalledWith('job-9_audio');
     expect(storage.deleteBucket).toHaveBeenCalledWith('job-9_subs');
+    expect(metadata.delete).toHaveBeenCalledWith('job-9');
+    expect(subtitles.deleteJob).toHaveBeenCalledWith('job-9');
   });
 });

@@ -364,6 +364,13 @@ export async function scheduleSegments(
 
       try {
         throwIfAborted(options.signal);
+        options.onProgress?.({
+          downloaded,
+          failed,
+          total: options.segments.length,
+          segment,
+          status: 'downloading',
+        });
         const data = await fetchSegmentWithRecovery(
           segment,
           { ...options, initSegmentCache },
@@ -391,6 +398,7 @@ export async function scheduleSegments(
           failed,
           total: options.segments.length,
           segment,
+          status: 'done',
         });
         throwIfAborted(options.signal);
       } catch (error) {
@@ -404,6 +412,7 @@ export async function scheduleSegments(
           failed,
           total: options.segments.length,
           segment,
+          status: 'failed',
         });
         throw error;
       } finally {

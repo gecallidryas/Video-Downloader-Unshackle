@@ -34,6 +34,7 @@ export interface DownloadControllerSettings {
   directRangeMinBytes?: number;
   browserTransmuxWithMuxJs?: boolean;
   browserTransmuxMaxBytes?: number;
+  autoDeleteAfterSave?: boolean;
 }
 
 export interface DownloadControllerStartOptions {
@@ -103,6 +104,7 @@ export interface DownloadControllerOptions {
   probeDirectRange?: ProbeDirectRangeSupport;
   fetchText?: (url: string, init: RequestInit) => Promise<string>;
   cancelDownload?: (downloadId: number) => Promise<void>;
+  cleanupAfterSave?: (jobId: string) => Promise<void>;
   now?: () => number;
   suppressProtectedDownloads?: boolean;
   enableNativeFeatures?: boolean;
@@ -452,9 +454,17 @@ export function createDownloadController(options: DownloadControllerOptions) {
     job: DownloadJob,
     managedOptions: ManagedDownloadOptions,
   ): Promise<DownloadJob> {
+    const settings = {
+      ...controllerSettings,
+      ...managedOptions.settings,
+    };
+
     try {
       managedOptions.jobStore.update(job.id, { phase: 'preparing' });
-      const output = await start(candidate, job, managedOptions);
+      const output = await start(candidate, job, {
+        ...managedOptions,
+        settings,
+      });
       const completed = managedOptions.jobStore.update(job.id, {
         phase: 'completed',
         progressPct: 100,
@@ -466,6 +476,10 @@ export function createDownloadController(options: DownloadControllerOptions) {
       managedOptions.historyStore.upsert(
         historyRecordFromCompletedJob(candidate, completed, now),
       );
+
+      if (settings.autoDeleteAfterSave) {
+        await options.cleanupAfterSave?.(job.id);
+      }
 
       return completed;
     } catch (error) {
@@ -562,6 +576,9 @@ export function createDownloadController(options: DownloadControllerOptions) {
         : {}),
       ...(patch.browserTransmuxMaxBytes !== undefined
         ? { browserTransmuxMaxBytes: patch.browserTransmuxMaxBytes }
+        : {}),
+      ...(patch.autoDeleteAfterSave !== undefined
+        ? { autoDeleteAfterSave: patch.autoDeleteAfterSave }
         : {}),
     };
   }

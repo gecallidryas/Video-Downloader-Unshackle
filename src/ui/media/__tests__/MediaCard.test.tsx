@@ -78,6 +78,33 @@ test('renders quality selector with options', () => {
   expect(screen.getByText('720p')).toBeInTheDocument();
 });
 
+test('renders subtitle output selector when subtitles are selected', async () => {
+  const user = userEvent.setup();
+  const onSubtitleOutputChange = vi.fn();
+  render(
+    <MediaCard
+      media={{
+        ...mockVideo,
+        subtitleTracks: [{ id: 'sub-en', label: 'English' }],
+        selectedSubtitleTrackIds: ['sub-en'],
+        selectedSubtitleOutput: 'embed',
+      }}
+      onPreview={noop}
+      onRemove={noop}
+      onDownload={noop}
+      onQualityChange={noop}
+      onSubtitleOutputChange={onSubtitleOutputChange}
+    />,
+  );
+
+  await user.selectOptions(
+    screen.getByRole('combobox', { name: /subtitle output/i }),
+    'sidecar',
+  );
+
+  expect(onSubtitleOutputChange).toHaveBeenCalledWith('sidecar');
+});
+
 test('disables quality selector when only one quality option', () => {
   render(
     <MediaCard
@@ -372,6 +399,105 @@ test('overflow menu Copy all URLs calls onCopyAllUrls', async () => {
   await user.click(screen.getByRole('button', { name: /more actions/i }));
   await user.click(screen.getByRole('menuitem', { name: /copy all urls/i }));
   expect(onCopyAllUrls).toHaveBeenCalledTimes(1);
+});
+
+test('overflow menu Share QR action fires onShareUrl with media.url', async () => {
+  const user = userEvent.setup();
+  const onShareUrl = vi.fn();
+  render(
+    <MediaCard
+      media={{ ...mockVideo, url: 'https://example.com/video.mp4' }}
+      onPreview={noop}
+      onRemove={noop}
+      onDownload={noop}
+      onQualityChange={noop}
+      onShareUrl={onShareUrl}
+    />,
+  );
+
+  await user.click(screen.getByRole('button', { name: /more actions/i }));
+  await user.click(screen.getByRole('menuitem', { name: /share qr/i }));
+
+  expect(onShareUrl).toHaveBeenCalledWith('https://example.com/video.mp4');
+});
+
+test('overflow menu Resolve filename action calls onResolveFilename', async () => {
+  const user = userEvent.setup();
+  const onResolveFilename = vi.fn();
+  render(
+    <MediaCard
+      media={{ ...mockVideo, url: 'https://example.com/video.mp4' }}
+      onPreview={noop}
+      onRemove={noop}
+      onDownload={noop}
+      onQualityChange={noop}
+      onResolveFilename={onResolveFilename}
+    />,
+  );
+
+  await user.click(screen.getByRole('button', { name: /more actions/i }));
+  await user.click(screen.getByRole('menuitem', { name: /resolve filename/i }));
+
+  expect(onResolveFilename).toHaveBeenCalledTimes(1);
+});
+
+test('overflow menu Send to integrations action is advanced-mode gated', async () => {
+  const user = userEvent.setup();
+  const onSendToIntegrations = vi.fn();
+  const { rerender } = render(
+    <MediaCard
+      media={{ ...mockVideo, url: 'https://example.com/video.mp4' }}
+      onPreview={noop}
+      onRemove={noop}
+      onDownload={noop}
+      onQualityChange={noop}
+      onSendToIntegrations={onSendToIntegrations}
+    />,
+  );
+
+  await user.click(screen.getByRole('button', { name: /more actions/i }));
+  expect(screen.queryByRole('menuitem', { name: /send to integrations/i }))
+    .not.toBeInTheDocument();
+
+  await user.click(screen.getByRole('button', { name: /more actions/i }));
+  rerender(
+    <MediaCard
+      media={{ ...mockVideo, url: 'https://example.com/video.mp4' }}
+      onPreview={noop}
+      onRemove={noop}
+      onDownload={noop}
+      onQualityChange={noop}
+      onSendToIntegrations={onSendToIntegrations}
+      showIntegrationActions
+    />,
+  );
+
+  await user.click(screen.getByRole('button', { name: /more actions/i }));
+  await user.click(screen.getByRole('menuitem', { name: /send to integrations/i }));
+
+  expect(onSendToIntegrations).toHaveBeenCalledTimes(1);
+});
+
+test('overflow menu exposes configured external player profiles', async () => {
+  const user = userEvent.setup();
+  const onLaunchExternalPlayer = vi.fn();
+  render(
+    <MediaCard
+      media={{ ...mockVideo, url: 'https://example.com/video.mp4' }}
+      onPreview={noop}
+      onRemove={noop}
+      onDownload={noop}
+      onQualityChange={noop}
+      externalPlayerProfiles={[{ id: 'vlc', name: 'VLC', path: 'vlc.exe' }]}
+      onLaunchExternalPlayer={onLaunchExternalPlayer}
+      showIntegrationActions
+    />,
+  );
+
+  await user.click(screen.getByRole('button', { name: /more actions/i }));
+  await user.click(screen.getByRole('menuitem', { name: /open in vlc/i }));
+
+  expect(onLaunchExternalPlayer).toHaveBeenCalledWith('vlc');
 });
 
 test('renders thumbnail, protocol, quality, and protection badges without changing the flat card role', () => {

@@ -89,9 +89,28 @@ const DEFAULT_OPTIONS: CaptureFrameOptions = {
 
 describe('captureVideoFrame', () => {
   let createElementSpy: ReturnType<typeof vi.spyOn>;
+  let createObjectUrl: ReturnType<typeof vi.fn>;
+  let revokeObjectUrl: ReturnType<typeof vi.fn>;
 
   beforeEach(() => {
     vi.restoreAllMocks();
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: true,
+        blob: vi.fn().mockResolvedValue(new Blob(['video'], { type: 'video/mp4' })),
+      }),
+    );
+    createObjectUrl = vi.fn().mockReturnValue('blob:offscreen-video');
+    revokeObjectUrl = vi.fn();
+    Object.defineProperty(URL, 'createObjectURL', {
+      configurable: true,
+      value: createObjectUrl,
+    });
+    Object.defineProperty(URL, 'revokeObjectURL', {
+      configurable: true,
+      value: revokeObjectUrl,
+    });
   });
 
   test('resolves with data URL on successful frame capture', async () => {
@@ -111,6 +130,8 @@ describe('captureVideoFrame', () => {
 
     const promise = captureVideoFrame(DEFAULT_OPTIONS);
 
+    await Promise.resolve();
+    await Promise.resolve();
     // Simulate the video lifecycle: loadedmetadata -> seeked
     mockVideo.fireLoadedMetadata();
     mockVideo.fireSeeked();
@@ -118,10 +139,13 @@ describe('captureVideoFrame', () => {
     const result = await promise;
 
     expect(result).toBe(expectedDataUrl);
-    expect(mockVideo.crossOrigin).toBe('anonymous');
+    expect(fetch).toHaveBeenCalledWith(DEFAULT_OPTIONS.url, { credentials: 'include' });
+    expect(createObjectUrl).toHaveBeenCalledWith(expect.any(Blob));
+    expect(mockVideo.crossOrigin).toBe('');
     expect(mockVideo.preload).toBe('metadata');
     expect(mockVideo.muted).toBe(true);
-    expect(mockVideo.src).toBe(DEFAULT_OPTIONS.url);
+    expect(mockVideo.removeAttribute).toHaveBeenCalledWith('src');
+    expect(revokeObjectUrl).toHaveBeenCalledWith('blob:offscreen-video');
     expect(mockVideo.currentTime).toBe(DEFAULT_OPTIONS.atSec);
     expect(mockCanvas.getContext).toHaveBeenCalledWith('2d');
     expect(mockCanvas._ctx.drawImage).toHaveBeenCalledWith(mockVideo, 0, 0);
@@ -148,6 +172,8 @@ describe('captureVideoFrame', () => {
       format: 'png',
     });
 
+    await Promise.resolve();
+    await Promise.resolve();
     mockVideo.fireLoadedMetadata();
     mockVideo.fireSeeked();
 
@@ -172,6 +198,7 @@ describe('captureVideoFrame', () => {
       timeoutMs: 50,
     });
 
+    await vi.advanceTimersByTimeAsync(0);
     vi.advanceTimersByTime(50);
 
     await expect(promise).rejects.toThrow('Thumbnail capture timed out after 50ms');
@@ -189,6 +216,8 @@ describe('captureVideoFrame', () => {
 
     const promise = captureVideoFrame(DEFAULT_OPTIONS);
 
+    await Promise.resolve();
+    await Promise.resolve();
     mockVideo.fireError();
 
     await expect(promise).rejects.toThrow(
@@ -209,6 +238,8 @@ describe('captureVideoFrame', () => {
 
     const promise = captureVideoFrame(DEFAULT_OPTIONS);
 
+    await Promise.resolve();
+    await Promise.resolve();
     mockVideo.fireLoadedMetadata();
     mockVideo.fireSeeked();
 
@@ -230,6 +261,8 @@ describe('captureVideoFrame', () => {
 
     const promise = captureVideoFrame(DEFAULT_OPTIONS);
 
+    await Promise.resolve();
+    await Promise.resolve();
     mockVideo.fireLoadedMetadata();
     mockVideo.fireSeeked();
 
@@ -250,6 +283,8 @@ describe('captureVideoFrame', () => {
 
     const promise = captureVideoFrame({ ...DEFAULT_OPTIONS, format: 'webp' });
 
+    await Promise.resolve();
+    await Promise.resolve();
     mockVideo.fireLoadedMetadata();
     mockVideo.fireSeeked();
 
@@ -257,5 +292,21 @@ describe('captureVideoFrame', () => {
 
     expect(mockVideo.removeAttribute).toHaveBeenCalledWith('src');
     expect(mockVideo.load).toHaveBeenCalled();
+    expect(revokeObjectUrl).toHaveBeenCalledWith('blob:offscreen-video');
+  });
+
+  test('rejects before video setup when the media fetch fails', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: false,
+        status: 403,
+        statusText: 'Forbidden',
+      }),
+    );
+
+    await expect(captureVideoFrame(DEFAULT_OPTIONS)).rejects.toThrow(
+      'Failed to fetch media for browser preview: 403 Forbidden',
+    );
   });
 });

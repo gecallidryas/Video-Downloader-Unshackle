@@ -84,6 +84,19 @@ function buildRuntimeClient(candidates: MediaCandidate[]): RuntimeClient {
       mimeType: 'image/jpeg',
       generated: true,
     }),
+    cancelDownload: vi.fn().mockResolvedValue({ cancelled: true }),
+    retrySegment: vi.fn().mockResolvedValue(undefined),
+    retryFailedSegments: vi.fn().mockResolvedValue(undefined),
+    exportPartialHls: vi.fn().mockResolvedValue(undefined),
+    updateHlsSegmentRange: vi.fn().mockResolvedValue(undefined),
+    getAllCandidates: vi.fn().mockResolvedValue(candidates),
+    getJobs: vi.fn().mockResolvedValue([]),
+    retryDownload: vi.fn().mockResolvedValue(undefined),
+    resaveDownload: vi.fn().mockResolvedValue(undefined),
+    removeDownload: vi.fn().mockResolvedValue(true),
+    clearCompletedDownloads: vi.fn().mockResolvedValue([]),
+    pauseAllDownloads: vi.fn().mockResolvedValue([]),
+    ingestDirectUrl: vi.fn().mockResolvedValue(undefined),
     startDownload: vi.fn().mockResolvedValue({
       id: 'job-1',
       candidateId: candidates[0]?.id ?? 'candidate-1',
@@ -153,7 +166,7 @@ test('submits manual HLS text ingest from the current tab view', async () => {
     input: 'seg-1.ts\nseg-2.ts',
     baseUrl: 'https://cdn.example.com/master.m3u8',
   });
-  expect(await screen.findByText('manual.m3u8')).toBeInTheDocument();
+  expect((await screen.findAllByText('manual.m3u8')).length).toBeGreaterThan(0);
 });
 
 test('renders clear candidates with a normal download action', async () => {
@@ -232,13 +245,14 @@ test('starts HLS browser fallback download with current quality and track select
   await user.selectOptions(screen.getByRole('combobox', { name: /quality/i }), 'variant-720');
   await user.selectOptions(screen.getByRole('combobox', { name: /audio/i }), 'audio-es');
   await user.selectOptions(screen.getByRole('combobox', { name: /subtitles/i }), 'subs-en');
-  await user.click(screen.getByRole('button', { name: /save raw ts/i }));
+  await user.click(screen.getByRole('button', { name: /^download$/i }));
 
   expect(runtimeClient.startDownload).toHaveBeenCalledWith('hls-1', {
     mode: 'custom',
     variantId: 'variant-720',
     audioTrackIds: ['audio-es'],
     subtitleTrackIds: ['subs-en'],
+    subtitleOutput: 'embed',
   });
 
   await user.click(screen.getByRole('button', { name: /downloads/i }));

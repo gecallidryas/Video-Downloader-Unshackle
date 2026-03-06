@@ -10,7 +10,7 @@ export interface OpenPreviewResult {
 
 export interface OffscreenPreviewDocumentRequest {
   path: string;
-  reasons: ['DOM_PARSER'];
+  reasons: ['DOM_SCRAPING', 'BLOBS'];
   justification: string;
 }
 
@@ -27,7 +27,7 @@ export interface OpenPreviewOptions {
 
 export const offscreenPreviewDocumentRequest: OffscreenPreviewDocumentRequest = {
   path: 'offscreen.html',
-  reasons: ['DOM_PARSER'],
+  reasons: ['DOM_SCRAPING', 'BLOBS'],
   justification: 'Render media previews outside the extension service worker.',
 };
 

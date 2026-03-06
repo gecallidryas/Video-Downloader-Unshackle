@@ -24,6 +24,7 @@ export interface RunBrowserDashExportJobInput {
   job: DownloadJob;
   manifest: ParsedDashManifest;
   download?: ChromeDownload;
+  writeFile?: (filename: string, data: Uint8Array) => Promise<void>;
   fetchBytes?: FetchBrowserDashBytes;
   createObjectUrl?: (blob: Blob) => string;
   revokeObjectUrl?: (url: string) => void;
@@ -146,6 +147,7 @@ export async function runBrowserDashExportJob(
         }),
         mimeType: outputKind.mimeType,
         saveAs: input.job.selection.saveAs,
+        writeFile: input.writeFile,
         createObjectUrl: input.createObjectUrl,
         revokeObjectUrl: input.revokeObjectUrl,
         download: input.download,

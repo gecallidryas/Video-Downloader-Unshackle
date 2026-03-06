@@ -172,6 +172,31 @@ describe('download controller decision flow', () => {
     });
   });
 
+  test('auto-deletes job storage after a completed save when enabled', async () => {
+    const cleanupAfterSave = vi.fn(async () => undefined);
+    const controller = createDownloadController({
+      downloadFile: vi.fn().mockResolvedValue({
+        fileName: 'direct-video.mp4',
+        mimeType: 'video/mp4',
+        downloadId: 42,
+      } satisfies JobOutput),
+      runHls: vi.fn(),
+      runDash: vi.fn(),
+      cleanupAfterSave,
+    });
+    const jobStore = createJobStore(() => 10);
+    const historyStore = createHistoryStore(() => 10);
+    const queuedJob = jobStore.create(candidate(), { mode: 'best' });
+
+    await controller.runManaged(candidate(), queuedJob, {
+      jobStore,
+      historyStore,
+      settings: { autoDeleteAfterSave: true },
+    });
+
+    expect(cleanupAfterSave).toHaveBeenCalledWith(queuedJob.id);
+  });
+
   test('routes direct media with trim through the native runner when configured', async () => {
     const nativeExport = vi.fn().mockResolvedValue({
       fileName: 'trimmed.mp4',

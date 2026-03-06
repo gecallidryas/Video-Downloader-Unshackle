@@ -107,6 +107,31 @@ describe('scheduleSegments', () => {
     vi.useRealTimers();
   });
 
+  test('reports per-segment downloading and done statuses', async () => {
+    const progress = vi.fn();
+
+    await expect(
+      scheduleSegments({
+        segments: [segment(0)],
+        fetchSegment: vi.fn().mockResolvedValue(new Uint8Array([7])),
+        onProgress: progress,
+      }),
+    ).resolves.toEqual([new Uint8Array([7])]);
+
+    expect(progress).toHaveBeenCalledWith(
+      expect.objectContaining({
+        segment: expect.objectContaining({ index: 0 }),
+        status: 'downloading',
+      }),
+    );
+    expect(progress).toHaveBeenCalledWith(
+      expect.objectContaining({
+        segment: expect.objectContaining({ index: 0 }),
+        status: 'done',
+      }),
+    );
+  });
+
   test('retries use exponential backoff with increasing delays', async () => {
     vi.useFakeTimers();
 

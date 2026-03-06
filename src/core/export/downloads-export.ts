@@ -32,6 +32,7 @@ export interface BlobDownloadExportInput {
   filename: string;
   mimeType: string;
   saveAs?: boolean;
+  writeFile?: (filename: string, data: Uint8Array) => Promise<void>;
   createObjectUrl?: (blob: Blob) => string;
   revokeObjectUrl?: (url: string) => void;
   download?: ChromeDownload;
@@ -120,7 +121,7 @@ function bytesToBase64(bytes: Uint8Array): string {
   return output;
 }
 
-async function blobToDataUrl(blob: Blob, mimeType: string): Promise<string> {
+async function blobToBytes(blob: Blob): Promise<Uint8Array> {
   const buffer =
     typeof blob.arrayBuffer === 'function'
       ? await blob.arrayBuffer()
@@ -140,13 +141,31 @@ async function blobToDataUrl(blob: Blob, mimeType: string): Promise<string> {
           );
           reader.readAsArrayBuffer(blob);
         });
-  const bytes = new Uint8Array(buffer);
+  return new Uint8Array(buffer);
+}
+
+async function blobToDataUrl(blob: Blob, mimeType: string): Promise<string> {
+  const bytes = await blobToBytes(blob);
   return `data:${mimeType};base64,${bytesToBase64(bytes)}`;
 }
 
 export async function exportBlobDownload(
   input: BlobDownloadExportInput,
 ): Promise<JobOutput> {
+  if (input.writeFile) {
+    const bytes = await blobToBytes(input.blob);
+
+    await input.writeFile(input.filename, bytes);
+
+    return {
+      fileName: input.filename,
+      mimeType: input.mimeType,
+      outputUrl: `file-system-access://${input.filename}`,
+      sizeBytes: bytes.byteLength,
+      notes: ['Saved directly to the selected output folder.'],
+    };
+  }
+
   const createObjectUrl =
     input.createObjectUrl ??
     (typeof URL.createObjectURL === 'function'

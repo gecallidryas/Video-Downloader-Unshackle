@@ -118,6 +118,34 @@ describe('browser HLS export runner', () => {
     });
   });
 
+  test('writes HLS browser exports directly to disk when a writer is supplied', async () => {
+    const manifest = parseHlsManifest({
+      manifestUrl: 'https://cdn.example.com/hls/prog.m3u8',
+      content: ['#EXTM3U', '#EXTINF:4,', 'segment.ts', '#EXT-X-ENDLIST'].join('\n'),
+    });
+    const writeFile = vi.fn(async () => undefined);
+    const download = vi.fn();
+
+    await expect(
+      runBrowserHlsExportJob({
+        candidate: candidate(),
+        job: job(),
+        manifest,
+        fetchBytes: vi.fn().mockResolvedValue(new Uint8Array([0x47, 1, 2])),
+        writeFile,
+        download,
+        browserTransmuxWithMuxJs: false,
+      }),
+    ).resolves.toMatchObject({
+      fileName: 'playlist.ts',
+      outputUrl: 'file-system-access://playlist.ts',
+      notes: ['Saved directly to the selected output folder.'],
+    });
+
+    expect(writeFile).toHaveBeenCalledWith('playlist.ts', new Uint8Array([0x47, 1, 2]));
+    expect(download).not.toHaveBeenCalled();
+  });
+
   test('transmuxes TS segments to MP4 when mux.js browser fallback is enabled', async () => {
     const manifest = parseHlsManifest({
       manifestUrl: 'https://cdn.example.com/hls/prog.m3u8',

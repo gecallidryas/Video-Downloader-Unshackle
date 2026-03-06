@@ -1,4 +1,5 @@
 import type { NativeHelperReadiness } from '@/src/native/native-helper-diagnostics';
+import type { RegexRule } from '@/src/core/capture-rules/regex-classifier';
 
 export const SETTINGS_STORAGE_KEY = 'unshackle_settings';
 
@@ -76,6 +77,7 @@ export interface UnifiedSettings {
   captureRuleUrlBlacklist: string[];
   captureRuleMinSizeBytes: number;
   captureRuleSizePredicate: string;
+  captureRuleRegexRules: RegexRule[];
   advancedMode: boolean;
   autoDownloadEnabled: boolean;
   autoDownloadMinSize: number;
@@ -92,6 +94,9 @@ export interface UnifiedSettings {
   enableBrowserFallbacks: boolean;
   browserTransmuxWithMuxJs: boolean;
   browserTransmuxMaxBytes: number;
+  useDirectToDisk: boolean;
+  rememberOutputFolder: boolean;
+  autoDeleteAfterSave: boolean;
   nativeHelperOnboardingDismissed: boolean;
   nativeHelperPermissionPrompted: boolean;
   nativeHelperLastReadiness: NativeHelperReadiness;
@@ -138,6 +143,7 @@ export const DEFAULT_SETTINGS: UnifiedSettings = {
   captureRuleUrlBlacklist: [],
   captureRuleMinSizeBytes: 0,
   captureRuleSizePredicate: '',
+  captureRuleRegexRules: [],
   advancedMode: false,
   autoDownloadEnabled: false,
   autoDownloadMinSize: 102_400,
@@ -154,12 +160,15 @@ export const DEFAULT_SETTINGS: UnifiedSettings = {
   enableBrowserFallbacks: true,
   browserTransmuxWithMuxJs: true,
   browserTransmuxMaxBytes: 150 * 1024 * 1024,
+  useDirectToDisk: false,
+  rememberOutputFolder: false,
+  autoDeleteAfterSave: false,
   nativeHelperOnboardingDismissed: false,
   nativeHelperPermissionPrompted: false,
   nativeHelperLastReadiness: 'not-checked',
   onboardingCompleted: false,
   uiLanguage: 'en',
-  _schemaVersion: 12,
+  _schemaVersion: 14,
 };
 
 const nativeHelperReadinessValues = new Set<NativeHelperReadiness>([
@@ -204,6 +213,7 @@ function cloneSettings(settings: UnifiedSettings): UnifiedSettings {
     captureRuleCustomExtensions: [...settings.captureRuleCustomExtensions],
     captureRuleCustomContentTypes: [...settings.captureRuleCustomContentTypes],
     captureRuleUrlBlacklist: [...settings.captureRuleUrlBlacklist],
+    captureRuleRegexRules: settings.captureRuleRegexRules.map((rule) => ({ ...rule })),
     autoDownloadBlacklist: [...settings.autoDownloadBlacklist],
     externalPlayerProfiles: settings.externalPlayerProfiles.map((profile) => ({ ...profile })),
   };
@@ -226,6 +236,22 @@ function normalizeExternalPlayerProfiles(value: unknown): ExternalPlayerProfile[
     }
   }
   return result;
+}
+
+function normalizeRegexRules(value: unknown): RegexRule[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value
+    .filter((entry): entry is Partial<RegexRule> =>
+      typeof entry === 'object' && entry !== null,
+    )
+    .flatMap((entry) =>
+      typeof entry.pattern === 'string' && typeof entry.category === 'string'
+        ? [{ pattern: entry.pattern, category: entry.category }]
+        : [],
+    );
 }
 
 function normalizeProviderDefaults(
@@ -299,6 +325,7 @@ export function normalizeSettings(value: unknown): UnifiedSettings {
       typeof incoming.captureRuleSizePredicate === 'string'
         ? incoming.captureRuleSizePredicate
         : DEFAULT_SETTINGS.captureRuleSizePredicate,
+    captureRuleRegexRules: normalizeRegexRules(incoming.captureRuleRegexRules),
     remoteConfigSecurityMode: ['strict', 'warn', 'disabled'].includes(
       String(incoming.remoteConfigSecurityMode),
     )
@@ -370,6 +397,18 @@ export function normalizeSettings(value: unknown): UnifiedSettings {
       Number(incoming.browserTransmuxMaxBytes) > 0
         ? Number(incoming.browserTransmuxMaxBytes)
         : DEFAULT_SETTINGS.browserTransmuxMaxBytes,
+    useDirectToDisk:
+      typeof incoming.useDirectToDisk === 'boolean'
+        ? incoming.useDirectToDisk
+        : DEFAULT_SETTINGS.useDirectToDisk,
+    rememberOutputFolder:
+      typeof incoming.rememberOutputFolder === 'boolean'
+        ? incoming.rememberOutputFolder
+        : DEFAULT_SETTINGS.rememberOutputFolder,
+    autoDeleteAfterSave:
+      typeof incoming.autoDeleteAfterSave === 'boolean'
+        ? incoming.autoDeleteAfterSave
+        : DEFAULT_SETTINGS.autoDeleteAfterSave,
     nativeHelperOnboardingDismissed:
       typeof incoming.nativeHelperOnboardingDismissed === 'boolean'
         ? incoming.nativeHelperOnboardingDismissed

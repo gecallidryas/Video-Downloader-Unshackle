@@ -98,19 +98,19 @@ Status values:
 | DASH MPD parsing | present | present | present | Keep Unshackle typed parser as canonical. |
 | DASH live/SegmentTimeline robustness | present | present | parser library dependent | Parser and inspector now cover dynamic MPDs and `SegmentTimeline` expansion with tests. |
 | Direct media download | present | present | present | Keep Chrome downloads path for ordinary/non-range files; large range-capable media is routed through the direct range downloader with honest browser-assembly output notes. |
-| File System Access direct writes | gap | not primary | present | Useful for long live streams and large raw downloads; design as optional browser-capability path. |
+| File System Access direct writes | improved | not primary | present | Browser HLS/DASH exports can write through File System Access when a persisted output folder is available; direct-file/native paths still need broader streaming support. |
 | Range splitting of large single files | present | present | present | Added direct media range splitting plus production controller wiring for range-capable large files. |
 | Broken-pipe recovery and ranged resume | present | present | strong | Scheduler now resumes partial fetches only with validated retained bytes, rejoins recovered data, and lowers effective host concurrency after repeated recoverable failures. |
-| User URL replacement on failed segment | gap | not clear | present | Consider as advanced recovery UI for expired live URLs. |
+| User URL replacement on failed segment | partial-core | not clear | present | Helper exists, but user recovery workflow is deferred for expired live URLs. |
 | Segment concurrency | present | present | present | Keep settings-driven scheduler; live-stream caps UI threads to 1-5. |
 | Per-host concurrency/bandwidth | present | present | gap | Unshackle/Unified are stronger. |
-| Batch timeline/download jobs | partial | present | present via directory picker | Port batch directory save for timeline splits and multi-candidate export. |
-| Persistent output directory handle | gap | gap/unknown | present | Useful but permission-sensitive; design carefully before adding. |
+| Batch timeline/download jobs | partial-core | present | present via directory picker | Helper exists; production batch directory/job creation is deferred. |
+| Persistent output directory handle | improved | gap/unknown | present | Output-folder persistence is opt-in through `rememberOutputFolder`; popup selection now persists handles for the background direct-to-disk path. |
 | Filename from content-disposition/MIME | present/partial | present | present | Add tests for live-stream's filename fallback rules. |
 | Smart naming templates | present | present | partial | Unified remains baseline. |
 | Online filename resolution | present | unknown | present setting | Side-panel media-card overflow exposes user-initiated HEAD resolution through `resolveOnlineFilename()`; no background lookup happens without a click. |
-| Progressive preview while downloading | present (PreviewModal `downloadedRanges` + `liveSegmentSource`) | present | present with MP4Box/MSE | Optional enrichment; native previews may already cover common path. |
-| Codec sniff via MP4Box | present (`src/core/preview/codec-sniff.ts` + `CodecBadge`) | present | present | Useful for preview compatibility diagnostics. |
+| Progressive preview while downloading | partial-core (`PreviewModal` range props) | present | present with MP4Box/MSE | Component support exists; production queue range/live segment wiring is deferred. |
+| Codec sniff via MP4Box | partial-core (`src/core/preview/codec-sniff.ts` + `CodecBadge`) | present | present | Helper/component support exists; production preview asset sniffing is deferred. |
 | Queue controls | present | present | gap | Unshackle stronger; side-panel cancel now reaches runtime abort and copy URL writes the queued/output URL to clipboard. |
 | History retention/retry/delete | present | present | gap | Unshackle stronger. |
 | Notifications | present | present | minimal badge/title | Unshackle/Unified stronger. |
@@ -351,7 +351,7 @@ Status meanings in this section:
 | Preview | HLS preview in popup with native HLS fallback | `PlaylistPreview` | present (`usePreviewPlayer` lazy hls.js fallback) | Unshackle preview path is different; hls.js preview is useful fallback. |
 | Preview | hls.js preview when native HLS unsupported | `Hls.isSupported()` | present (lazy `import('hls.js')` peer) | Consider for side-panel preview without native helper. |
 | Preview | Preview reload button | `PlaylistPreview` | present (reload icon in PreviewModal header) | Small UX improvement. |
-| Preview | Preview duration callback from metadata or LEVEL_LOADED | `onDuration` | present (`onDurationResolved` on PreviewModal) | Useful if estimates depend on preview. |
+| Preview | Preview duration callback from metadata or LEVEL_LOADED | `onDuration` | partial-core (`onDurationResolved` on PreviewModal) | Component support exists; parent metadata update is deferred. |
 | Preview | Teardown destroys hls.js and clears video src | `PlaylistPreview` cleanup | present/partial | Good frontend cleanup pattern. |
 | Download | Job creation fetches video/audio/subtitle data concurrently | `addDownloadJobEpic` | present/partial | Keep but review memory/latency. |
 | Download | Random UUID with fallback job id | `crypto.randomUUID` fallback | present | Keep. |
@@ -376,21 +376,21 @@ Status meanings in this section:
 | Download | Retry failed job requeues and resets progress | JobController/jobs slice | present | Keep. |
 | Download | Queued job can be removed | JobView | present | Keep. |
 | Download | Downloading job can be cancelled | JobView | present | Keep. |
-| Download | Ready/done job can save again | JobView | improved | QueueItem overflow menu exposes `Save again` for completed jobs (P2 #117 UI wiring); backend resave behavior is tracked under Phase 6 Task 17. |
+| Download | Ready/done job can save again | done | QueueItem overflow menu exposes `Save again`; SidePanelApp and runtime queue actions re-enqueue completed jobs with the prior selection. |
 | Download | Delete job also deletes storage bucket | delete epic | present | Keep. |
 | Download | Cancel dispatches delete | cancel-delete epic | partial | Unshackle may prefer cancelled history retention. |
 | Download | Auto delete after save setting | `autoDeleteAfterSaveEpic` | gap/partial | Useful storage-saving option. |
 | Storage | IndexedDB bucket per job | `IndexedDBBucket` | present | Keep. |
 | Storage | Chunk object store indexed by fragment index | `chunks` store/index | present | Keep. |
-| Storage | Bucket metadata persisted separately | `bucketMeta` storage key | partial | Good for storage summaries after reload. |
+| Storage | Bucket metadata persisted separately | `bucketMeta` storage key | partial | Helper exists; production fragment writes still need metadata recording before this matches puemos. |
 | Storage | Track bytes written and stored chunks | `trackBucketUsage` | partial | Useful for better progress and cleanup. |
 | Storage | Serialize metadata updates per bucket | `metaUpdateQueues` | gap/partial | Good race-condition prevention. |
 | Storage | Rehydrate bucket object from metadata | `getBucket` | partial | Useful for MV3/offscreen save after worker wakeup. |
 | Storage | Measure bucket usage if metadata missing | `measureBucketUsage` | gap/partial | Good recovery behavior. |
-| Storage | Separate subtitles IndexedDB | `subtitles` DB | gap/partial | Useful to decouple text from binary chunks. |
-| Storage | Estimate subtitle byte usage | `estimateSubtitlesBytes` | gap/partial | Small but good storage reporting. |
+| Storage | Separate subtitles IndexedDB | `subtitles` DB | gap/partial | Subtitle store is abstracted, but production still uses in-memory storage rather than IndexedDB. |
+| Storage | Estimate subtitle byte usage | `estimateSubtitlesBytes` | gap/partial | Store helper can estimate bytes; diagnostics/UI still need production subtitle byte totals. |
 | Storage | Browser quota estimate via `navigator.storage.estimate` | `getStorageEstimate` | partial | Port into Unshackle storage diagnostics. |
-| Storage | Near-quota warning threshold at 90 percent or <=200MB free | storage stats use case | gap/partial | Good UI policy. |
+| Storage | Near-quota warning threshold at 90 percent or <=200MB free | storage stats use case | partial | Core diagnostics implement the policy; UI surfaces still need to consume the same warning copy consistently. |
 | Storage | Cleanup all buckets and subtitle DB | `cleanup` | present/partial | Keep; add user confirmation. |
 | Storage | Cleanup cancels active queued/saving/ready jobs first | `cleanupStorageEpic` | partial | Good consistency behavior. |
 | Storage | Cleanup leaves done/error jobs uncancelled before clear/failure path | tests | review | Decide desired Unshackle history semantics. |
@@ -401,13 +401,13 @@ Status meanings in this section:
 | Export | Mux video+audio TS to MP4 with stream copy | `ffmpeg-muxer.ts` | present via native | Keep native helper; compare args. |
 | Export | Video-only preserves all streams | `-map 0 -c copy` | partial | Useful when video stream includes embedded audio. |
 | Export | Audio-only AAC output path | `-c:a aac -b:a 192k` | present/partial | Useful fallback. |
-| Export | Subtitle mux to MKV with WebVTT | output `.mkv`, `video/x-matroska` | done | `buildMuxArgs` emits `-c:s copy` into MKV; `verifySubtitleTrack` confirms embedded codec from ffprobe streams (falls back to sidecar). |
-| Export | `-shortest` for muxed outputs | ffmpeg args | partial | Good guard against mismatched audio/video duration. |
+| Export | Subtitle mux to MKV with WebVTT | output `.mkv`, `video/x-matroska` | partial-core | `verifySubtitleTrack` exists, but production native mux verification and sidecar fallback remain deferred. |
+| Export | `-shortest` for muxed outputs | ffmpeg args | partial-core | Helper arg support exists; production native helper parity is deferred. |
 | Export | Best-effort ffmpeg temp cleanup | `finally deleteFile` | present/partial | Keep. |
 | Export | MV3 offscreen object URL creation | `offscreen.ts` | present | Unshackle offscreen is already comparable. |
 | Save | `downloads.download` with `conflictAction: uniquify` | IndexedDBFS.saveAs | present/partial | Ensure export saves unique filenames. |
 | Save | Save dialog toggle | config and settings | present | Keep. |
-| Save | Ignore empty link gracefully | tests | gap/partial | Small robustness test. |
+| Save | Ignore empty link gracefully | tests + DOM scanners | done | `isEmptyLink` is used in media/embed/iframe/selected-link scanning paths. |
 | Naming | Filename from page title plus playlist filename | `generate-file-name.ts` | present/partial | Compare with smart naming templates. |
 | Naming | Illegal filename character replacement | `sanitizeFilename` | present | Keep. |
 | Naming | NFC Unicode normalization | filename functions/tests | partial | Add tests for non-ASCII titles if absent. |
@@ -501,17 +501,17 @@ The UI is split across specialized HTML pages: `popup.html` for detected resourc
 | Passive capture | Correlates send headers and response starts, then classifies media by URL, extension, request type, content type, content disposition, length, and range (`js/background.js`, `js/function.js`). | present | UnifiedVideoDownloader and live-stream-downloader have comparable passive capture. | Add any missing small classifiers as tests, especially content-disposition filename and range-size handling. |
 | Extension/MIME filters | Default extension and MIME lists cover audio, video, HLS, DASH, MSE fragments, subtitles, octet-stream variants, and disabled noisy types (`js/init.js`). | present | cat-catch has the most user-editable filter catalog. | Add user-extensible capture rules with clear defaults and reset behavior. |
 | Size expressions | Options support size filters with comparison, ranges, and B/KB/MB/GB units (`js/options.js`, changelog 2.6.8). | present | Not present in puemos; richer than live-stream-downloader. | Added typed binary-unit size predicate parser for capture filters. |
-| Regex classification | Regex rules can extract names, override extensions, blacklist, and test matches in the options UI (`js/init.js`, `js/options.js`). | partial/improved | UnifiedVideoDownloader has site heuristics; cat-catch exposes generic rules. | Added `createRegexClassifier` with ordered matching, typed construction-time validation, and capture-rule engine integration; UI editor remains future work. |
+| Regex classification | Regex rules can extract names, override extensions, blacklist, and test matches in the options UI (`js/init.js`, `js/options.js`). | done | UnifiedVideoDownloader has site heuristics; cat-catch exposes generic rules. | Regex rules are persisted, editable/importable/exportable in PopupApp, and applied by RequestJournal classification before candidate creation. |
 | Per-tab cache | Stores candidates by tab, deduplicates via `G.urlMap`, caps tab lists (`G.maxLength`), clears on tab events and auto-clear modes (`js/background.js`). | present | live-stream-downloader uses job windows; puemos persists HLS jobs. | Keep Unshackle queue/history; add explicit candidate cap diagnostics. |
-| Duplicate handling | Optional duplicate URL and duplicate filename filtering, including preview-page duplicate filename cleanup (`js/init.js`, `js/preview.js`). | improved | DuplicateBadge primitive plus MediaCard `duplicateCount`/`onDuplicateClick` props expose the affordance; parent grouping logic still pending (P2 #100). |
-| Badge and commands | Badge count, pause/enable, auto-download, clear, reboot, catch, m3u8, and deep-search keyboard commands (`js/background.js`, manifests). | done | `wxt.config.ts` declares `pause-all` (Ctrl+Shift+P), `clear-completed` (Ctrl+Shift+X), and `open-side-panel` (Ctrl+Shift+D); PopupApp footer surfaces the hints. Safe commands only; advanced toggles remain settings-gated. |
+| Duplicate handling | Optional duplicate URL and duplicate filename filtering, including preview-page duplicate filename cleanup (`js/init.js`, `js/preview.js`). | done | DuplicateBadge primitive plus MediaCard `duplicateCount`/`onDuplicateClick` props expose the affordance; SidePanelApp groups duplicate URL/title pairs for real candidates. |
+| Badge and commands | Badge count, pause/enable, auto-download, clear, reboot, catch, m3u8, and deep-search keyboard commands (`js/background.js`, manifests). | done | `wxt.config.ts` declares `pause-all` (Ctrl+Shift+P), `clear-completed` (Ctrl+Shift+X), and `open-side-panel` (Ctrl+Shift+D); background command handlers implement all three. Safe commands only; advanced toggles remain settings-gated. |
 | Blocklist/opt-out | Block URL list, whitelist mode, and a README opt-out process for site owners (`README_en.md`, `js/options.js`, `js/background.js`). | partial/improved | Complements live-stream-downloader owner-request blocklist and puemos store/independent variants. | Added `docs/OWNER-EXCLUSION.md`; remote/local blocklist mechanics remain separate policy work. |
 | Request headers | Extracts Referer, Origin, Cookie, Authorization from request headers; removes cookie from replayable header list but keeps separate `data.cookie` (`js/background.js`). | review | Stronger than puemos and live-stream-downloader, but higher release risk. | Strip cookies/auth by default; allow explicit, per-download, expiring header grants for referer/origin first. |
 | Header replay | Uses DNR session rules to set per-resource request headers, including cookie when supplied (`js/function.js`). | review | live-stream-downloader has referer/origin scoping; cat-catch is broader. | Implement scoped header profiles with visible consent and no silent cookie/auth forwarding. |
-| Auto-download | Per-tab auto-download toggle starts downloads when new candidates arrive (`js/background.js`, `js/popup.js`). | partial | UnifiedVideoDownloader includes auto actions; puemos focuses manual HLS jobs. | Add safe auto-download only for direct, unprotected, same-origin or user-approved candidates. |
+| Auto-download | Per-tab auto-download toggle starts downloads when new candidates arrive (`js/background.js`, `js/popup.js`). | partial/done | UnifiedVideoDownloader includes auto actions; puemos focuses manual HLS jobs. | Added guarded auto-download for advanced-mode direct, unprotected candidates with min-size and blacklist settings; broader per-tab controls remain future work. |
 | Popup resource list | Current/all pages tabs, per-row filename, size, type, source title, favicon, preview, parse, copy, QR, direct download, Aria2, send-to-local, MQTT, invoke, and batch actions (`popup.html`, `js/popup.js`). | partial | More operational affordances than all prior references. | Port selected row actions into side-panel command menus; avoid dense popup-only UX. |
 | Possible keys tab | Shows suspected keys collected by page scripts (`popup.html`, `js/content-script.js`, `catch-script/search.js`). | not-scope | No safe equivalent in prior references. | Do not port key discovery or hidden-token/key extraction UI. |
-| Preview grid | `preview.html` lazily previews image/video/HLS resources, filters by type/regex, sorts by time/size/duration, paginates, tracks failed previews, and batch downloads/copies (`js/preview.js`). | present (`src/ui/media/PreviewGrid.tsx` advanced mode) | Stronger preview ergonomics than live-stream-downloader and puemos. | Side-panel `PreviewGrid` with `IntersectionObserver` lazy thumbs, sort by detection time / duration / size / filename, retry overlay on failed probes, duplicate filename grouping, batch download/copy/remove. |
+| Preview grid | `preview.html` lazily previews image/video/HLS resources, filters by type/regex, sorts by time/size/duration, paginates, tracks failed previews, and batch downloads/copies (`js/preview.js`). | done | Stronger preview ergonomics than live-stream-downloader and puemos. | Side-panel advanced tools mount `PreviewGrid` for real candidates with batch download/copy/remove/retry actions. |
 | Media control | Content script controls page media: play/pause, speed, PiP, fullscreen, screenshot, volume, loop, mute, time seek (`js/content-script.js`, `js/media-control.js`). | partial | UnifiedVideoDownloader has broader page tooling; puemos does not. | Add media-control as an opt-in diagnostics panel, not as a core download requirement. |
 | DOM extraction | Content script can return full page HTML or selected DOM for deep search (`js/content-script.js`, `getHtmlDOM` setting). | review | More invasive than current references. | Prefer targeted manifest/playlist fetches; if kept, expose as manual diagnostics only. |
 | Deep search | `catch-script/search.js` monkeypatches Worker, JSON.parse, fetch, XHR, typed arrays, DataView, base64 helpers, string joins/indexing, and detects M3U8/MPD/Vimeo playlist data and suspected keys. | review | Broader and riskier than UnifiedVideoDownloader page scanning. | Do not copy generic monkeypatching. Consider a constrained, opt-in manifest text scanner without key extraction. |
@@ -521,11 +521,11 @@ The UI is split across specialized HTML pages: `popup.html` for detected resourc
 | Display recording | `recorder2.js` uses display capture and MediaRecorder for screen capture workflows. | not-scope | Outside downloader parity. | Do not prioritize unless Unshackle becomes a recorder product. |
 | WebRTC recording | `webrtc.js` proxies `RTCPeerConnection`, collects tracks, and records selected streams. | not-scope | No equivalent in other references. | Do not port; high privacy and policy risk. |
 | Mobile UA simulation | Sets User-Agent through DNR and overrides `navigator.userAgent` in MAIN world for selected tabs (`js/background.js`, `js/init.js`). | review | Similar to older UnifiedVideoDownloader mobile emulation. | If needed, make it explicit per-tab testing mode with clear reset, not a downloader default. |
-| Options UI | Extensive settings for filters, regexes, blocklist, templates, player, Aria2, send-to-local, local protocol invocation, downloader, M3U8 parser, preview, side panel, custom CSS, MQTT, import/export/reset (`options.html`, `js/options.js`). | partial | cat-catch has the richest settings surface; puemos has cleaner typed state. | Capture-rule editor now has typed validation plus import/export/reset; other settings sections remain separate backlog. |
+| Options UI | Extensive settings for filters, regexes, blocklist, templates, player, Aria2, send-to-local, local protocol invocation, downloader, M3U8 parser, preview, side panel, custom CSS, MQTT, import/export/reset (`options.html`, `js/options.js`). | partial/done | cat-catch has the richest settings surface; puemos has cleaner typed state. | Capture rules, regexes, command templates, auto-download, Aria2, webhook, and external player profiles are now exposed; custom CSS/MQTT remain out of scope. |
 | Settings import/export | Exports/imports base64 or JSON settings with timestamp and reset/clear tools (`js/options.js`). | present | More complete than live-stream-downloader. | Added versioned JSON import/export with `_exportedAt`, current-schema filtering, and secret/internal field redaction. |
-| Copy/name templates | Supports replacement tags and transforms for title, URL, filename, headers, m3u8dl args, local invoke, and copy formats (`js/init.js`, `js/options.js`). | present | Richer than all prior references. | Added a safe copy/share template engine; cookie/auth/referer/origin values require advanced mode. |
+| Copy/name templates | Supports replacement tags and transforms for title, URL, filename, headers, m3u8dl args, local invoke, and copy formats (`js/init.js`, `js/options.js`). | done | Richer than all prior references. | Safe copy/share templates are exposed via PopupApp custom command setting and queue command copy; cookie/auth/referer/origin values require advanced mode. |
 | Custom CSS | Options allow custom UI CSS (`js/init.js`, `options.html`). | not-scope | Power-user feature only. | Avoid unless accessibility and support burden are acceptable. |
-| Direct downloader | `downloader.html`/`js/downloader.js` handles direct URL jobs, custom filename/referer/headers, progress, stop/retry, open folder, and task handoff from popup/localStorage. | partial | live-stream-downloader remains stronger for range-splitting; cat-catch has broader manual inputs. | Add a typed direct-job window/panel with manual URL ingest and per-job retry controls. |
+| Direct downloader | `downloader.html`/`js/downloader.js` handles direct URL jobs, custom filename/referer/headers, progress, stop/retry, open folder, and task handoff from popup/localStorage. | partial/done | live-stream-downloader remains stronger for range-splitting; cat-catch has broader manual inputs. | Advanced side-panel tools now include typed direct URL ingest with filename/referer/origin and retry/stop controls. |
 | StreamSaver | Direct and HLS downloaders can stream to disk via StreamSaver and remote MITM pages for large files (`js/downloader.js`, `js/m3u8.js`, `lib/StreamSaver.js`). | partial | live-stream-downloader uses File System Access more directly; puemos uses IndexedDB/Blob paths. | Prefer native helper or File System Access; do not depend on remote StreamSaver pages by default. |
 | Direct retry fallback | Direct downloader retries HTTP failures with `Range: bytes=0-` and then extra sec-fetch headers (`js/downloader.js`). | review | live-stream-downloader has cleaner broken-pipe/range recovery. | Add range fallback tests; avoid spoofing browser fetch headers unless justified and disclosed. |
 | HLS manual ingest | `m3u8.html` accepts URL, raw manifest text, file input, raw TS URL lists, base URL overrides, `${range:start-end,pad}` expansion, and custom request headers (`js/m3u8.js`). | present | Added core `${range:start-end,pad}` expansion helper and side-panel HLS ingest for URLs, raw manifest text, file-loaded text, raw TS lists, and base URL overrides. | Keep request profiles safe; custom sensitive headers remain out of default scope. |
@@ -575,7 +575,7 @@ The UI is split across specialized HTML pages: `popup.html` for detected resourc
 | P1 | Add manual HLS ingest modes | side panel/parser route | Done for URL text, raw manifest text, file-loaded text, raw TS list conversion, and base URL override. |
 | P1 | Add HLS segment repair controls | HLS job detail UI and tests | Done at core level: `selectSegmentsForRepair()` covers failed indexes, index/time ranges, regex filters, and combined selection; UI wiring remains future work. |
 | P1 | Add HLS range expansion tests | HLS parser/planner fixtures | Done: added tested `${range:start-end,pad}` expansion helper for explicit manual URL templates. |
-| P1 | Add live HLS retry telemetry | `src/core/hls/live-hls-telemetry.ts`, `src/core/hls/run-hls-job.ts` | Added core tracker and live HLS progress-event snapshots; queue/UI surfacing remains future UX work. |
+| P1 | Add live HLS retry telemetry | `src/core/hls/live-hls-telemetry.ts`, `src/core/hls/run-hls-job.ts` | Partial: core tracker and progress snapshots exist; queue/job state and UI surfacing remain open. |
 | P1 | Add DASH representation inspector | DASH parser UI | Show audio/video representation metadata and reuse HLS-style job runner for clear segment lists. |
 | P1 | Add settings import/export with secret redaction | settings schema | Export versioned JSON; redact Aria2 tokens, webhook secrets, MQTT passwords, and any future header profiles. |
 | P2 | Add copy/share template engine | row actions, settings | Safe tags for URL, title, filename, extension, size, referer/origin only when permitted; no cookie/auth variables by default. |
@@ -776,9 +776,9 @@ The core detector is `reference/stream-detector/src/js/background.js`. It listen
 | Protocol classification | Built-in support for HLS (`m3u8` and HLS content types), DASH (`mpd`, `json?base64_init=1`, `application/dash+xml`), HDS (`f4m`), MSS (`ism/manifest`). | present | Unshackle now classifies HDS and MSS manifests with dedicated protocol metadata; download support can remain staged. | Keep detection exposed even while full HDS/MSS download remains unsupported. |
 | Subtitle classification | Detects VTT, SRT, TTML/TTML2, and DFXP by extension and content type. | present | Network classifier now emits format-specific passive subtitle categories for VTT, SRT, TTML, and DFXP by extension and MIME type. | Attach detected subtitles to stream groups where appropriate. |
 | Direct file classification | Detects MP4/M4V/M4S, TS/M2T, AAC/M4A, MP3, OGG/OGV/OGA/OPUS, WEBM/WEBA. | present | Similar to cat-catch default extension list but smaller. | Keep direct media detection core and cover by extension/content-type tests. |
-| Custom extensions | Options support newline-separated custom extensions (`customExtPref`, `customExtEntries`). | present | cat-catch has richer rule editing. | Added validated custom extension capture rules and persisted settings defaults. |
-| Custom content types | Options support newline-separated custom content types (`customCtPref`, `customCtEntries`). | present | Valuable small operational feature. | Added validated custom content-type capture rules and persisted settings defaults. |
-| Ignore filters | Users can ignore subtitles, direct files, manifests, small files below MB threshold, and blacklist URL/type/content-type/source substrings (`background.js`, `options.html`). | present | More focused than cat-catch's regex/size filters. | Added capture-rule engine with glob URL blacklist, minimum-size guard, and size predicate support. |
+| Custom extensions | Options support newline-separated custom extensions (`customExtPref`, `customExtEntries`). | present | cat-catch has richer rule editing. | Custom extension capture rules now affect passive request journaling and candidate evidence. |
+| Custom content types | Options support newline-separated custom content types (`customCtPref`, `customCtEntries`). | present | Valuable small operational feature. | Custom content-type capture rules now affect passive request journaling and candidate evidence. |
+| Ignore filters | Users can ignore subtitles, direct files, manifests, small files below MB threshold, and blacklist URL/type/content-type/source substrings (`background.js`, `options.html`). | present | More focused than cat-catch's regex/size filters. | Glob blacklist, minimum-size, and size-predicate rules now gate passive request evidence before storage. |
 | Disable toggle | `disablePref` removes or re-adds webRequest listeners and changes icons. | partial | Useful operational pattern. | Add a clear capture on/off control that actually detaches listeners if possible. |
 | Duplicate/request guard | Uses `urlStorage`, `queue`, requestId, and URL checks to avoid duplicate entries from both listeners. | partial | cat-catch also deduplicates URL fingerprints. | Add dedupe tests across request/response listener pairs. |
 | Filename extraction | Uses URL pathname, with an MSS workaround that trims `.ism/manifest` to the parent path. | partial | Small but useful MSS detail. | Add protocol-specific display filename rules. |
@@ -792,12 +792,12 @@ The core detector is `reference/stream-detector/src/js/background.js`. It listen
 | Filter input | Popup/sidebar filter by filename, tab title, type, or hostname. | not-scope | Removed from Unshackle because detected lists are expected to stay short. | |
 | Direct download | Clicking direct file/custom entries can use `chrome.downloads.download`; optional auto-download for non-manifest files. | partial | Cat-catch has more downloader UI; stream-detector has clean simple direct download. | Direct media downloading is core; capture-rule blacklist and size guards are now available for safe auto-download wiring. |
 | Firefox referer download | Firefox direct downloads can include Referer header; Chrome path omits headers due API limits (`popup.js`, `background.js`). | partial | Useful browser capability distinction. | Model browser-specific download header support explicitly. |
-| Command generation | Copy methods include raw URL, Kodi URL, table form, yt-dlp, FFmpeg, Streamlink, hlsdl, N_m3u8DL-RE, and three user commands (`popup.js`). | done | Unshackle now ships `src/core/export/command-profiles.ts` exposing yt-dlp, ffmpeg, streamlink, hlsdl, n_m3u8dl-re plus a `custom` template profile through `command-generation-policy`; sensitive headers gated. | Command-preview wired into QueueItem overflow menu via `onCopyCommand`. |
+| Command generation | Copy methods include raw URL, Kodi URL, table form, yt-dlp, FFmpeg, Streamlink, hlsdl, N_m3u8DL-RE, and three user commands (`popup.js`). | done | Unshackle ships `src/core/export/command-profiles.ts` exposing yt-dlp, ffmpeg, streamlink, hlsdl, n_m3u8dl-re plus a `custom` template profile through `command-generation-policy`; sensitive headers gated. | Command-preview is wired from QueueItem/QueueView into SidePanelApp clipboard copy, including custom templates from settings. |
 | yt-dlp options | Adds `--no-part`, `--restrict-filenames`, optional `-N`, optional external downloader, output template, proxy, user-agent, cookie/header, referer, and browser cookie-store flags. | review | Useful but sensitive. | Provide command generation only with header redaction and explicit cookie handling. |
 | FFmpeg options | Generates `ffmpeg -user_agent`, `-headers "Cookie: ..."`, `-referer`, proxy, `-i`, and `-c copy` output commands. | review | Similar to cat-catch external tools. | Make command output visible/editable; do not silently include cookies. |
 | Streamlink options | Supports output file vs player mode plus headers/proxy. | partial | Unique focus among references. | Add streamlink template only after generic command profile exists. |
 | hlsdl/N_m3u8DL-RE | Emits tool-specific header, proxy, output, and save-name flags. | partial | Overlaps cat-catch m3u8DL ideas. | Add as optional user templates, not built-in dependency. |
-| User command templates | Three custom commands with `%url%`, `%filename%`, `%useragent%`, `%referer%`, `%cookie%`, `%proxy%`, `%origin%`, `%tabtitle%`, `%timestamp%`; optional regex replace. | partial | cat-catch has even richer templating. | Add safe template variables; require opt-in for sensitive variables and redact exports. |
+| User command templates | Three custom commands with `%url%`, `%filename%`, `%useragent%`, `%referer%`, `%cookie%`, `%proxy%`, `%origin%`, `%tabtitle%`, `%timestamp%`; optional regex replace. | done | cat-catch has even richer templating. | PopupApp exposes one safe custom template profile; queue command copy renders it through the guarded template engine. |
 | Clipboard fallback | Uses `navigator.clipboard.writeText` and falls back to textarea plus `document.execCommand("copy")`. | present | Practical compatibility detail. | Keep modern clipboard with fallback if needed. |
 | Settings import/export | Options export all settings except current URL stores/version/newline; import JSON and reset via background message (`options.js`). | present | Similar to cat-catch; cleaner than ViewTube. | Added versioned settings import/export with secret redaction and future-schema rejection. |
 | Localization | Multiple `_locales` directories: en, de, ja, ko, pl, ru, sk, outdated pt_BR. | partial | Stronger i18n than most references. | Keep user-facing stream detection terms localizable. |
@@ -921,7 +921,7 @@ The entire tool is one shell script with no imports, modules, or configuration f
 | P2 | Add sidecar subtitle download option | `src/core/export/*`, UI | Users may prefer sidecar files over muxed subtitles. |
 | P1 | Add segment fetch timeout setting | `src/core/download/segment-scheduler.ts`, settings, HLS/DASH runners | Implemented as `segmentTimeoutMs` with a 30s default, settings schema v5, scheduler enforcement, and controller-to-runner wiring when settings are supplied. |
 | P3 | Add relative URL resolution fixtures for nested paths | `src/core/hls/__tests__/parse-hls-manifest.test.ts` | Add test cases for relative variant URLs, relative segment URLs, and mixed absolute/relative within the same manifest. |
-| P3 | Add aria2 external tool profile | integrations/settings | Done: `src/integrations/aria2-client.ts` JSON-RPC client + `aria2Enabled/RpcUrl/Secret` settings; webhook + player-launcher dispatcher in `external-hub.ts`. |
+| P3 | Add aria2 external tool profile | integrations/settings | Done: `src/integrations/aria2-client.ts` JSON-RPC client + user-configurable `aria2Enabled/RpcUrl/Secret` settings; webhook + player-launcher dispatcher in `external-hub.ts`. |
 
 ### Things Not To Copy Literally / Risks
 
@@ -967,16 +967,16 @@ The entire tool is one shell script with no imports, modules, or configuration f
 | M3U8 parsing | EXTINF duration accumulation for transmux metadata | present | puemos fetches level durations | Keep; useful for MP4 init segment generation. |
 | M3U8 parsing | No master playlist / variant selection | present | All other references handle master playlists | No regression risk. |
 | Segment download | Concurrent XHR pool (6-10 threads) | present | live-stream uses 1-5 threads; puemos configurable | Keep settings-driven scheduler. |
-| Segment download | Per-segment visual status (pending/success/error icons) | present/partial | cat-catch has per-segment controls | Add per-segment status visualization in HLS job detail if absent. |
-| Segment download | Click-to-retry individual errored segments | present/partial | cat-catch has per-fragment retry | Add individual segment retry in HLS job detail if absent. |
-| Segment download | Auto-retry all errored segments on 2-second interval | partial | puemos retries with backoff | Consider periodic auto-retry with backoff and max-attempt limits. |
-| Segment download | Range download (start/end segment selection) | partial | cat-catch has richer segment selection | Add range/partial download as advanced HLS job option. |
-| Segment download | Force download of partially completed segments | partial | cat-catch has force-download existing buffer | Add "export partial" action for in-progress HLS jobs. |
+| Segment download | Per-segment visual status (pending/success/error icons) | present | cat-catch has per-segment controls | HLS scheduler progress now feeds queue job segment state and renders a colored `SegmentGrid`. |
+| Segment download | Click-to-retry individual errored segments | present | cat-catch has per-fragment retry | Segment grid click-to-retry is wired through runtime HLS segment retry actions. |
+| Segment download | Auto-retry all errored segments on 2-second interval | present | puemos retries with backoff | Unshackle uses explicit retry-all-failed controls plus scheduler backoff instead of fixed polling. |
+| Segment download | Range download (start/end segment selection) | present | cat-catch has richer segment selection | Queue segment range selection updates job selection and filters HLS scheduler work. |
+| Segment download | Force download of partially completed segments | present | cat-catch has force-download existing buffer | Queue exposes export-selected-range action that requeues a partial HLS export. |
 | Decryption | AES-128-CBC clear-key from manifest key URI | present | Same across puemos, live-stream, cat-catch | Keep clear-key-only boundary. |
 | Decryption | Default IV from segment index when manifest IV absent | present | puemos normalizes IV types | Keep; add tests for default-IV edge case. |
 | Transmux | TS-to-MP4 via mux.js | present | puemos uses ffmpeg.wasm; Unshackle uses native helper plus bounded mux.js fallback | Implemented as browser-only HLS MPEG-TS to MP4 fallback when native helper is absent/unavailable. |
 | Streaming download | StreamSaver.js for incremental disk writes via Service Worker | partial | live-stream uses File System Access directly | Prefer File System Access or native helper; StreamSaver remote MITM is a risk. |
-| Streaming download | WritableStream/TransformStream detection and fallback | partial | Modern API usage | Good pattern for feature-detecting streaming APIs. |
+| Streaming download | WritableStream/TransformStream detection and fallback | improved | Modern API usage | `detectStreamingWriteCapabilities()` is now used by the background direct-to-disk writer path for persisted output directory gating. |
 | Cross-domain | Self-injection for CORS bypass | not-scope | No safe equivalent in extension references | Do not port; extensions handle CORS via background fetch. |
 | Userscript | XHR monkeypatching to intercept M3U8 requests | review | cat-catch has deep-search monkeypatching | Do not port page-world XHR interception as default. |
 
@@ -986,10 +986,10 @@ The entire tool is one shell script with no imports, modules, or configuration f
 |---|---|
 | Product model | Completely different: m3u8-downloader is a web page tool for manual M3U8 URL pasting; Unshackle is an automated browser extension with passive detection, queue, history, and native export. Unshackle is dramatically broader. |
 | M3U8 parsing | Simplest M3U8 parser of all inspected references: no master playlists, no variants, no EXT-X-MAP, no byteranges, no discontinuities. Unshackle's parser is already far superior. |
-| Segment downloading | Simple concurrent XHR pool with per-segment retry and auto-retry interval. Unshackle already has stronger scheduling. Per-segment visual status and click-to-retry UX is a useful small detail. |
+| Segment downloading | Simple concurrent XHR pool with per-segment retry and auto-retry interval. Unshackle has stronger scheduling plus queue segment visualization, click-to-retry, retry-all-failed, and range/partial export controls. |
 | Transmux | mux.js TS-to-MP4 is a useful lightweight browser-side fallback concept when native FFmpeg helper is unavailable. Unshackle's native helper is already stronger. |
-| Streaming writes | StreamSaver.js solves memory exhaustion on large files but depends on a remote MITM page. Unshackle should solve this via File System Access or native helper. |
-| Range/partial download | Start/end segment range selector and force-download-existing are practical UX features worth considering. |
+| Streaming writes | StreamSaver.js solves memory exhaustion on large files but depends on a remote MITM page. Unshackle now detects safer File System Access/OPFS/WritableStream capability and keeps native helper as the strongest path. |
+| Range/partial download | Start/end segment range selector and force-download-existing are now present in the HLS queue segment controls and runtime actions. |
 | Architecture | Single-file Vue app with no modularity, no tests, no typed contracts. Unshackle is vastly stronger architecturally. |
 | License | No LICENSE file; own code effectively unlicensed. Bundled libraries have clear licenses (Apache-2.0, MIT). Do not copy code without license clarification. |
 
@@ -997,12 +997,12 @@ The entire tool is one shell script with no imports, modules, or configuration f
 
 | Priority | Item | Target landing zone | Notes |
 |---:|---|---|---|
-| P2 | Add per-segment status visualization in HLS job detail | `src/ui/queue/*`, HLS job detail component | Colored segment grid (gray/green/red) with click-to-retry. cat-catch also has per-fragment controls. |
-| P2 | Add force-export of partial HLS downloads | `src/core/download/*`, job actions | Download already-completed segments without waiting for full job. Useful for failed/stalled downloads. |
-| P2 | Add segment range selection for HLS jobs | HLS job creation UI, segment scheduler | Start/end segment picker. cat-catch has richer selection. Start with simple numeric range. |
-| P2 | Add periodic auto-retry for errored segments | `src/core/download/segment-scheduler.ts`, settings | Add configurable auto-retry with backoff and max-attempt limits, not fixed 2-second polling. |
+| P2 | Add per-segment status visualization in HLS job detail | `src/ui/queue/*`, HLS job detail component | Done: queue renders `SegmentGrid` from production HLS progress state. |
+| P2 | Add force-export of partial HLS downloads | `src/core/download/*`, job actions | Done: selected range export requeues HLS with `segmentRange`. |
+| P2 | Add segment range selection for HLS jobs | HLS job creation UI, segment scheduler | Done: grid range selection updates job selection and scheduler range filtering. |
+| P2 | Add periodic auto-retry for errored segments | `src/core/download/segment-scheduler.ts`, settings | Done as explicit retry-all-failed plus existing scheduler backoff, avoiding fixed interval polling. |
 | P3 | Consider mux.js as lightweight browser-only TS-to-MP4 fallback | `src/core/export/muxjs-transmuxer.ts`, `src/background/jobs/browser-hls-runner.ts`, settings/capabilities | Done: `mux.js` is installed and used only for browser-side HLS MPEG-TS to MP4 export fallback; `hls.js` remains preview/playback-only. |
-| P3 | Add streaming write feature detection | `src/core/storage/*`, `src/core/export/*` | Detect File System Access / OPFS capabilities with graceful degradation. |
+| P3 | Add streaming write feature detection | `src/core/storage/*`, `src/core/export/*` | Improved: detection now gates the direct-to-disk writer path; OPFS-specific streaming output remains future work. |
 
 ### Things Not To Copy Literally / Risks
 

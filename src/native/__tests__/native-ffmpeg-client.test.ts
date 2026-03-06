@@ -16,6 +16,7 @@ type NativeCallback = Parameters<NativeSendNativeMessage>[2];
 
 describe('native ffmpeg client', () => {
   afterEach(() => {
+    vi.useRealTimers();
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
     vi.doUnmock('../native-ffmpeg-contract');
@@ -65,6 +66,23 @@ describe('native ffmpeg client', () => {
       message: 'Native messaging API is unavailable.',
     });
     await expect(client.ping()).rejects.toBeInstanceOf(NativeFfmpegClientError);
+  });
+
+  test('ping times out when Chrome never calls the native callback', async () => {
+    vi.useFakeTimers();
+    const client = createNativeFfmpegClient({
+      timeoutMs: 100,
+      sendNativeMessage: vi.fn(),
+    });
+
+    const result = expect(client.ping()).rejects.toMatchObject({
+      code: 'NATIVE_TIMEOUT',
+      message: expect.stringContaining('did not respond'),
+    });
+
+    await vi.advanceTimersByTimeAsync(100);
+    await result;
+    vi.useRealTimers();
   });
 
   test('helper ERROR responses throw typed client errors', async () => {

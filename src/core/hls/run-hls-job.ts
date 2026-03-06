@@ -40,7 +40,29 @@ export interface RunHlsJobInput {
   maxConcurrentPerHost?: number;
   segmentTimeoutMs?: number;
   qualityPolicy?: DefaultQualityPolicy;
+  onPlan?: (plan: SegmentPlan) => void;
   onProgress?: SegmentProgressCallback;
+}
+
+function filterSegmentsForSelection(plan: SegmentPlan, job: DownloadJob): SegmentPlan {
+  const range = job.selection.segmentRange;
+
+  if (!range) {
+    return plan;
+  }
+
+  const start = Math.min(range.start, range.end);
+  const end = Math.max(range.start, range.end);
+  const selected = plan.segments.filter(
+    (segment) =>
+      (segment.index >= start && segment.index <= end) ||
+      (segment.initSegment && segment.index < start),
+  );
+
+  return {
+    ...plan,
+    segments: selected,
+  };
 }
 
 export async function runHlsJob(input: RunHlsJobInput): Promise<JobOutput> {
@@ -52,12 +74,14 @@ export async function runHlsJob(input: RunHlsJobInput): Promise<JobOutput> {
     throw new Error('Protected HLS manifests are blocked from the generic HLS runner.');
   }
 
-  const plan = planHlsSegments(input.manifest, {
+  const fullPlan = planHlsSegments(input.manifest, {
     jobId: input.job.id,
     selection: input.job.selection,
     qualityPolicy: input.qualityPolicy,
   });
+  const plan = filterSegmentsForSelection(fullPlan, input.job);
   const liveTelemetry = input.manifest.isLive ? createLiveHlsTelemetry() : undefined;
+  input.onPlan?.(plan);
 
   if (liveTelemetry) {
     const lastSequence = Math.max(

@@ -15,6 +15,7 @@ import {
   type ParsedHlsManifest,
 } from '@/src/core/hls/parse-hls-manifest';
 import { runHlsJob } from '@/src/core/hls/run-hls-job';
+import type { SegmentProgressCallback } from '@/src/core/download/progress-events';
 import { selectHlsVariant } from '@/src/core/hls/select-hls-variant';
 import {
   transmuxTsToMp4,
@@ -36,6 +37,7 @@ export interface RunBrowserHlsExportJobInput {
   job: DownloadJob;
   manifest: ParsedHlsManifest;
   download?: ChromeDownload;
+  writeFile?: (filename: string, data: Uint8Array) => Promise<void>;
   fetchBytes?: FetchBrowserBytes;
   fetchText?: FetchBrowserText;
   createObjectUrl?: (blob: Blob) => string;
@@ -45,6 +47,8 @@ export interface RunBrowserHlsExportJobInput {
   maxConcurrentPerHost?: number;
   segmentTimeoutMs?: number;
   qualityPolicy?: DefaultQualityPolicy;
+  onPlan?: Parameters<typeof runHlsJob>[0]['onPlan'];
+  onProgress?: SegmentProgressCallback;
   browserTransmuxWithMuxJs?: boolean;
   browserTransmuxMaxBytes?: number;
   transmuxTsToMp4?: (input: { segments: Uint8Array[] }) => Promise<MuxjsTransmuxResult>;
@@ -152,6 +156,8 @@ export async function runBrowserHlsExportJob(
     maxConcurrentPerHost: input.maxConcurrentPerHost,
     segmentTimeoutMs: input.segmentTimeoutMs,
     qualityPolicy: input.qualityPolicy,
+    onPlan: input.onPlan,
+    onProgress: input.onProgress,
     signal: input.signal,
     fetchSegment: (segment, _plan, request) =>
       fetchBytes(segment.url, requestInitFromScheduler(request)),
@@ -173,6 +179,7 @@ export async function runBrowserHlsExportJob(
             }),
             mimeType: result.mimeType,
             saveAs: input.job.selection.saveAs,
+            writeFile: input.writeFile,
             createObjectUrl: input.createObjectUrl,
             revokeObjectUrl: input.revokeObjectUrl,
             download: input.download,
@@ -192,6 +199,7 @@ export async function runBrowserHlsExportJob(
             }),
             mimeType,
             saveAs: input.job.selection.saveAs,
+            writeFile: input.writeFile,
             createObjectUrl: input.createObjectUrl,
             revokeObjectUrl: input.revokeObjectUrl,
             download: input.download,
@@ -212,6 +220,7 @@ export async function runBrowserHlsExportJob(
         }),
         mimeType: 'video/mp2t',
         saveAs: input.job.selection.saveAs,
+        writeFile: input.writeFile,
         createObjectUrl: input.createObjectUrl,
         revokeObjectUrl: input.revokeObjectUrl,
         download: input.download,

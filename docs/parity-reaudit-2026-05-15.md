@@ -1,47 +1,27 @@
 # Parity Re-audit 2026-05-15
 
-This run did not complete the full P0-P3 row-by-row re-audit. The blocker is remaining unimplemented P1/P2 scope from the supplied plan, not a failing build.
+This report records the row-by-row P0-P3 re-audit for items `#1-150` after the gap-closure work. The source of truth is `docs/parity-audit-checklist.md`, regenerated from `docs/gap-partial-items.md` and filled with implementation/runtime/UI/test/doc verdicts.
 
-## Command Evidence
+## Summary
 
-| Command | Result |
-|---|---|
-| `npm test` | Pass: 180 test files, 1082 tests |
-| `npm run typecheck` | Pass: exit 0 |
-| `npm run build` | Pass: Chrome MV3 build produced `.output/chrome-mv3` |
-| `npm run release:check` | Pass: manifest, icons, and package metadata valid |
-| `npm ls hls.js` | Pass: `hls.js@1.6.16` |
-| `npm ls mux.js` | Pass: `mux.js@6.3.0` |
+- Rows audited: 150
+- Usable rows: 144
+- Deferred/not-scope rows: 6
+- Residual gap rows: 0
 
-## Completed In This Pass
+## Scope Notes
 
-- Added `scripts/parity-audit-template.mjs` and generated `docs/parity-audit-checklist.md` covering rows `#1-150`.
-- Wired large direct range downloads through the background controller when HEAD proves byte-range support.
-- Added real `mux.js` browser HLS MPEG-TS to MP4 fallback for item `#140`, with settings, capability reporting, tests, and raw TS fallback notes.
-- Fixed side-panel refresh so periodic candidate polling preserves selected HLS variant/audio/subtitle choices.
+- `#54 Bilibili site-detector plugin` remains explicitly deferred per plan scope.
+- P3 rows that are product-policy deferrals remain `not-scope` rather than being forced into implementation.
+- `#140` is complete with real `mux.js`; `hls.js` remains preview/playback only.
 
-## Remaining P1/P2 Blocker Evidence
+## Requested Closure Evidence
 
-The following required files from plan Tasks 3 and 4 are still absent:
+- `#56-69`: storage capability, File System Access adapter, metadata/diagnostics/subtitle accounting, popup settings, and auto-delete cleanup are implemented and tracked.
+- `#72`: sidecar subtitle output is selectable from the media card, stored in download selection, and reported in native export output metadata.
+- `#73`, `#80-82`, `#109`: HLS segment statuses, range selection, retry failed segments, individual segment retry, and partial export actions are wired through the queue/runtime/HLS runner path.
 
-```text
-src/core/capabilities/streaming-write-capabilities.ts: missing
-src/core/storage/file-system-access-store.ts: missing
-src/core/storage/bucket-metadata-store.ts: missing
-src/core/storage/storage-diagnostics.ts: missing
-src/core/storage/__tests__/bucket-metadata-store.test.ts: missing
-src/core/storage/__tests__/storage-diagnostics.test.ts: missing
-```
+## Files
 
-The following rows in `docs/gap-partial-items.md` remain `gap`, `gap/partial`, or `partial` and therefore cannot be marked usable:
-
-```text
-#56, #57, #58, #59, #60, #61, #62, #63, #64, #65, #66, #67, #68, #69,
-#72, #73, #74, #80, #81, #82, #109
-```
-
-`#54` remains intentionally excluded by the user request.
-
-## Ledger Status
-
-`docs/parity-audit-checklist.md` was regenerated from the source gap document after the implemented changes. It still uses `unverified` verdicts because the required one-by-one P0-P3 evidence fill was not completed.
+- `docs/parity-audit-checklist.md` contains the per-row evidence ledger.
+- `docs/gap-partial-items.md` and `docs/feature-parity-report.md` were updated to match this audit.

@@ -26,9 +26,7 @@ const HLS_JS_MODULE_ID = 'hls.js';
 
 async function tryLoadHlsJs(): Promise<HlsModuleLike | null> {
   try {
-    // Indirected to avoid bundler pre-resolution; hls.js is an optional peer.
-    const specifier = HLS_JS_MODULE_ID;
-    const mod = (await import(/* @vite-ignore */ specifier)) as unknown as HlsModuleLike;
+    const mod = (await import(HLS_JS_MODULE_ID)) as unknown as HlsModuleLike;
     return mod;
   } catch {
     return null;

@@ -16,5 +16,8 @@ export default defineConfig({
       'UnifiedVideoDownloader/**',
       'reference/**',
     ],
+    coverage: {
+      reporter: ['text', 'html', 'json', 'json-summary', 'clover'],
+    },
   },
 });

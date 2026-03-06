@@ -1,5 +1,6 @@
 import { useMemo } from 'react';
 import { OverflowMenu, type MenuAction } from '@/src/ui/shared/OverflowMenu';
+import { SegmentGrid, type SegmentCell, type SegmentRange } from '@/src/ui/shared/SegmentGrid';
 
 export type QueueViewStatus = 'pending' | 'running' | 'completed' | 'failed' | 'paused';
 
@@ -11,8 +12,11 @@ export interface QueueViewItem {
   statusText?: string;
   error?: string;
   outputLabel?: string;
+  outputUrl?: string;
   outputMimeType?: string;
   notes?: string[];
+  segments?: SegmentCell[];
+  selectedSegmentRange?: SegmentRange;
 }
 
 export type QueueAction =
@@ -25,11 +29,15 @@ export type QueueAction =
   | 'remove'
   | 'copy-url'
   | 'copy-filename'
-  | 'copy-command';
+  | 'copy-command'
+  | 'retry-failed-segments'
+  | 'export-partial';
 
 interface QueueItemProps {
   item: QueueViewItem;
   onAction: (action: QueueAction, id: string) => void;
+  onSegmentRetry?: (id: string, segmentIndex: number) => void;
+  onSegmentRangeChange?: (id: string, range: SegmentRange) => void;
   onCopyCommand?: (profileId: string, id: string) => void;
   commandProfileIds?: string[];
 }
@@ -51,6 +59,8 @@ const DEFAULT_PROFILE_IDS = ['yt-dlp', 'ffmpeg', 'streamlink', 'hlsdl', 'n_m3u8d
 export function QueueItem({
   item,
   onAction,
+  onSegmentRetry,
+  onSegmentRangeChange,
   onCopyCommand,
   commandProfileIds,
 }: QueueItemProps) {
@@ -130,6 +140,17 @@ export function QueueItem({
             />
           </div>
         ) : null}
+        {item.segments?.length ? (
+          <div className="queue-item__segments">
+            <SegmentGrid
+              segments={item.segments}
+              selectedRange={item.selectedSegmentRange}
+              aria-label={`${item.title} segments`}
+              onSegmentClick={(index) => onSegmentRetry?.(item.id, index)}
+              onRangeChange={(range) => onSegmentRangeChange?.(item.id, range)}
+            />
+          </div>
+        ) : null}
       </div>
       <div className="queue-item__actions">
         {item.status === 'running' || item.status === 'pending' ? (
@@ -150,6 +171,26 @@ export function QueueItem({
             onClick={() => onAction('retry', item.id)}
           >
             Retry
+          </button>
+        ) : null}
+        {item.segments?.some((segment) => segment.status === 'failed') ? (
+          <button
+            type="button"
+            className="queue-item__button"
+            aria-label={`Retry failed segments for ${item.title}`}
+            onClick={() => onAction('retry-failed-segments', item.id)}
+          >
+            Retry failed segments
+          </button>
+        ) : null}
+        {item.selectedSegmentRange ? (
+          <button
+            type="button"
+            className="queue-item__button"
+            aria-label={`Export selected range for ${item.title}`}
+            onClick={() => onAction('export-partial', item.id)}
+          >
+            Export selected range
           </button>
         ) : null}
         {item.status === 'completed' ? (

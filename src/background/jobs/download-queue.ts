@@ -68,6 +68,9 @@ export function createDownloadQueue(options: DownloadQueueOptions): DownloadQueu
 
     try {
       const output = await options.executeJob(runningJob, candidate);
+      if (options.jobStore.get(job.id)?.phase === 'cancelled') {
+        return;
+      }
       options.jobStore.update(job.id, {
         phase: 'completed',
         progressPct: 100,
@@ -75,6 +78,9 @@ export function createDownloadQueue(options: DownloadQueueOptions): DownloadQueu
         bytesDownloaded: output.sizeBytes ?? runningJob.bytesDownloaded,
       });
     } catch (error) {
+      if (options.jobStore.get(job.id)?.phase === 'cancelled') {
+        return;
+      }
       options.jobStore.update(job.id, {
         phase: 'failed',
         failure: failureFromError(error),

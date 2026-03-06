@@ -9,6 +9,9 @@ thumbnail or hover-preview assets require it.
 - Windows with Chrome native messaging support.
 - Node.js 20 or newer.
 - `ffmpeg` and `ffprobe` available on `PATH`.
+- A C# compiler (`csc.exe`) from .NET Framework Developer Pack or Visual Studio
+  Build Tools. The Windows installer compiles a small native `.exe` launcher
+  because Chrome native messaging starts a host binary, not a batch wrapper.
 
 For the beta/dev PowerShell setup strategy, dependency prompts, repair behavior,
 and deferred signed-installer scope, see
@@ -66,6 +69,12 @@ ID at:
 %LOCALAPPDATA%\VideoDownloaderUnshackle\native-host\com.unshackle.ffmpeg.json
 ```
 
+Its `path` points to:
+
+```text
+%LOCALAPPDATA%\VideoDownloaderUnshackle\native-host\unshackle-ffmpeg-helper.exe
+```
+
 ## Uninstall
 
 Remove only the Chrome registry key:
@@ -85,6 +94,7 @@ powershell -ExecutionPolicy Bypass -File .\native\ffmpeg-helper\scripts\uninstal
 `NATIVE_UNAVAILABLE` means Chrome could not connect to `com.unshackle.ffmpeg`.
 Check that the install script was run with the current extension ID, then restart
 Chrome. Also confirm the HKCU registry key points to the generated manifest path.
+The manifest `path` should end in `unshackle-ffmpeg-helper.exe`.
 
 `FFMPEG_NOT_FOUND` means the native helper started, but `ffmpeg` or `ffprobe`
 was not available on `PATH`. Install FFmpeg, open a new terminal, confirm

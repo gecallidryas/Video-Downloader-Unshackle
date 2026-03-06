@@ -1,6 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { createCaptureRuleEngine } from '@/src/core/capture-rules/capture-rule-engine';
+import {
+  createFileSystemAccessStore,
+  persistOutputDirectoryHandle,
+} from '@/src/core/storage/file-system-access-store';
 import { requestNativeMessagingPermission } from '@/src/native/native-permissions';
 import {
   checkNativeHelperReadiness,
@@ -12,7 +16,12 @@ import {
   hydrateSettingsStore,
   useSettingsStore,
 } from '@/src/state/useSettingsStore';
+import { createRuntimeClient, type RuntimeClient } from '@/src/lib/runtime/client';
 import { NativeHelperOnboarding } from '@/src/ui/onboarding/NativeHelperOnboarding';
+import { LanguagePicker } from '@/src/ui/shared/LanguagePicker';
+import type { RegexRule } from '@/src/core/capture-rules/regex-classifier';
+import type { ExternalPlayerProfile } from '@/src/background/settings/settings-store';
+import type { DownloadJob } from '@/video_downloader_types_skeleton';
 import './PopupApp.css';
 
 function linesToList(value: string): string[] {
@@ -113,6 +122,8 @@ function SettingsContent() {
   const setDefaultOutputFormat = useSettingsStore((s) => s.setDefaultOutputFormat);
   const preferredAudioLanguage = useSettingsStore((s) => s.preferredAudioLanguage);
   const setPreferredAudioLanguage = useSettingsStore((s) => s.setPreferredAudioLanguage);
+  const customCommandTemplate = useSettingsStore((s) => s.customCommandTemplate);
+  const setCustomCommandTemplate = useSettingsStore((s) => s.setCustomCommandTemplate);
   const namingTemplate = useSettingsStore((s) => s.namingTemplate);
   const setNamingTemplate = useSettingsStore((s) => s.setNamingTemplate);
   const previewMode = useSettingsStore((s) => s.previewMode);
@@ -131,6 +142,12 @@ function SettingsContent() {
   const setBrowserTransmuxWithMuxJs = useSettingsStore((s) => s.setBrowserTransmuxWithMuxJs);
   const browserTransmuxMaxBytes = useSettingsStore((s) => s.browserTransmuxMaxBytes);
   const setBrowserTransmuxMaxBytes = useSettingsStore((s) => s.setBrowserTransmuxMaxBytes);
+  const useDirectToDisk = useSettingsStore((s) => s.useDirectToDisk);
+  const setUseDirectToDisk = useSettingsStore((s) => s.setUseDirectToDisk);
+  const rememberOutputFolder = useSettingsStore((s) => s.rememberOutputFolder);
+  const setRememberOutputFolder = useSettingsStore((s) => s.setRememberOutputFolder);
+  const autoDeleteAfterSave = useSettingsStore((s) => s.autoDeleteAfterSave);
+  const setAutoDeleteAfterSave = useSettingsStore((s) => s.setAutoDeleteAfterSave);
   const previousSessionLimit = useSettingsStore((s) => s.previousSessionLimit);
   const setPreviousSessionLimit = useSettingsStore((s) => s.setPreviousSessionLimit);
   const captureRuleCustomExtensions = useSettingsStore((s) => s.captureRuleCustomExtensions);
@@ -138,8 +155,22 @@ function SettingsContent() {
   const captureRuleUrlBlacklist = useSettingsStore((s) => s.captureRuleUrlBlacklist);
   const captureRuleMinSizeBytes = useSettingsStore((s) => s.captureRuleMinSizeBytes);
   const captureRuleSizePredicate = useSettingsStore((s) => s.captureRuleSizePredicate);
+  const captureRuleRegexRules = useSettingsStore((s) => s.captureRuleRegexRules);
   const setCaptureRules = useSettingsStore((s) => s.setCaptureRules);
   const resetCaptureRules = useSettingsStore((s) => s.resetCaptureRules);
+  const autoDownloadEnabled = useSettingsStore((s) => s.autoDownloadEnabled);
+  const autoDownloadMinSize = useSettingsStore((s) => s.autoDownloadMinSize);
+  const autoDownloadBlacklist = useSettingsStore((s) => s.autoDownloadBlacklist);
+  const setAutoDownloadSettings = useSettingsStore((s) => s.setAutoDownloadSettings);
+  const aria2Enabled = useSettingsStore((s) => s.aria2Enabled);
+  const aria2RpcUrl = useSettingsStore((s) => s.aria2RpcUrl);
+  const aria2Secret = useSettingsStore((s) => s.aria2Secret);
+  const setAria2Settings = useSettingsStore((s) => s.setAria2Settings);
+  const webhookEnabled = useSettingsStore((s) => s.webhookEnabled);
+  const webhookUrl = useSettingsStore((s) => s.webhookUrl);
+  const setWebhookSettings = useSettingsStore((s) => s.setWebhookSettings);
+  const externalPlayerProfiles = useSettingsStore((s) => s.externalPlayerProfiles);
+  const setExternalPlayerProfiles = useSettingsStore((s) => s.setExternalPlayerProfiles);
   const [captureRulesJson, setCaptureRulesJson] = useState('');
   const [captureRulesError, setCaptureRulesError] = useState<string | null>(null);
   const [customExtensionsDraft, setCustomExtensionsDraft] = useState(
@@ -153,6 +184,15 @@ function SettingsContent() {
   );
   const [sizePredicateDraft, setSizePredicateDraft] = useState(
     captureRuleSizePredicate,
+  );
+  const [regexRulesDraft, setRegexRulesDraft] = useState(
+    JSON.stringify(captureRuleRegexRules, null, 2),
+  );
+  const [autoDownloadBlacklistDraft, setAutoDownloadBlacklistDraft] = useState(
+    listToLines(autoDownloadBlacklist),
+  );
+  const [externalPlayerProfilesDraft, setExternalPlayerProfilesDraft] = useState(
+    JSON.stringify(externalPlayerProfiles, null, 2),
   );
 
   async function refreshNativeHelperDiagnostic() {
@@ -208,6 +248,17 @@ function SettingsContent() {
     window.open(PROJECT_SOURCE_URL, '_blank', 'noopener,noreferrer');
   }
 
+  async function chooseOutputFolder() {
+    const store = createFileSystemAccessStore({
+      persistDirectoryHandle: persistOutputDirectoryHandle,
+    });
+
+    await store.chooseDirectory({
+      userGesture: true,
+      remember: rememberOutputFolder,
+    });
+  }
+
   function dismissOnboarding() {
     setNativeHelperOnboardingDismissed(true);
   }
@@ -233,6 +284,7 @@ function SettingsContent() {
     urlBlacklist?: string[];
     minSizeBytes?: number;
     sizePredicate?: string;
+    regexRules?: RegexRule[];
   }) {
     const merged = {
       customExtensions: next.customExtensions ?? captureRuleCustomExtensions,
@@ -240,6 +292,7 @@ function SettingsContent() {
       blacklist: next.urlBlacklist ?? captureRuleUrlBlacklist,
       minSizeBytes: next.minSizeBytes ?? captureRuleMinSizeBytes,
       sizePredicate: next.sizePredicate ?? captureRuleSizePredicate,
+      regexRules: next.regexRules ?? captureRuleRegexRules,
     };
 
     try {
@@ -260,6 +313,7 @@ function SettingsContent() {
           urlBlacklist: captureRuleUrlBlacklist,
           minSizeBytes: captureRuleMinSizeBytes,
           sizePredicate: captureRuleSizePredicate,
+          regexRules: captureRuleRegexRules,
         },
         null,
         2,
@@ -276,6 +330,7 @@ function SettingsContent() {
         urlBlacklist?: unknown;
         minSizeBytes?: unknown;
         sizePredicate?: unknown;
+        regexRules?: unknown;
       };
       const rules = {
         customExtensions: Array.isArray(parsed.customExtensions)
@@ -291,6 +346,14 @@ function SettingsContent() {
           typeof parsed.minSizeBytes === 'number' ? parsed.minSizeBytes : 0,
         sizePredicate:
           typeof parsed.sizePredicate === 'string' ? parsed.sizePredicate : '',
+        regexRules: Array.isArray(parsed.regexRules)
+          ? parsed.regexRules.filter((value): value is RegexRule =>
+              typeof value === 'object' &&
+              value !== null &&
+              typeof (value as Partial<RegexRule>).pattern === 'string' &&
+              typeof (value as Partial<RegexRule>).category === 'string',
+            )
+          : [],
       };
 
       createCaptureRuleEngine({
@@ -299,12 +362,14 @@ function SettingsContent() {
         blacklist: rules.urlBlacklist,
         minSizeBytes: rules.minSizeBytes,
         sizePredicate: rules.sizePredicate,
+        regexRules: rules.regexRules,
       });
       setCaptureRules(rules);
       setCustomExtensionsDraft(listToLines(rules.customExtensions));
       setCustomContentTypesDraft(listToLines(rules.customContentTypes));
       setUrlBlacklistDraft(listToLines(rules.urlBlacklist));
       setSizePredicateDraft(rules.sizePredicate);
+      setRegexRulesDraft(JSON.stringify(rules.regexRules, null, 2));
       setCaptureRulesError(null);
     } catch (error) {
       setCaptureRulesError(error instanceof Error ? error.message : 'Invalid capture rules JSON');
@@ -463,18 +528,23 @@ function SettingsContent() {
 
       <label className="popup__row">
         <span className="popup__label">Preferred audio language</span>
-        <select
-          aria-label="Preferred audio language"
+        <LanguagePicker
+          id="preferred-audio-language"
+          ariaLabel="Preferred audio language"
           value={preferredAudioLanguage}
-          onChange={(e) => setPreferredAudioLanguage(e.target.value)}
-          className="popup__select"
-        >
-          <option value="en">English</option>
-          <option value="es">Spanish</option>
-          <option value="fr">French</option>
-          <option value="de">German</option>
-          <option value="ja">Japanese</option>
-        </select>
+          onChange={setPreferredAudioLanguage}
+        />
+      </label>
+
+      <label className="popup__row popup__row--stack">
+        <span className="popup__label">Custom command template</span>
+        <textarea
+          aria-label="Custom command template"
+          value={customCommandTemplate}
+          onChange={(event) => setCustomCommandTemplate(event.target.value)}
+          className="popup__textarea"
+          rows={2}
+        />
       </label>
 
       <label className="popup__row popup__row--stack">
@@ -579,6 +649,65 @@ function SettingsContent() {
           }
           className="popup__input"
           disabled={!enableBrowserFallbacks || !browserTransmuxWithMuxJs}
+        />
+      </label>
+
+      <label className="popup__row popup__row--with-help">
+        <span>
+          <span className="popup__label">Use direct-to-disk when available</span>
+          <span className="popup__help">
+            Streams supported exports into a user-selected folder instead of buffering in extension storage.
+          </span>
+        </span>
+        <input
+          type="checkbox"
+          role="checkbox"
+          aria-label="Use direct-to-disk when available"
+          checked={useDirectToDisk}
+          onChange={(event) => setUseDirectToDisk(event.target.checked)}
+          className="popup__toggle"
+        />
+      </label>
+
+      <label className="popup__row popup__row--with-help">
+        <span>
+          <span className="popup__label">Remember output folder</span>
+          <span className="popup__help">
+            Reuses the granted File System Access folder when the browser allows persisted handles.
+          </span>
+        </span>
+        <input
+          type="checkbox"
+          role="checkbox"
+          aria-label="Remember output folder"
+          checked={rememberOutputFolder}
+          onChange={(event) => setRememberOutputFolder(event.target.checked)}
+          className="popup__toggle"
+        />
+      </label>
+
+      <button
+        type="button"
+        className="popup__button"
+        onClick={() => void chooseOutputFolder()}
+      >
+        Choose output folder
+      </button>
+
+      <label className="popup__row popup__row--with-help">
+        <span>
+          <span className="popup__label">Auto-delete fragments after save</span>
+          <span className="popup__help">
+            Removes temporary segment, subtitle, and metadata buckets after a completed download is saved.
+          </span>
+        </span>
+        <input
+          type="checkbox"
+          role="checkbox"
+          aria-label="Auto-delete fragments after save"
+          checked={autoDeleteAfterSave}
+          onChange={(event) => setAutoDeleteAfterSave(event.target.checked)}
+          className="popup__toggle"
         />
       </label>
 
@@ -689,6 +818,24 @@ function SettingsContent() {
           />
         </label>
         <label className="popup__row popup__row--stack">
+          <span className="popup__label">Regex classification rules</span>
+          <textarea
+            aria-label="Regex classification rules"
+            value={regexRulesDraft}
+            onChange={(event) => {
+              setRegexRulesDraft(event.target.value);
+              try {
+                const parsed = JSON.parse(event.target.value) as RegexRule[];
+                updateCaptureRules({ regexRules: parsed });
+              } catch (error) {
+                setCaptureRulesError(error instanceof Error ? error.message : 'Invalid regex rules JSON');
+              }
+            }}
+            className="popup__textarea"
+            rows={3}
+          />
+        </label>
+        <label className="popup__row popup__row--stack">
           <span className="popup__label">Capture rules JSON</span>
           <textarea
             aria-label="Capture rules JSON"
@@ -716,6 +863,7 @@ function SettingsContent() {
               setCustomContentTypesDraft('');
               setUrlBlacklistDraft('');
               setSizePredicateDraft('');
+              setRegexRulesDraft('[]');
               setCaptureRulesError(null);
             }}
             className="capture-rules__button"
@@ -723,6 +871,113 @@ function SettingsContent() {
             Reset capture rules
           </button>
         </div>
+      </section>
+
+      <section className="capture-rules">
+        <span className="popup__label">Automation and integrations</span>
+        <label className="popup__row">
+          <span className="popup__label">Auto-download safe direct media</span>
+          <input
+            aria-label="Auto-download safe direct media"
+            type="checkbox"
+            role="checkbox"
+            checked={autoDownloadEnabled}
+            onChange={(event) => setAutoDownloadSettings({ enabled: event.target.checked })}
+            className="popup__toggle"
+          />
+        </label>
+        <label className="popup__row popup__row--stack">
+          <span className="popup__label">Auto-download minimum size</span>
+          <input
+            aria-label="Auto-download minimum size"
+            type="number"
+            min={0}
+            value={autoDownloadMinSize}
+            onChange={(event) => setAutoDownloadSettings({ minSize: Number(event.target.value) })}
+            className="popup__input"
+          />
+        </label>
+        <label className="popup__row popup__row--stack">
+          <span className="popup__label">Auto-download blacklist</span>
+          <textarea
+            aria-label="Auto-download blacklist"
+            value={autoDownloadBlacklistDraft}
+            onChange={(event) => {
+              setAutoDownloadBlacklistDraft(event.target.value);
+              setAutoDownloadSettings({ blacklist: linesToList(event.target.value) });
+            }}
+            className="popup__textarea"
+            rows={2}
+          />
+        </label>
+        <label className="popup__row">
+          <span className="popup__label">Enable Aria2</span>
+          <input
+            aria-label="Enable Aria2"
+            type="checkbox"
+            role="checkbox"
+            checked={aria2Enabled}
+            onChange={(event) => setAria2Settings({ enabled: event.target.checked })}
+            className="popup__toggle"
+          />
+        </label>
+        <label className="popup__row popup__row--stack">
+          <span className="popup__label">Aria2 RPC URL</span>
+          <input
+            aria-label="Aria2 RPC URL"
+            value={aria2RpcUrl}
+            onChange={(event) => setAria2Settings({ rpcUrl: event.target.value })}
+            className="popup__input"
+          />
+        </label>
+        <label className="popup__row popup__row--stack">
+          <span className="popup__label">Aria2 secret</span>
+          <input
+            aria-label="Aria2 secret"
+            type="password"
+            value={aria2Secret}
+            onChange={(event) => setAria2Settings({ secret: event.target.value })}
+            className="popup__input"
+          />
+        </label>
+        <label className="popup__row">
+          <span className="popup__label">Enable webhook</span>
+          <input
+            aria-label="Enable webhook"
+            type="checkbox"
+            role="checkbox"
+            checked={webhookEnabled}
+            onChange={(event) => setWebhookSettings({ enabled: event.target.checked })}
+            className="popup__toggle"
+          />
+        </label>
+        <label className="popup__row popup__row--stack">
+          <span className="popup__label">Webhook URL</span>
+          <input
+            aria-label="Webhook URL"
+            value={webhookUrl}
+            onChange={(event) => setWebhookSettings({ url: event.target.value })}
+            className="popup__input"
+          />
+        </label>
+        <label className="popup__row popup__row--stack">
+          <span className="popup__label">External player profiles JSON</span>
+          <textarea
+            aria-label="External player profiles JSON"
+            value={externalPlayerProfilesDraft}
+            onChange={(event) => {
+              setExternalPlayerProfilesDraft(event.target.value);
+              try {
+                const parsed = JSON.parse(event.target.value) as ExternalPlayerProfile[];
+                setExternalPlayerProfiles(parsed);
+              } catch {
+                // Keep the draft editable until valid JSON is supplied.
+              }
+            }}
+            className="popup__textarea"
+            rows={3}
+          />
+        </label>
       </section>
     </>
   );
@@ -743,6 +998,8 @@ export interface PopupJob {
 interface PopupAppProps {
   embedded?: boolean;
   jobs?: PopupJob[];
+  runtimeClient?: RuntimeClient;
+  loadRuntimeJobs?: boolean;
 }
 
 function KeyboardHintFooter(): ReactNode {
@@ -835,11 +1092,59 @@ function JobDetail({ job, onBack }: { job: PopupJob; onBack: () => void }) {
   );
 }
 
-export function PopupApp({ embedded = false, jobs }: PopupAppProps) {
-  const [selectedJobId, setSelectedJobId] = useState<string | null>(null);
-  const selectedJob = jobs?.find((job) => job.id === selectedJobId) ?? null;
+function toPopupJob(job: DownloadJob): PopupJob {
+  return {
+    id: job.id,
+    title: job.output?.fileName ?? job.candidateId,
+    status:
+      job.phase === 'completed'
+        ? 'completed'
+        : job.phase === 'failed' || job.phase === 'cancelled'
+          ? 'failed'
+          : job.phase === 'paused'
+            ? 'paused'
+            : job.phase === 'queued'
+              ? 'pending'
+              : 'running',
+    progressPct: job.progressPct,
+    segmentsDone: job.segmentStatuses?.filter((segment) => segment.status === 'done').length,
+    segmentsFailed: job.segmentStatuses?.filter((segment) => segment.status === 'failed').length,
+    error: job.failure?.message,
+  };
+}
 
-  if (jobs !== undefined) {
+export function PopupApp({
+  embedded = false,
+  jobs,
+  runtimeClient,
+  loadRuntimeJobs = false,
+}: PopupAppProps) {
+  const [selectedJobId, setSelectedJobId] = useState<string | null>(null);
+  const [runtimeJobs, setRuntimeJobs] = useState<PopupJob[] | null>(null);
+  const activeJobs = jobs ?? (loadRuntimeJobs ? runtimeJobs ?? [] : undefined);
+  const selectedJob = activeJobs?.find((job) => job.id === selectedJobId) ?? null;
+
+  useEffect(() => {
+    if (!loadRuntimeJobs || embedded || jobs !== undefined) {
+      return;
+    }
+    const client = runtimeClient ?? createRuntimeClient();
+    let cancelled = false;
+    void client.getJobs().then((downloadJobs) => {
+      if (!cancelled) {
+        setRuntimeJobs(downloadJobs.map(toPopupJob));
+      }
+    }).catch(() => {
+      if (!cancelled) {
+        setRuntimeJobs([]);
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [embedded, jobs, loadRuntimeJobs, runtimeClient]);
+
+  if (activeJobs !== undefined) {
     return (
       <div className="popup">
         <header className="popup__header">
@@ -849,7 +1154,7 @@ export function PopupApp({ embedded = false, jobs }: PopupAppProps) {
           {selectedJob ? (
             <JobDetail job={selectedJob} onBack={() => setSelectedJobId(null)} />
           ) : (
-            <JobsList jobs={jobs} onSelect={setSelectedJobId} />
+            <JobsList jobs={activeJobs} onSelect={setSelectedJobId} />
           )}
         </div>
         <footer className="popup__footer">

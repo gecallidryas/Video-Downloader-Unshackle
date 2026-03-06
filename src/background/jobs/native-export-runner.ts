@@ -84,7 +84,9 @@ function outputKindFor(
   }
 
   return resolveOutputContainer({
-    hasSubtitles: selectedSubtitleTracks(candidate, job).length > 0,
+    hasSubtitles:
+      selectedSubtitleTracks(candidate, job).length > 0 &&
+      job.selection.subtitleOutput !== 'sidecar',
   }) as NativeFfmpegOutputKind;
 }
 
@@ -141,15 +143,16 @@ async function preStoreSubtitles(input: {
   outputName: string;
   subtitleStore?: SubtitleStore;
   fetchText?: (url: string, init?: RequestInit) => Promise<string>;
-}): Promise<void> {
+}): Promise<NonNullable<JobOutput['sidecarOutputs']>> {
   if (!input.subtitleStore) {
-    return;
+    return [];
   }
 
   const fetchText = input.fetchText ?? defaultFetchText;
   const tracks = selectedSubtitleTracks(input.candidate, input.job).filter(
     (track) => Boolean(track.url),
   );
+  const sidecarOutputs: NonNullable<JobOutput['sidecarOutputs']> = [];
 
   await Promise.all(
     tracks.map(async (track) => {
@@ -160,21 +163,38 @@ async function preStoreSubtitles(input: {
       }
 
       const format = subtitleFormatFor(track);
+      const content = await fetchText(url, { credentials: 'include' });
+      const fileName = deriveSubtitleFilename({
+        videoFilename: input.outputName,
+        language: track.language,
+        trackName: track.label,
+        format,
+      });
       await input.subtitleStore?.put({
         jobId: input.job.id,
         trackId: track.id,
         ...(track.language ? { language: track.language } : {}),
         format,
-        fileName: deriveSubtitleFilename({
-          videoFilename: input.outputName,
-          language: track.language,
-          trackName: track.label,
-          format,
-        }),
-        content: await fetchText(url, { credentials: 'include' }),
+        fileName,
+        content,
       });
+      if (
+        input.job.selection.subtitleOutput === 'sidecar' ||
+        input.job.selection.subtitleOutput === 'both'
+      ) {
+        sidecarOutputs.push({
+          fileName,
+          mimeType: format === 'srt' ? 'application/x-subrip' : 'text/vtt',
+          sizeBytes:
+            typeof TextEncoder !== 'undefined'
+              ? new TextEncoder().encode(content).byteLength
+              : content.length,
+        });
+      }
     }),
   );
+
+  return sidecarOutputs;
 }
 
 export async function runNativeExportJob({
@@ -193,7 +213,7 @@ export async function runNativeExportJob({
 
   const outputKind = outputKindFor(candidate, job);
   const outputName = outputNameFor(candidate, outputKind);
-  await preStoreSubtitles({
+  const sidecarOutputs = await preStoreSubtitles({
     candidate,
     job,
     outputName,
@@ -216,5 +236,6 @@ export async function runNativeExportJob({
     mimeType: result.mimeType ?? candidate.mimeType ?? 'application/octet-stream',
     outputUrl: result.outputPath,
     ...(result.sizeBytes !== undefined ? { sizeBytes: result.sizeBytes } : {}),
+    ...(sidecarOutputs.length > 0 ? { sidecarOutputs } : {}),
   };
 }

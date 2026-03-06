@@ -43,7 +43,7 @@ describe('openPreview', () => {
 
     expect(ensureOffscreenDocument).toHaveBeenCalledWith({
       path: 'offscreen.html',
-      reasons: ['DOM_PARSER'],
+      reasons: ['DOM_SCRAPING', 'BLOBS'],
       justification: 'Render media previews outside the extension service worker.',
     });
     expect(sendPreviewMessage).toHaveBeenCalledWith({

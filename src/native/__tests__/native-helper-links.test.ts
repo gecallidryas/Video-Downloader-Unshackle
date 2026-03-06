@@ -22,13 +22,13 @@ describe('native helper install links', () => {
         setupBaseUrl: 'https://downloads.example.test/unshackle',
         extensionId: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
       }),
-    ).toEqual({ kind: 'docs', href: 'docs/native-helper.md' });
+    ).toEqual({ kind: 'docs', href: 'native-helper.html' });
   });
 
   test('dev mode returns docs URL unless setup package URL is configured', () => {
     expect(getNativeHelperInstallTarget({ platform: 'Win32' })).toEqual({
       kind: 'docs',
-      href: 'docs/native-helper.md',
+      href: 'native-helper.html',
     });
   });
 });

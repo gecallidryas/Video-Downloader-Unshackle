@@ -1,3 +1,5 @@
+import { loadMediaObjectUrl, type LoadedMediaObjectUrl } from './load-media-object-url';
+
 export interface RecordPreviewOptions {
   url: string;
   startSec: number;
@@ -23,9 +25,10 @@ export function recordPreviewClip(options: RecordPreviewOptions): Promise<Previe
 
   return new Promise<PreviewClipResult>((resolve, reject) => {
     const video = document.createElement('video');
-    video.crossOrigin = 'anonymous';
     video.preload = 'auto';
     video.muted = true;
+    let loadedMedia: LoadedMediaObjectUrl | undefined;
+    let settled = false;
 
     const timer = setTimeout(() => {
       cleanup();
@@ -37,12 +40,29 @@ export function recordPreviewClip(options: RecordPreviewOptions): Promise<Previe
       video.pause();
       video.removeAttribute('src');
       video.load();
+      loadedMedia?.revoke();
+    }
+
+    function fail(error: unknown) {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      reject(error);
+    }
+
+    function succeed(result: PreviewClipResult) {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      resolve(result);
     }
 
     function startRecording() {
       void video.play().then(() => {
         try {
-          const stream = (video as any).captureStream();
+          const stream = (video as HTMLVideoElement & {
+            captureStream: () => MediaStream;
+          }).captureStream();
           const mimeType = 'video/webm';
           const recorder = new MediaRecorder(stream, { mimeType });
           const chunks: Blob[] = [];
@@ -52,12 +72,14 @@ export function recordPreviewClip(options: RecordPreviewOptions): Promise<Previe
           });
 
           recorder.addEventListener('stop', () => {
-            cleanup();
             stream.getTracks().forEach((track: MediaStreamTrack) => track.stop());
             const blob = new Blob(chunks, { type: mimeType });
             const reader = new FileReader();
-            reader.onload = () => resolve({ dataUrl: reader.result as string, mimeType });
-            reader.onerror = () => reject(new Error('Failed to encode preview clip'));
+            reader.onload = () => {
+              const dataUrl = typeof reader.result === 'string' ? reader.result : '';
+              succeed({ dataUrl, mimeType });
+            };
+            reader.onerror = () => fail(new Error('Failed to encode preview clip'));
             reader.readAsDataURL(blob);
           });
 
@@ -66,18 +88,15 @@ export function recordPreviewClip(options: RecordPreviewOptions): Promise<Previe
             if (recorder.state === 'recording') recorder.stop();
           }, durationSec * 1000);
         } catch (error) {
-          cleanup();
-          reject(error);
+          fail(error);
         }
       }).catch((error) => {
-        cleanup();
-        reject(error);
+        fail(error);
       });
     }
 
     video.addEventListener('error', () => {
-      cleanup();
-      reject(new Error(`Failed to load video: ${url}`));
+      fail(new Error(`Failed to load video: ${url}`));
     }, { once: true });
 
     video.addEventListener('loadedmetadata', () => {
@@ -95,6 +114,15 @@ export function recordPreviewClip(options: RecordPreviewOptions): Promise<Previe
       startRecording();
     }, { once: true });
 
-    video.src = url;
+    void loadMediaObjectUrl(url)
+      .then((media) => {
+        if (settled) {
+          media.revoke();
+          return;
+        }
+        loadedMedia = media;
+        video.src = media.objectUrl;
+      })
+      .catch(fail);
   });
 }

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { DetectedMedia } from '@/src/types/media';
+import type { ExternalPlayerProfile } from '@/src/background/settings/settings-store';
 import type { ProviderPolicyResult } from '@/src/core/policy/evaluate-provider-policy';
 import { ProtectedActionGate } from '@/src/ui/protected/ProtectedActionGate';
 import { OverflowMenu, type MenuAction } from '@/src/ui/shared/OverflowMenu';
@@ -16,10 +17,19 @@ interface MediaCardProps {
   onQualityChange: (quality: string) => void;
   onAudioTrackChange?: (trackIds: string[]) => void;
   onSubtitleTrackChange?: (trackIds: string[]) => void;
+  onSubtitleOutputChange?: (
+    output: NonNullable<DetectedMedia['selectedSubtitleOutput']>,
+  ) => void;
   onPreviewHover?: () => void;
   onCopyUrl?: (url: string) => void;
   onCopyFilename?: () => void;
   onCopyAllUrls?: () => void;
+  onShareUrl?: (url: string) => void;
+  onResolveFilename?: () => void;
+  onSendToIntegrations?: () => void;
+  externalPlayerProfiles?: ExternalPlayerProfile[];
+  onLaunchExternalPlayer?: (profileId: string) => void;
+  showIntegrationActions?: boolean;
   remainingStorageBytes?: number;
   duplicateCount?: number;
   onDuplicateClick?: () => void;
@@ -79,10 +89,17 @@ export function MediaCard({
   onQualityChange,
   onAudioTrackChange = () => {},
   onSubtitleTrackChange = () => {},
+  onSubtitleOutputChange = () => {},
   onPreviewHover = () => {},
   onCopyUrl,
   onCopyFilename,
   onCopyAllUrls,
+  onShareUrl,
+  onResolveFilename,
+  onSendToIntegrations,
+  externalPlayerProfiles = [],
+  onLaunchExternalPlayer,
+  showIntegrationActions = false,
   remainingStorageBytes,
   duplicateCount,
   onDuplicateClick,
@@ -133,6 +150,7 @@ export function MediaCard({
     typeof remainingStorageBytes === 'number' &&
     estimateBytes !== null &&
     estimateBytes > remainingStorageBytes;
+  const selectedSubtitleCount = media.selectedSubtitleTrackIds?.length ?? 0;
 
   function handleThumbEnter() {
     setHoveringThumb(true);
@@ -156,6 +174,8 @@ export function MediaCard({
     const items: MenuAction[] = [];
     if (media.url) {
       items.push({ id: 'copy-video-url', label: 'Copy video URL' });
+      items.push({ id: 'share-qr', label: 'Share QR' });
+      items.push({ id: 'resolve-filename', label: 'Resolve filename' });
     }
     if (hasAudioUrl) {
       items.push({ id: 'copy-audio-url', label: 'Copy audio URL' });
@@ -165,16 +185,35 @@ export function MediaCard({
     }
     items.push({ id: 'copy-filename', label: 'Copy filename' });
     items.push({ id: 'copy-all-urls', label: 'Copy all URLs' });
+    if (showIntegrationActions && media.url) {
+      items.push({ id: 'send-integrations', label: 'Send to integrations' });
+      for (const profile of externalPlayerProfiles) {
+        items.push({ id: `launch-player:${profile.id}`, label: `Open in ${profile.name}` });
+      }
+    }
     items.push({ id: 'remove', label: 'Remove', danger: true, divider: true });
     return items;
-  }, [media.url, hasAudioUrl, hasSubtitleUrl]);
+  }, [media.url, hasAudioUrl, hasSubtitleUrl, showIntegrationActions, externalPlayerProfiles]);
 
   function handleMenuAction(actionId: string) {
+    if (actionId.startsWith('launch-player:')) {
+      onLaunchExternalPlayer?.(actionId.slice('launch-player:'.length));
+      return;
+    }
+
     switch (actionId) {
       case 'copy-video-url':
         if (media.url) {
           onCopyUrl?.(media.url);
         }
+        break;
+      case 'share-qr':
+        if (media.url) {
+          onShareUrl?.(media.url);
+        }
+        break;
+      case 'resolve-filename':
+        onResolveFilename?.();
         break;
       case 'copy-audio-url': {
         const url = (media.audioTracks ?? []).find((track) => !!track.url)?.url;
@@ -195,6 +234,9 @@ export function MediaCard({
         break;
       case 'copy-all-urls':
         onCopyAllUrls?.();
+        break;
+      case 'send-integrations':
+        onSendToIntegrations?.();
         break;
       case 'remove':
         onRemove();
@@ -278,7 +320,9 @@ export function MediaCard({
             <span className="media-card__output-preview">{`→ ${outputFilename}`}</span>
           ) : null}
           <div className="media-card__meta">
-            <span className="media-card__chip">{media.format}</span>
+            <span className="media-card__chip" title={media.categoryLabel}>
+              {media.format}
+            </span>
             {media.selectedQuality ? (
               <span className="media-card__chip media-card__chip--quality">
                 {selectedQualityLabel(media)}
@@ -338,6 +382,25 @@ export function MediaCard({
           selectedIds={media.selectedSubtitleTrackIds ?? []}
           onChange={onSubtitleTrackChange}
         />
+        {selectedSubtitleCount > 0 ? (
+          <label className="media-card__track">
+            <span className="media-card__control-label">Subtitle output</span>
+            <select
+              aria-label="Subtitle output"
+              className="media-card__track-select"
+              value={media.selectedSubtitleOutput ?? 'embed'}
+              onChange={(event) =>
+                onSubtitleOutputChange(
+                  event.target.value as NonNullable<DetectedMedia['selectedSubtitleOutput']>,
+                )
+              }
+            >
+              <option value="embed">Embed</option>
+              <option value="sidecar">Sidecar</option>
+              <option value="both">Both</option>
+            </select>
+          </label>
+        ) : null}
       </div>
 
       <div className="media-card__actions">

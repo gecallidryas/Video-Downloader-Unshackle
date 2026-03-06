@@ -1,5 +1,6 @@
 import type {
   CandidateStatus,
+  DownloadSelection,
   MediaCandidate,
   ProtectionInfo,
   StreamProtocol,
@@ -14,6 +15,7 @@ import type {
 export interface QualityOption {
   label: string;
   value: string;
+  url?: string;
 }
 
 export interface TrackOption {
@@ -41,6 +43,7 @@ export interface DetectedMedia {
   id: MediaCandidate['id'];
   title: MediaCandidate['displayName'];
   format: string;
+  categoryLabel?: string;
   size: string;
   duration: string;
   url?: string;
@@ -60,6 +63,7 @@ export interface DetectedMedia {
   selectedAudioTrackIds?: string[];
   subtitleTracks?: TrackOption[];
   selectedSubtitleTrackIds?: string[];
+  selectedSubtitleOutput?: NonNullable<DownloadSelection['subtitleOutput']>;
   trim?: MediaTrimSelection | null;
   protocol?: StreamProtocol;
   status?: CandidateStatus;

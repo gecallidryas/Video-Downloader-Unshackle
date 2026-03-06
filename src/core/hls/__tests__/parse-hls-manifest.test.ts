@@ -157,6 +157,34 @@ describe('parseHlsManifest', () => {
     ]);
   });
 
+  test('resolves mixed nested relative URLs for init maps, keys, and segments', () => {
+    const manifest = parseHlsManifest({
+      manifestUrl: 'https://cdn.example.com/live/path/variant/prog.m3u8',
+      content: [
+        '#EXTM3U',
+        '#EXT-X-MAP:URI="../init/main.mp4"',
+        '#EXT-X-KEY:METHOD=AES-128,URI="../../keys/live.key"',
+        '#EXTINF:4,',
+        'segments/seg-1.ts',
+        '#EXTINF:4,',
+        '../alt/seg-2.ts',
+        '#EXT-X-ENDLIST',
+      ].join('\n'),
+    });
+
+    expect(manifest.initSegmentUrl).toBe('https://cdn.example.com/live/path/init/main.mp4');
+    expect(manifest.segments[0]).toEqual(
+      expect.objectContaining({
+        url: 'https://cdn.example.com/live/path/variant/segments/seg-1.ts',
+        initSegmentUrl: 'https://cdn.example.com/live/path/init/main.mp4',
+        encryption: expect.objectContaining({
+          keyUri: 'https://cdn.example.com/live/keys/live.key',
+        }),
+      }),
+    );
+    expect(manifest.segments[1]?.url).toBe('https://cdn.example.com/live/path/alt/seg-2.ts');
+  });
+
   test('defaults media sequence values to zero-based HLS sequence numbers', () => {
     const manifest = parseHlsManifest({
       manifestUrl: 'https://cdn.example.com/hls/vod.m3u8',

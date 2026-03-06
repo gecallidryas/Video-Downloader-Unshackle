@@ -42,6 +42,7 @@ describe('background settings store', () => {
       captureRuleUrlBlacklist: [],
       captureRuleMinSizeBytes: 0,
       captureRuleSizePredicate: '',
+      captureRuleRegexRules: [],
       advancedMode: false,
       autoDownloadEnabled: false,
       autoDownloadMinSize: 102_400,
@@ -58,12 +59,15 @@ describe('background settings store', () => {
       enableBrowserFallbacks: true,
       browserTransmuxWithMuxJs: true,
       browserTransmuxMaxBytes: 157_286_400,
+      useDirectToDisk: false,
+      rememberOutputFolder: false,
+      autoDeleteAfterSave: false,
       nativeHelperOnboardingDismissed: false,
       nativeHelperPermissionPrompted: false,
       nativeHelperLastReadiness: 'not-checked',
       onboardingCompleted: false,
       uiLanguage: 'en',
-      _schemaVersion: 12,
+      _schemaVersion: 14,
     });
   });
 
@@ -82,6 +86,15 @@ describe('background settings store', () => {
     expect(settings.enableBrowserFallbacks).toBe(true);
     expect(settings.browserTransmuxWithMuxJs).toBe(true);
     expect(settings.browserTransmuxMaxBytes).toBe(157_286_400);
+  });
+
+  test('direct-to-disk and auto-cleanup are opt-in', async () => {
+    const store = createSettingsStore();
+    const settings = await store.load();
+
+    expect(settings.useDirectToDisk).toBe(false);
+    expect(settings.rememberOutputFolder).toBe(false);
+    expect(settings.autoDeleteAfterSave).toBe(false);
   });
 
   test('captureCredentialHeaders defaults to false', async () => {
@@ -210,6 +223,9 @@ describe('background settings store', () => {
           enableBrowserFallbacks: 0,
           browserTransmuxWithMuxJs: 'yes',
           browserTransmuxMaxBytes: -1,
+          useDirectToDisk: 'yes',
+          rememberOutputFolder: 1,
+          autoDeleteAfterSave: 'true',
           onboardingCompleted: 'done',
           uiLanguage: 'fr',
           _schemaVersion: 1,
@@ -227,9 +243,12 @@ describe('background settings store', () => {
       enableBrowserFallbacks: true,
       browserTransmuxWithMuxJs: true,
       browserTransmuxMaxBytes: 157_286_400,
+      useDirectToDisk: false,
+      rememberOutputFolder: false,
+      autoDeleteAfterSave: false,
       onboardingCompleted: false,
       uiLanguage: 'en',
-      _schemaVersion: 12,
+      _schemaVersion: 14,
     });
   });
 });

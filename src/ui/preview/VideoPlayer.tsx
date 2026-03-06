@@ -130,11 +130,23 @@ export function VideoPlayer({ videoRef, sourceUrl, playerKey }: VideoPlayerProps
     setSpeedMenuOpen(false);
   }
 
-  function toggleFullscreen() {
+  async function toggleFullscreen() {
     const c = containerRef.current;
     if (!c) return;
-    if (document.fullscreenElement) void document.exitFullscreen();
-    else void c.requestFullscreen();
+    if (document.fullscreenElement) {
+      await document.exitFullscreen();
+      return;
+    }
+
+    try {
+      if (!c.requestFullscreen) {
+        window.open(sourceUrl, '_blank', 'noopener,noreferrer');
+        return;
+      }
+      await c.requestFullscreen();
+    } catch {
+      window.open(sourceUrl, '_blank', 'noopener,noreferrer');
+    }
   }
 
   function togglePiP() {
@@ -179,7 +191,7 @@ export function VideoPlayer({ videoRef, sourceUrl, playerKey }: VideoPlayerProps
           break;
         case 'f':
           e.preventDefault();
-          toggleFullscreen();
+          void toggleFullscreen();
           break;
         case 'ArrowUp':
           e.preventDefault();
@@ -323,7 +335,11 @@ export function VideoPlayer({ videoRef, sourceUrl, playerKey }: VideoPlayerProps
             <button className="vp__btn" onClick={togglePiP} aria-label="Picture-in-picture">
               <PipIcon />
             </button>
-            <button className="vp__btn" onClick={toggleFullscreen} aria-label="Fullscreen">
+            <button
+              className="vp__btn"
+              onClick={() => void toggleFullscreen()}
+              aria-label={document.fullscreenElement ? 'Exit fullscreen' : 'Fullscreen'}
+            >
               <FullscreenIcon />
             </button>
           </div>

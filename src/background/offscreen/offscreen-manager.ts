@@ -67,7 +67,7 @@ export function createOffscreenManager(input: OffscreenManagerInput = {}) {
 
       await offscreen.createDocument({
         url: documentPath,
-        reasons: ['DOM_PARSER'],
+        reasons: ['DOM_SCRAPING', 'BLOBS'],
         justification: justification(reason),
       });
     },

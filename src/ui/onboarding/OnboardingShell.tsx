@@ -16,25 +16,32 @@ export function OnboardingShell({
   children,
 }: OnboardingShellProps) {
   return (
-    <section
-      className="native-helper-onboarding"
+    <div
+      className="native-helper-onboarding-modal"
       data-variant={variant}
-      aria-label={title}
     >
-      <div className="native-helper-onboarding__header">
-        <div>
-          <h2 className="native-helper-onboarding__title">{title}</h2>
-          <span className="native-helper-onboarding__status">{statusLabel}</span>
+      <section
+        className="native-helper-onboarding"
+        role="dialog"
+        aria-modal="true"
+        aria-label={title}
+      >
+        <div className="native-helper-onboarding__header">
+          <div>
+            <h2 className="native-helper-onboarding__title">{title}</h2>
+            <span className="native-helper-onboarding__status">{statusLabel}</span>
+          </div>
+          <button
+            type="button"
+            className="native-helper-onboarding__close"
+            aria-label="Close onboarding"
+            onClick={onDismiss}
+          >
+            x
+          </button>
         </div>
-        <button
-          type="button"
-          className="native-helper-onboarding__ghost"
-          onClick={onDismiss}
-        >
-          Dismiss
-        </button>
-      </div>
-      {children}
-    </section>
+        {children}
+      </section>
+    </div>
   );
 }

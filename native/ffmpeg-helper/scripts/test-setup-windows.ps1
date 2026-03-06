@@ -37,5 +37,8 @@ Assert-True ($SetupSource -match 'install-windows.ps1') 'setup script must deleg
 Assert-True ($SetupSource -match [regex]::Escape($Package.version)) 'setup script product version must match package.json version.'
 Assert-True ($SetupSource -match 'com\.unshackle\.ffmpeg') 'setup script must mention com.unshackle.ffmpeg.'
 Assert-True ($InstallSource -match 'CurrentUser|HKCU') 'install script must register HKCU by default.'
+Assert-True ($InstallSource -match 'unshackle-ffmpeg-helper\.exe') 'install script must register an executable native host launcher.'
+Assert-True ($InstallSource -match 'Compile-Launcher') 'install script must compile the native host launcher.'
+Assert-True ($InstallSource -notmatch 'unshackle-ffmpeg-helper\.cmd') 'install script must not register a command script as the native host.'
 
 Write-Host 'setup-windows.ps1 smoke checks passed.'

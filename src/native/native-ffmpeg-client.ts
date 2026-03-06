@@ -13,6 +13,7 @@ export const DEFAULT_NATIVE_FFMPEG_HOST = 'com.unshackle.ffmpeg';
 
 export type NativeFfmpegClientErrorCode =
   | 'NATIVE_UNAVAILABLE'
+  | 'NATIVE_TIMEOUT'
   | 'NATIVE_INVALID_RESPONSE'
   | string;
 
@@ -58,6 +59,7 @@ export type NativeSendNativeMessage = (
 export interface NativeFfmpegClientOptions {
   hostName?: string;
   sendNativeMessage?: NativeSendNativeMessage;
+  timeoutMs?: number;
 }
 
 export interface NativeFfmpegClient {
@@ -68,6 +70,8 @@ export interface NativeFfmpegClient {
   cancelJob(jobId: string): Promise<NativeFfmpegJobPayload>;
   cleanupJob(jobId: string): Promise<NativeFfmpegJobPayload>;
 }
+
+const DEFAULT_NATIVE_RESPONSE_TIMEOUT_MS = 10_000;
 
 export function createNativeFfmpegClient(
   options: NativeFfmpegClientOptions = {},
@@ -186,31 +190,58 @@ function sendNativeRequest(
   }
 
   return new Promise((resolve, reject) => {
+    let settled = false;
+    const timeoutId = setTimeout(() => {
+      if (settled) {
+        return;
+      }
+
+      settled = true;
+      reject(
+        new NativeFfmpegClientError(
+          'NATIVE_TIMEOUT',
+          `Native helper did not respond within ${String(
+            options.timeoutMs ?? DEFAULT_NATIVE_RESPONSE_TIMEOUT_MS,
+          )}ms.`,
+        ),
+      );
+    }, options.timeoutMs ?? DEFAULT_NATIVE_RESPONSE_TIMEOUT_MS);
+
+    const settle = (callback: () => void) => {
+      if (settled) {
+        return;
+      }
+
+      settled = true;
+      clearTimeout(timeoutId);
+      callback();
+    };
+
     try {
       sendNativeMessage(hostName, request, (response) => {
         const runtimeError = getChromeRuntimeError();
 
         if (runtimeError) {
-          reject(
+          settle(() => reject(
             new NativeFfmpegClientError(
               'NATIVE_UNAVAILABLE',
               runtimeError.message || 'Native messaging API is unavailable.',
               runtimeError,
             ),
-          );
+          ));
           return;
         }
 
-        resolve(response);
+        settle(() => resolve(response));
       });
     } catch (error) {
-      reject(
+      settle(() => reject(
         new NativeFfmpegClientError(
           'NATIVE_UNAVAILABLE',
           error instanceof Error ? error.message : 'Native messaging API is unavailable.',
           error,
         ),
-      );
+      ));
     }
   });
 }

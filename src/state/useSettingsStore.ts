@@ -9,7 +9,9 @@ import type {
   ThemeName,
   UiLanguage,
   UiMode,
+  ExternalPlayerProfile,
 } from '@/src/background/settings/settings-store';
+import type { RegexRule } from '@/src/core/capture-rules/regex-classifier';
 import {
   DEFAULT_SETTINGS,
   SETTINGS_STORAGE_KEY,
@@ -54,17 +56,26 @@ export interface SettingsState {
   captureRuleUrlBlacklist: string[];
   captureRuleMinSizeBytes: number;
   captureRuleSizePredicate: string;
+  captureRuleRegexRules: RegexRule[];
+  autoDownloadEnabled: boolean;
+  autoDownloadMinSize: number;
+  autoDownloadBlacklist: string[];
+  customCommandTemplate: string;
   advancedMode: boolean;
   aria2Enabled: boolean;
   aria2RpcUrl: string;
   aria2Secret: string;
   webhookEnabled: boolean;
   webhookUrl: string;
+  externalPlayerProfiles: ExternalPlayerProfile[];
   previousSessionLimit: number;
   enableNativeFeatures: boolean;
   enableBrowserFallbacks: boolean;
   browserTransmuxWithMuxJs: boolean;
   browserTransmuxMaxBytes: number;
+  useDirectToDisk: boolean;
+  rememberOutputFolder: boolean;
+  autoDeleteAfterSave: boolean;
   nativeHelperOnboardingDismissed: boolean;
   nativeHelperPermissionPrompted: boolean;
   nativeHelperLastReadiness: NativeHelperReadiness;
@@ -76,6 +87,9 @@ export interface SettingsState {
   setEnableBrowserFallbacks: (enabled: boolean) => void;
   setBrowserTransmuxWithMuxJs: (enabled: boolean) => void;
   setBrowserTransmuxMaxBytes: (value: number) => void;
+  setUseDirectToDisk: (enabled: boolean) => void;
+  setRememberOutputFolder: (enabled: boolean) => void;
+  setAutoDeleteAfterSave: (enabled: boolean) => void;
   setNativeHelperOnboardingDismissed: (value: boolean) => void;
   setNativeHelperPermissionPrompted: (value: boolean) => void;
   setNativeHelperLastReadiness: (value: NativeHelperReadiness) => void;
@@ -102,7 +116,21 @@ export interface SettingsState {
     urlBlacklist?: string[];
     minSizeBytes?: number;
     sizePredicate?: string;
+    regexRules?: RegexRule[];
   }) => void;
+  setCustomCommandTemplate: (template: string) => void;
+  setAutoDownloadSettings: (settings: {
+    enabled?: boolean;
+    minSize?: number;
+    blacklist?: string[];
+  }) => void;
+  setAria2Settings: (settings: {
+    enabled?: boolean;
+    rpcUrl?: string;
+    secret?: string;
+  }) => void;
+  setWebhookSettings: (settings: { enabled?: boolean; url?: string }) => void;
+  setExternalPlayerProfiles: (profiles: ExternalPlayerProfile[]) => void;
   resetCaptureRules: () => void;
 }
 
@@ -215,7 +243,34 @@ export const useSettingsStore = create<SettingsState>((set, get) => {
         ...(rules.sizePredicate !== undefined
           ? { captureRuleSizePredicate: rules.sizePredicate }
           : {}),
+        ...(rules.regexRules !== undefined
+          ? { captureRuleRegexRules: rules.regexRules.map((rule) => ({ ...rule })) }
+          : {}),
       }),
+    setCustomCommandTemplate: (template) => setPersisted({ customCommandTemplate: template }),
+    setAutoDownloadSettings: (settings) =>
+      setPersisted({
+        ...(settings.enabled !== undefined ? { autoDownloadEnabled: settings.enabled } : {}),
+        ...(settings.minSize !== undefined
+          ? { autoDownloadMinSize: Math.max(0, Math.floor(settings.minSize)) }
+          : {}),
+        ...(settings.blacklist !== undefined
+          ? { autoDownloadBlacklist: settings.blacklist }
+          : {}),
+      }),
+    setAria2Settings: (settings) =>
+      setPersisted({
+        ...(settings.enabled !== undefined ? { aria2Enabled: settings.enabled } : {}),
+        ...(settings.rpcUrl !== undefined ? { aria2RpcUrl: settings.rpcUrl } : {}),
+        ...(settings.secret !== undefined ? { aria2Secret: settings.secret } : {}),
+      }),
+    setWebhookSettings: (settings) =>
+      setPersisted({
+        ...(settings.enabled !== undefined ? { webhookEnabled: settings.enabled } : {}),
+        ...(settings.url !== undefined ? { webhookUrl: settings.url } : {}),
+      }),
+    setExternalPlayerProfiles: (profiles) =>
+      setPersisted({ externalPlayerProfiles: profiles.map((profile) => ({ ...profile })) }),
     setAdvancedMode: (enabled) => setPersisted({ advancedMode: enabled }),
     setPreviousSessionLimit: (limit) =>
       setPersisted({ previousSessionLimit: Math.max(0, Math.floor(limit)) }),
@@ -224,6 +279,9 @@ export const useSettingsStore = create<SettingsState>((set, get) => {
     setBrowserTransmuxWithMuxJs: (enabled) => setPersisted({ browserTransmuxWithMuxJs: enabled }),
     setBrowserTransmuxMaxBytes: (value) =>
       setPersisted({ browserTransmuxMaxBytes: Math.max(1, Math.floor(value)) }),
+    setUseDirectToDisk: (enabled) => setPersisted({ useDirectToDisk: enabled }),
+    setRememberOutputFolder: (enabled) => setPersisted({ rememberOutputFolder: enabled }),
+    setAutoDeleteAfterSave: (enabled) => setPersisted({ autoDeleteAfterSave: enabled }),
     setNativeHelperOnboardingDismissed: (value) =>
       setPersisted({ nativeHelperOnboardingDismissed: value }),
     setNativeHelperPermissionPrompted: (value) =>
@@ -238,6 +296,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => {
         captureRuleUrlBlacklist: [],
         captureRuleMinSizeBytes: 0,
         captureRuleSizePredicate: '',
+        captureRuleRegexRules: [],
       }),
   };
 });

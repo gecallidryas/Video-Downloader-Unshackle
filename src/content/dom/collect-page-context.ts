@@ -1,5 +1,6 @@
 import type { ThumbnailPageContext } from '@/src/core/thumbs/resolve-thumbnail';
 import type { PageTitleContext } from '@/src/core/candidates/resolve-display-title';
+import { isEmptyLink } from '@/src/core/naming/filename-resolver';
 
 export interface CollectedPageContext
   extends PageTitleContext,
@@ -15,7 +16,7 @@ export interface CollectPageContextOptions {
 function resolveUrl(value: string | null | undefined, pageUrl: string): string | undefined {
   const raw = value?.trim();
 
-  if (!raw) {
+  if (!raw || isEmptyLink(raw)) {
     return undefined;
   }
 
@@ -107,7 +108,7 @@ export function getSelectedLinks(): string[] {
         }
       });
 
-      if (!isSelected || !anchor.href || seen.has(anchor.href)) {
+      if (!isSelected || isEmptyLink(anchor.getAttribute('href')) || seen.has(anchor.href)) {
         continue;
       }
 

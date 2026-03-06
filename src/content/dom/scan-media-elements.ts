@@ -2,6 +2,7 @@ import type {
   DetectionEvidence,
   MediaKind,
 } from '@/video_downloader_types_skeleton';
+import { isEmptyLink } from '@/src/core/naming/filename-resolver';
 import type { CollectedPageContext } from './collect-page-context';
 
 export interface MediaSourceEvidence {
@@ -38,6 +39,10 @@ export interface ScanMediaElementsOptions {
 }
 
 function resolveUrl(url: string, baseUrl: string): string {
+  if (isEmptyLink(url)) {
+    return '';
+  }
+
   try {
     return new URL(url, baseUrl).toString();
   } catch {
@@ -77,7 +82,7 @@ function collectSources(
   );
 
   return [
-    ...(directSource ? [{ url: resolveUrl(directSource, pageUrl) }] : []),
+    ...(directSource && !isEmptyLink(directSource) ? [{ url: resolveUrl(directSource, pageUrl) }] : []),
     ...childSources.filter((source) => source.url),
   ];
 }
@@ -86,14 +91,16 @@ function collectTracks(
   element: HTMLMediaElement,
   pageUrl: string,
 ): MediaTrackEvidence[] {
-  return Array.from(element.querySelectorAll('track')).map((track) => ({
-    kind: track.getAttribute('kind') ?? undefined,
-    label: track.getAttribute('label') ?? undefined,
-    language: track.getAttribute('srclang') ?? undefined,
-    url: track.getAttribute('src')
-      ? resolveUrl(track.getAttribute('src') ?? '', pageUrl)
-      : undefined,
-  }));
+  return Array.from(element.querySelectorAll('track'))
+    .map((track) => ({
+      kind: track.getAttribute('kind') ?? undefined,
+      label: track.getAttribute('label') ?? undefined,
+      language: track.getAttribute('srclang') ?? undefined,
+      url: !isEmptyLink(track.getAttribute('src'))
+        ? resolveUrl(track.getAttribute('src') ?? '', pageUrl)
+        : undefined,
+    }))
+    .filter((track) => track.url);
 }
 
 function getElementDuration(element: HTMLMediaElement): number | undefined {

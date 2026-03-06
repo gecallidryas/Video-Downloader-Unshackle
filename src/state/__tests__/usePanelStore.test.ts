@@ -183,6 +183,7 @@ test('builds a custom download selection from media controls', () => {
   usePanelStore.getState().setQuality('media-1', 'variant-720');
   usePanelStore.getState().setAudioTracks('media-1', ['audio-en']);
   usePanelStore.getState().setSubtitleTracks('media-1', ['subs-en']);
+  usePanelStore.getState().setSubtitleOutput('media-1', 'sidecar');
   usePanelStore.getState().setTrim('media-1', { startSec: 10, endSec: 20 });
 
   expect(usePanelStore.getState().getDownloadSelection('media-1')).toEqual({
@@ -190,6 +191,7 @@ test('builds a custom download selection from media controls', () => {
     variantId: 'variant-720',
     audioTrackIds: ['audio-en'],
     subtitleTrackIds: ['subs-en'],
+    subtitleOutput: 'sidecar',
     trim: { startSec: 10, endSec: 20 },
   });
 });

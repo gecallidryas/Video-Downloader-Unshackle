@@ -41,4 +41,26 @@ describe('scanMediaElements', () => {
       }),
     ]);
   });
+
+  test('ignores placeholder empty links in media and tracks', () => {
+    document.body.innerHTML = `
+      <video id="empty" src="javascript:void(0)">
+        <source src="#">
+        <track src="javascript:void(0)" kind="subtitles">
+      </video>
+      <video id="real">
+        <source src="/real.mp4" type="video/mp4">
+      </video>
+    `;
+
+    const evidence = scanMediaElements(document, {
+      pageUrl: 'https://example.com/watch',
+    });
+
+    expect(evidence).toHaveLength(1);
+    expect(evidence[0]).toMatchObject({
+      url: 'https://example.com/real.mp4',
+      tracks: [],
+    });
+  });
 });

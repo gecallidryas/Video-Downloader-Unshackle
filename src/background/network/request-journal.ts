@@ -1,6 +1,16 @@
 import type { DetectionEvidence } from '@/video_downloader_types_skeleton';
 import {
+  createRegexClassifier,
+  type RegexClassifier,
+} from '@/src/core/capture-rules/regex-classifier';
+import {
+  createCaptureRuleEngine,
+  type CaptureRuleEngine,
+  type CaptureRuleEngineOptions,
+} from '@/src/core/capture-rules/capture-rule-engine';
+import {
   classifyRequest,
+  type RequestCategory,
   type RequestClassification,
   type RequestHeaderLike,
   type RequestLike,
@@ -17,14 +27,16 @@ export interface NetworkRequestEvidence extends RequestClassification {
 
 export interface RequestJournal {
   add(tabId: number, evidence: NetworkRequestEvidence): NetworkRequestEvidence;
-  addRequest(tabId: number, request: RequestLike): NetworkRequestEvidence;
+  addRequest(tabId: number, request: RequestLike): NetworkRequestEvidence | undefined;
   get(tabId: number): NetworkRequestEvidence[];
   clear(tabId: number): void;
+  updateCaptureRules(options: CaptureRuleEngineOptions): void;
 }
 
 export interface RequestJournalOptions {
   duplicateWindowMs?: number;
   now?: () => number;
+  captureRules?: CaptureRuleEngineOptions;
 }
 
 export interface WebRequestEventLike {
@@ -56,11 +68,142 @@ function cloneNetworkEvidence(
   };
 }
 
+type RegexClassificationOverride = Pick<
+  RequestClassification,
+  'category' | 'protocol' | 'mediaKind'
+>;
+
+const regexOverridesByCategory: Partial<
+  Record<RequestCategory, RegexClassificationOverride>
+> = {
+  direct_media: { category: 'direct_media', protocol: 'direct', mediaKind: 'video' },
+  hls_manifest: { category: 'hls_manifest', protocol: 'hls', mediaKind: 'video' },
+  dash_manifest: { category: 'dash_manifest', protocol: 'dash', mediaKind: 'video' },
+  hds_manifest: { category: 'hds_manifest', protocol: 'hds', mediaKind: 'video' },
+  mss_manifest: { category: 'mss_manifest', protocol: 'mss', mediaKind: 'video' },
+  subtitle: { category: 'subtitle', protocol: 'direct', mediaKind: 'subtitle' },
+  subtitle_vtt: { category: 'subtitle_vtt', protocol: 'direct', mediaKind: 'subtitle' },
+  subtitle_srt: { category: 'subtitle_srt', protocol: 'direct', mediaKind: 'subtitle' },
+  subtitle_ttml: { category: 'subtitle_ttml', protocol: 'direct', mediaKind: 'subtitle' },
+  subtitle_dfxp: { category: 'subtitle_dfxp', protocol: 'direct', mediaKind: 'subtitle' },
+};
+
+function applyRegexClassification(
+  request: RequestLike,
+  classification: RequestClassification,
+  regexClassifier: RegexClassifier | undefined,
+): RequestClassification {
+  const category = regexClassifier?.classify(request.url);
+  const override = category
+    ? regexOverridesByCategory[category as RequestCategory]
+    : undefined;
+
+  if (!category || !override) {
+    return classification;
+  }
+
+  return {
+    ...classification,
+    ...override,
+    evidence: {
+      ...classification.evidence,
+      confidence: Math.max(classification.evidence.confidence, 0.75),
+      notes: [
+        ...(classification.evidence.notes ?? []).filter(
+          (note) => !note.startsWith('category:'),
+        ),
+        `category:${override.category}`,
+        `regex-category:${category}`,
+      ],
+    },
+  };
+}
+
+function createOptionalRegexClassifier(
+  options: CaptureRuleEngineOptions | undefined,
+): RegexClassifier | undefined {
+  try {
+    const rules = options?.regexRules ?? [];
+    return rules.length > 0 ? createRegexClassifier(rules) : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function createOptionalCaptureRuleEngine(
+  options: CaptureRuleEngineOptions | undefined,
+): CaptureRuleEngine | undefined {
+  try {
+    return createCaptureRuleEngine(options ?? {});
+  } catch {
+    return undefined;
+  }
+}
+
+function getHeaderValue(
+  headers: RequestHeaderLike[] | undefined,
+  headerName: string,
+): string | undefined {
+  return headers?.find(
+    (header) => header.name.toLowerCase() === headerName.toLowerCase(),
+  )?.value;
+}
+
+function getContentLength(request: RequestLike): number | undefined {
+  const value = Number(getHeaderValue(request.responseHeaders, 'content-length'));
+
+  return Number.isFinite(value) && value >= 0 ? value : undefined;
+}
+
+function promoteRuleCapturedRequest(
+  classification: RequestClassification,
+): RequestClassification {
+  if (classification.category !== 'unknown' && classification.category !== 'ignored') {
+    return classification;
+  }
+
+  return {
+    ...classification,
+    category: 'direct_media',
+    protocol: 'direct',
+    mediaKind: 'video',
+    evidence: {
+      ...classification.evidence,
+      confidence: Math.max(classification.evidence.confidence, 0.7),
+      notes: [
+        ...(classification.evidence.notes ?? []).filter(
+          (note) => !note.startsWith('category:'),
+        ),
+        'category:direct_media',
+        'capture-rule:custom',
+      ],
+    },
+  };
+}
+
 function buildNetworkEvidence(
   tabId: number,
   request: RequestLike,
-): NetworkRequestEvidence {
-  const classification = classifyRequest(request);
+  regexClassifier: RegexClassifier | undefined,
+  captureRuleEngine: CaptureRuleEngine | undefined,
+): NetworkRequestEvidence | undefined {
+  const baseClassification = applyRegexClassification(
+    request,
+    classifyRequest(request),
+    regexClassifier,
+  );
+  const contentLength = getContentLength(request);
+  const shouldCapture = captureRuleEngine?.shouldCapture({
+    url: request.url,
+    contentType: baseClassification.mimeType,
+    ...(contentLength !== undefined ? { size: contentLength } : {}),
+  }) ?? baseClassification.category !== 'unknown';
+
+  if (!shouldCapture) {
+    return undefined;
+  }
+
+  const classification = promoteRuleCapturedRequest(baseClassification);
   const detectedAt = classification.evidence.createdAt;
 
   return {
@@ -80,6 +223,8 @@ export function createRequestJournal(
   const evidenceByTabId = new Map<number, NetworkRequestEvidence[]>();
   const recentRequests = new Map<string, number>();
   const duplicateWindowMs = options.duplicateWindowMs ?? 2_000;
+  let regexClassifier = createOptionalRegexClassifier(options.captureRules);
+  let captureRuleEngine = createOptionalCaptureRuleEngine(options.captureRules);
 
   function getEvidenceTime(evidence: NetworkRequestEvidence): number {
     return evidence.detectedAt ?? options.now?.() ?? Date.now();
@@ -116,7 +261,14 @@ export function createRequestJournal(
     },
 
     addRequest(tabId, request) {
-      return this.add(tabId, buildNetworkEvidence(tabId, request));
+      const evidence = buildNetworkEvidence(
+        tabId,
+        request,
+        regexClassifier,
+        captureRuleEngine,
+      );
+
+      return evidence ? this.add(tabId, evidence) : undefined;
     },
 
     get(tabId) {
@@ -125,6 +277,11 @@ export function createRequestJournal(
 
     clear(tabId) {
       evidenceByTabId.delete(tabId);
+    },
+
+    updateCaptureRules(nextOptions) {
+      regexClassifier = createOptionalRegexClassifier(nextOptions);
+      captureRuleEngine = createOptionalCaptureRuleEngine(nextOptions);
     },
   };
 }

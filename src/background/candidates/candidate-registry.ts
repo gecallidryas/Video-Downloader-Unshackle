@@ -8,6 +8,7 @@ export interface CandidateRegistry {
   set(tabId: number, candidates: MediaCandidate[]): MediaCandidate[];
   setFromEvidence(input: MergeCandidateEvidenceInput): MediaCandidate[];
   get(tabId: number): MediaCandidate[];
+  all(): MediaCandidate[];
   findById(candidateId: string): MediaCandidate | undefined;
   clear(tabId: number): void;
 }
@@ -37,6 +38,10 @@ export function createCandidateRegistry(): CandidateRegistry {
 
     get(tabId) {
       return [...(candidatesByTabId.get(tabId) ?? [])];
+    },
+
+    all() {
+      return Array.from(candidatesByTabId.values()).flatMap((items) => [...items]);
     },
 
     findById(candidateId) {

@@ -6,6 +6,7 @@ export interface SegmentProgressEvent {
   failed: number;
   total: number;
   segment?: SegmentDescriptor;
+  status?: 'pending' | 'downloading' | 'done' | 'failed' | 'skipped';
   liveHlsTelemetry?: LiveHlsTelemetrySnapshot;
 }
 

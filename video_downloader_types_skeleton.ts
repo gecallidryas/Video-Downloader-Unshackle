@@ -203,6 +203,23 @@ export interface JobOutput {
   downloadId?: number;
   sizeBytes?: number;
   notes?: string[];
+  sidecarOutputs?: Array<{
+    fileName: string;
+    mimeType: string;
+    sizeBytes?: number;
+  }>;
+}
+
+export type JobSegmentState = 'pending' | 'downloading' | 'done' | 'failed' | 'skipped';
+
+export interface JobSegmentStatus {
+  index: number;
+  status: JobSegmentState;
+  url?: string;
+  bytes?: number;
+  attempts?: number;
+  error?: string;
+  updatedAt?: number;
 }
 
 export interface JobFailure {
@@ -226,6 +243,9 @@ export interface DownloadSelection {
   variantId?: string;
   audioTrackIds?: string[];
   subtitleTrackIds?: string[];
+  subtitleOutput?: 'embed' | 'sidecar' | 'both';
+  segmentRange?: { start: number; end: number };
+  hlsTimelinePolicy?: 'full' | 'selected-range' | 'live-refresh';
   outputKind?: 'auto' | 'original' | 'audio-only' | 'mp4' | 'mkv' | 'webm' | 'subtitle-only';
   action?: 'download' | 'download_as' | 'download_audio' | 'copy' | 'record_live';
   saveAs?: boolean;
@@ -264,6 +284,9 @@ export interface DownloadJob {
   bytesTotal?: number;
   currentSegment?: number;
   totalSegments?: number;
+  segmentStatuses?: JobSegmentStatus[];
+  selectedSegmentRange?: { start: number; end: number };
+  hlsTimelinePolicy?: DownloadSelection['hlsTimelinePolicy'];
   resumeToken?: string;
   output?: JobOutput;
   failure?: JobFailure;
@@ -387,6 +410,7 @@ export type RuntimeRequest =
   | MessageEnvelope<'INGEST_IQIYI_CONFIG', { pageUrl: string; title: string; m3u8Urls: string[] }>
   | MessageEnvelope<'DRM_DETECTED', { drmName: string; trigger: string; url: string }>
   | MessageEnvelope<'GET_CANDIDATES', { tabId: number }>
+  | MessageEnvelope<'GET_ALL_CANDIDATES', Record<string, never>>
   | MessageEnvelope<'REQUEST_HOST_ACCESS', { origin: string }>
   | MessageEnvelope<'START_PREVIEW', { candidateId: string }>
   | MessageEnvelope<'STOP_PREVIEW', { candidateId: string }>
@@ -397,6 +421,17 @@ export type RuntimeRequest =
   | MessageEnvelope<'RESUME_DOWNLOAD', { jobId: string }>
   | MessageEnvelope<'CANCEL_DOWNLOAD', { jobId: string }>
   | MessageEnvelope<'GET_JOB', { jobId: string }>
+  | MessageEnvelope<'GET_JOBS', Record<string, never>>
+  | MessageEnvelope<'RETRY_DOWNLOAD', { jobId: string }>
+  | MessageEnvelope<'RESAVE_DOWNLOAD', { jobId: string }>
+  | MessageEnvelope<'REMOVE_DOWNLOAD', { jobId: string }>
+  | MessageEnvelope<'CLEAR_COMPLETED_DOWNLOADS', Record<string, never>>
+  | MessageEnvelope<'PAUSE_ALL_DOWNLOADS', Record<string, never>>
+  | MessageEnvelope<'INGEST_DIRECT_URL', { tabId: number; url: string; filename?: string; referer?: string; origin?: string }>
+  | MessageEnvelope<'RETRY_HLS_SEGMENT', { jobId: string; segmentIndex: number }>
+  | MessageEnvelope<'RETRY_FAILED_HLS_SEGMENTS', { jobId: string }>
+  | MessageEnvelope<'EXPORT_PARTIAL_HLS', { jobId: string; range: { start: number; end: number } }>
+  | MessageEnvelope<'UPDATE_HLS_SEGMENT_RANGE', { jobId: string; range: { start: number; end: number } }>
   | MessageEnvelope<'GET_QUEUE_STATS', Record<string, never>>
   | MessageEnvelope<'DEBUG_GET_EVIDENCE', { candidateId: string }>;
 
@@ -407,13 +442,26 @@ export type RuntimeResponse =
   | MessageEnvelope<'INGEST_IQIYI_CONFIG_RESULT', { candidates: MediaCandidate[] }>
   | MessageEnvelope<'DRM_DETECTED_RESULT', { ok: boolean }>
   | MessageEnvelope<'GET_CANDIDATES_RESULT', { candidates: MediaCandidate[] }>
+  | MessageEnvelope<'GET_ALL_CANDIDATES_RESULT', { candidates: MediaCandidate[] }>
   | MessageEnvelope<'REQUEST_HOST_ACCESS_RESULT', { granted: boolean; origin: string }>
   | MessageEnvelope<'START_PREVIEW_RESULT', { ok: boolean }>
   | MessageEnvelope<'STOP_PREVIEW_RESULT', { ok: boolean }>
   | MessageEnvelope<'GET_PREVIEW_ASSET_RESULT', GeneratedAssetResult>
   | MessageEnvelope<'GET_THUMBNAIL_ASSET_RESULT', GeneratedAssetResult>
   | MessageEnvelope<'START_DOWNLOAD_RESULT', { job: DownloadJob }>
+  | MessageEnvelope<'CANCEL_DOWNLOAD_RESULT', { cancelled: boolean; downloadId?: number }>
   | MessageEnvelope<'GET_JOB_RESULT', { job?: DownloadJob }>
+  | MessageEnvelope<'GET_JOBS_RESULT', { jobs: DownloadJob[] }>
+  | MessageEnvelope<'RETRY_DOWNLOAD_RESULT', { job?: DownloadJob; queued: boolean }>
+  | MessageEnvelope<'RESAVE_DOWNLOAD_RESULT', { job?: DownloadJob; queued: boolean }>
+  | MessageEnvelope<'REMOVE_DOWNLOAD_RESULT', { removed: boolean }>
+  | MessageEnvelope<'CLEAR_COMPLETED_DOWNLOADS_RESULT', { removedIds: string[] }>
+  | MessageEnvelope<'PAUSE_ALL_DOWNLOADS_RESULT', { pausedIds: string[] }>
+  | MessageEnvelope<'INGEST_DIRECT_URL_RESULT', { candidate: MediaCandidate; job?: DownloadJob }>
+  | MessageEnvelope<'RETRY_HLS_SEGMENT_RESULT', { job?: DownloadJob; queued: boolean }>
+  | MessageEnvelope<'RETRY_FAILED_HLS_SEGMENTS_RESULT', { job?: DownloadJob; queued: boolean }>
+  | MessageEnvelope<'EXPORT_PARTIAL_HLS_RESULT', { job?: DownloadJob; queued: boolean }>
+  | MessageEnvelope<'UPDATE_HLS_SEGMENT_RANGE_RESULT', { job?: DownloadJob }>
   | MessageEnvelope<'GET_QUEUE_STATS_RESULT', { stats: QueueStats }>
   | MessageEnvelope<'DEBUG_GET_EVIDENCE_RESULT', { evidence: DetectionEvidence[] }>
   | MessageEnvelope<'ERROR', { code: string; message: string; detail?: unknown }>;

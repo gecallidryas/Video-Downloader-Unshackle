@@ -5,9 +5,10 @@ This record defines the beta/dev setup path for `com.unshackle.ffmpeg`.
 ## Decision
 
 The Windows setup technology is a PowerShell wrapper around
-`native/ffmpeg-helper/scripts/install-windows.ps1`. Signed MSI, WiX, Inno Setup,
-and Authenticode signing are deferred until there is budget for production
-installer signing and release operations.
+`native/ffmpeg-helper/scripts/install-windows.ps1`. The script compiles and
+registers a small `.exe` launcher that delegates to the Node helper over raw
+stdio. Signed MSI, WiX, Inno Setup, and Authenticode signing are deferred until
+there is budget for production installer signing and release operations.
 
 Setup is per-user by default. It writes the Chrome native messaging host under:
 
@@ -31,6 +32,9 @@ ffprobe -version
 Node.js must be version 20 or newer. FFmpeg and FFprobe are not bundled. If a
 dependency is missing, the wrapper may offer `winget install`, but it must print
 the exact command and ask for confirmation unless `-AssumeYes` is passed.
+
+The install step also needs `csc.exe` from .NET Framework Developer Pack or
+Visual Studio Build Tools to compile the native launcher binary.
 
 Default package IDs:
 

@@ -14,6 +14,7 @@ declare module "wxt/browser" {
     | "/icon-32.png"
     | "/icon-48.png"
     | "/iqiyi-main.js"
+    | "/native-helper.html"
     | "/offscreen.html"
     | "/popup.html"
     | "/sidepanel.html"

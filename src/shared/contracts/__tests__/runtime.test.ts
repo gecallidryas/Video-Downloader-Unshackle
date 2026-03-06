@@ -106,7 +106,9 @@ describe('media card adapter', () => {
     const primaryAction = adapted.primaryAction;
 
     expect(adapted.title).toBe('Example Stream');
+    expect(adapted.url).toBe('https://example.com/master.m3u8');
     expect(adapted.format).toBe('HLS');
+    expect(adapted.categoryLabel).toBe('HLS stream');
     expect(adapted.size).toBe('512 MB');
     expect(adapted.duration).toBe('1:02:03');
     expect(adapted.selectedQuality).toBe('v1');
@@ -119,6 +121,7 @@ describe('media card adapter', () => {
       throw new Error('Expected a primary action for clear media');
     }
     expect(primaryAction.kind).toBe('download');
+    expect(primaryAction.label).toBe('Download');
   });
 
   test('maps protected candidates to a blocked primary action', () => {
@@ -169,5 +172,21 @@ describe('media card adapter', () => {
     expect(adapted.qualities.map((quality) => quality.value)).toEqual(['v1', 'v2']);
     expect(adapted.qualities[0].label).toMatch(/^1080p/);
     expect(adapted.qualities[1].label).toMatch(/^1080p/);
+  });
+
+  test('labels generated media-playlist quality as Auto instead of exposing the variant id', () => {
+    const adapted = toDetectedMedia(
+      buildCandidate({
+        variants: [
+          {
+            id: 'media-playlist',
+            isDefault: true,
+          },
+        ],
+      }),
+    );
+
+    expect(adapted.qualities).toEqual([{ label: 'Auto', value: 'media-playlist' }]);
+    expect(adapted.selectedQuality).toBe('media-playlist');
   });
 });

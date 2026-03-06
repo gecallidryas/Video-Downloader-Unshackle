@@ -17,6 +17,11 @@ import {
   resolveBrowserPreviewCapability,
   resolveBrowserThumbnailCapability,
 } from '@/src/core/capabilities/browser-capabilities';
+import {
+  STREAM_CATEGORY_MESSAGES,
+  streamCategoryMessageKey,
+  type StreamCategory,
+} from '@/src/i18n/stream-categories';
 
 function formatDuration(durationSec?: number): string {
   if (durationSec == null || Number.isNaN(durationSec)) {
@@ -80,6 +85,10 @@ function variantLabel(variant: MediaVariant): string {
     return variant.name;
   }
 
+  if (variant.id === 'media-playlist' || variant.id === 'default') {
+    return 'Auto';
+  }
+
   return variant.id;
 }
 
@@ -100,6 +109,7 @@ function toQualityOptions(variants: MediaCandidate['variants']): QualityOption[]
       return {
         label,
         value: variant.id,
+        url: variant.url,
       };
     }
 
@@ -111,6 +121,7 @@ function toQualityOptions(variants: MediaCandidate['variants']): QualityOption[]
     return {
       label: `${label} (${detail})`,
       value: variant.id,
+      url: variant.url,
     };
   });
 }
@@ -129,6 +140,9 @@ function toAudioTrackOptions(tracks: MediaCandidate['audioTracks']): TrackOption
     label: audioTrackLabel(track),
     language: track.language,
     default: track.default,
+    autoselect: track.autoselect,
+    channels: track.channels,
+    url: track.url,
   }));
 }
 
@@ -138,6 +152,8 @@ function toSubtitleTrackOptions(tracks: MediaCandidate['subtitleTracks']): Track
     label: subtitleTrackLabel(track),
     language: track.language,
     default: track.default,
+    autoselect: track.autoselect,
+    url: track.url,
   }));
 }
 
@@ -175,6 +191,28 @@ function formatProtocol(candidate: MediaCandidate): string {
   return candidate.protocol.toUpperCase();
 }
 
+function streamCategory(candidate: MediaCandidate): StreamCategory {
+  if (candidate.mediaKind === 'subtitle') {
+    return 'subtitle';
+  }
+
+  if (candidate.mediaKind === 'audio') {
+    return 'audio';
+  }
+
+  if (
+    candidate.protocol === 'direct' ||
+    candidate.protocol === 'hls' ||
+    candidate.protocol === 'dash' ||
+    candidate.protocol === 'hds' ||
+    candidate.protocol === 'mss'
+  ) {
+    return candidate.protocol;
+  }
+
+  return 'direct';
+}
+
 function getPrimaryAction(
   candidate: MediaCandidate,
 ): MediaPrimaryAction {
@@ -192,22 +230,6 @@ function getPrimaryAction(
     candidate,
   });
 
-  if (capability.capability === 'hls-raw-ts') {
-    return {
-      kind: 'download',
-      label: 'Save raw TS',
-      reason: capability.reason,
-    };
-  }
-
-  if (capability.capability === 'dash-raw-segments') {
-    return {
-      kind: 'download',
-      label: 'Save raw segments',
-      reason: capability.reason,
-    };
-  }
-
   return {
     kind: 'download',
     label: 'Download',
@@ -217,6 +239,9 @@ function getPrimaryAction(
 
 export function toDetectedMedia(candidate: MediaCandidate): DetectedMedia {
   const qualities = toQualityOptions(candidate.variants);
+  const selectedVariant = candidate.variants.find((variant) => variant.isDefault) ?? candidate.variants[0];
+  const defaultAudio = candidate.audioTracks.find((track) => track.default) ?? candidate.audioTracks[0];
+  const defaultSubtitle = candidate.subtitleTracks.find((track) => track.default);
   const mediaType = candidate.mediaKind === 'audio' ? 'audio' : 'video';
   const previewCapability = resolveBrowserPreviewCapability(candidate);
   const thumbnailCapability = resolveBrowserThumbnailCapability(candidate);
@@ -229,8 +254,10 @@ export function toDetectedMedia(candidate: MediaCandidate): DetectedMedia {
 
   return {
     id: candidate.id,
+    url: selectedVariant?.url ?? candidate.sourceUrl ?? candidate.manifestUrl,
     title: candidate.displayName,
     format: formatProtocol(candidate),
+    categoryLabel: STREAM_CATEGORY_MESSAGES[streamCategoryMessageKey(streamCategory(candidate))],
     size: formatSize(candidate.sizeEstimateBytes),
     duration: formatDuration(candidate.durationSec),
     thumbnailUrl: candidate.thumbnails?.heroUrl ?? candidate.posterUrl,
@@ -241,6 +268,13 @@ export function toDetectedMedia(candidate: MediaCandidate): DetectedMedia {
     selectedAudioTrackIds,
     subtitleTracks: toSubtitleTrackOptions(candidate.subtitleTracks),
     selectedSubtitleTrackIds,
+    selectedSubtitleOutput: selectedSubtitleTrackIds.length > 0 ? 'embed' : undefined,
+    bitrate: selectedVariant?.bitrate ?? selectedVariant?.averageBitrate ?? defaultAudio?.bitrate,
+    durationSec: candidate.durationSec,
+    fps: selectedVariant?.frameRate,
+    channels: defaultAudio?.channels,
+    default: Boolean(selectedVariant?.isDefault || defaultAudio?.default || defaultSubtitle?.default),
+    autoselect: Boolean(defaultAudio?.autoselect || defaultSubtitle?.autoselect),
     protocol: candidate.protocol,
     status: candidate.status,
     protection: candidate.protection,

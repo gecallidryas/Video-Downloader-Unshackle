@@ -1,4 +1,5 @@
 import type { DetectionEvidence } from '@/video_downloader_types_skeleton';
+import { isEmptyLink } from '@/src/core/naming/filename-resolver';
 import {
   scanMediaElements,
   type DomMediaElementEvidence,
@@ -20,8 +21,8 @@ export interface ScanIframesResult {
 function resolveUrl(value: string | null | undefined, pageUrl: string): string {
   const raw = value?.trim() ?? '';
 
-  if (!raw) {
-    return pageUrl;
+  if (!raw || isEmptyLink(raw)) {
+    return '';
   }
 
   try {

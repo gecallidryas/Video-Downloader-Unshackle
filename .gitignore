@@ -2,3 +2,9 @@ node_modules
 UnifiedVideoDownloader/
 native/ffmpeg-helper/dist/
 reference/
+.output/
+coverage/
+.wxt/
+playwright-report/
+test-results/
+.playwright-mcp/

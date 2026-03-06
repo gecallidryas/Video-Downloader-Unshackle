@@ -91,6 +91,23 @@
   gap: 4px;
 }
 
+.popup__row--with-help {
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.popup__row--with-help > span {
+  display: grid;
+  gap: 2px;
+}
+
+.popup__help {
+  max-width: 210px;
+  color: var(--on-surface-variant);
+  font-size: var(--text-label-size);
+  line-height: var(--text-label-lh);
+}
+
 .popup__input,
 .popup__textarea {
   height: 24px;
@@ -126,82 +143,6 @@
   font-size: var(--text-label-size);
   line-height: var(--text-label-lh);
   color: var(--outline);
-}
-
-.native-helper-status {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: 6px;
-  min-height: var(--touch-target);
-  padding: 4px 8px;
-  border-radius: var(--radius);
-  border: 1px solid var(--outline);
-  background: var(--surface-container-lowest);
-}
-
-.native-helper-status__label,
-.native-helper-status__value {
-  display: block;
-}
-
-.native-helper-status__label {
-  color: var(--on-surface);
-  font-size: var(--text-body-size);
-  font-weight: 500;
-}
-
-.native-helper-status__value {
-  color: var(--on-surface-variant);
-  font-size: var(--text-label-size);
-  line-height: var(--text-label-lh);
-}
-
-.native-helper-status__actions {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.native-helper-status__setup,
-.native-helper-status__check {
-  height: 24px;
-  border: 1px solid var(--outline);
-  border-radius: var(--radius);
-  background: var(--surface);
-  color: var(--on-surface);
-  font-size: 11px;
-  cursor: pointer;
-}
-
-.native-helper-status__check:disabled {
-  cursor: wait;
-  opacity: 0.6;
-}
-
-.native-helper-status__setup {
-  display: inline-flex;
-  align-items: center;
-  padding: 0 8px;
-  text-decoration: none;
-}
-
-.native-helper-status__diagnostics {
-  display: grid;
-  grid-template-columns: 1fr;
-  gap: 4px;
-  width: 100%;
-}
-
-.native-helper-status__diagnostics input {
-  min-width: 0;
-  border: 1px solid var(--outline-variant, var(--outline));
-  border-radius: var(--radius);
-  background: var(--surface);
-  color: var(--on-surface-variant);
-  font-family: var(--font-mono);
-  font-size: var(--text-label-size);
 }
 
 .capture-rules {

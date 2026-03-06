@@ -4,6 +4,7 @@ import { createJobStore } from '@/src/background/jobs/job-store';
 import { createRequestJournal } from '@/src/background/network/request-journal';
 import { createTabSnapshotStore } from '@/src/background/state/tab-snapshots';
 import { createRuntimeRequest } from '@/src/shared/contracts/messages';
+import type { MediaCandidate } from '@/video_downloader_types_skeleton';
 import { createRuntimeRouter } from '../runtime-router';
 
 const hlsMaster = [
@@ -124,6 +125,171 @@ test('GET_CANDIDATES hydrates passive request journal evidence for a queried tab
   ).toMatchObject({ status: 'protected' });
 });
 
+test('GET_CANDIDATES fetches HLS variant durations with a four-request limit', async () => {
+  const candidateRegistry = createCandidateRegistry();
+  const requestJournal = createRequestJournal();
+  const tabSnapshots = createTabSnapshotStore();
+  let runningLevels = 0;
+  let maxRunningLevels = 0;
+  const fetchManifest = vi.fn(async (url: string) => {
+    if (url.endsWith('/hls/master.m3u8')) {
+      return [
+        '#EXTM3U',
+        '#EXT-X-STREAM-INF:BANDWIDTH=100000',
+        'level-1.m3u8',
+        '#EXT-X-STREAM-INF:BANDWIDTH=200000',
+        'level-2.m3u8',
+        '#EXT-X-STREAM-INF:BANDWIDTH=300000',
+        'level-3.m3u8',
+        '#EXT-X-STREAM-INF:BANDWIDTH=400000',
+        'level-4.m3u8',
+        '#EXT-X-STREAM-INF:BANDWIDTH=500000',
+        'level-5.m3u8',
+      ].join('\n');
+    }
+    if (url.includes('level-')) {
+      runningLevels += 1;
+      maxRunningLevels = Math.max(maxRunningLevels, runningLevels);
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      runningLevels -= 1;
+      return ['#EXTM3U', '#EXTINF:10,', 'segment.ts'].join('\n');
+    }
+    throw new Error(`Unexpected manifest URL: ${url}`);
+  });
+  const router = createRuntimeRouter({
+    candidateRegistry,
+    tabSnapshots,
+    requestJournal,
+    fetchManifest,
+  });
+  requestJournal.addRequest(7, {
+    url: 'http://127.0.0.1:4173/hls/master.m3u8',
+    initiator: 'http://127.0.0.1:4173/index.html',
+    responseHeaders: [
+      { name: 'content-type', value: 'application/vnd.apple.mpegurl' },
+    ],
+    timeStamp: 2,
+  });
+
+  const response = await router.handleMessage(
+    createRuntimeRequest('GET_CANDIDATES', { tabId: 7 }, 'req-duration'),
+  );
+
+  expect(response.type).toBe('GET_CANDIDATES_RESULT');
+  if (response.type !== 'GET_CANDIDATES_RESULT') return;
+  expect(maxRunningLevels).toBe(4);
+  expect(response.payload.candidates[0]).toMatchObject({ durationSec: 10 });
+});
+
+test('GET_ALL_CANDIDATES aggregates candidates across registered tabs', async () => {
+  const candidateRegistry = createCandidateRegistry();
+  const router = createRuntimeRouter({
+    candidateRegistry,
+    tabSnapshots: createTabSnapshotStore(),
+  });
+  candidateRegistry.set(1, [{
+    id: 'a',
+    tabId: 1,
+    mediaKind: 'video',
+    protocol: 'direct',
+    status: 'ready',
+    pageUrl: 'https://a.example/',
+    origin: 'https://a.example',
+    displayName: 'A',
+    sourceUrl: 'https://a.example/a.mp4',
+    protection: { kind: 'none' },
+    variants: [],
+    audioTracks: [],
+    subtitleTracks: [],
+    evidence: [],
+    preview: { playable: true, adapter: 'native' },
+    createdAt: 1,
+    updatedAt: 1,
+  }]);
+  candidateRegistry.set(2, [{
+    id: 'b',
+    tabId: 2,
+    mediaKind: 'video',
+    protocol: 'direct',
+    status: 'ready',
+    pageUrl: 'https://b.example/',
+    origin: 'https://b.example',
+    displayName: 'B',
+    sourceUrl: 'https://b.example/b.mp4',
+    protection: { kind: 'none' },
+    variants: [],
+    audioTracks: [],
+    subtitleTracks: [],
+    evidence: [],
+    preview: { playable: true, adapter: 'native' },
+    createdAt: 1,
+    updatedAt: 1,
+  }]);
+
+  const response = await router.handleMessage(
+    createRuntimeRequest('GET_ALL_CANDIDATES', {}, 'req-all'),
+  );
+
+  expect(response.type).toBe('GET_ALL_CANDIDATES_RESULT');
+  if (response.type !== 'GET_ALL_CANDIDATES_RESULT') return;
+  expect(response.payload.candidates.map((candidate) => candidate.id)).toEqual(['a', 'b']);
+});
+
+test('GET_JOBS and queue actions expose production download queue operations', async () => {
+  const candidateRegistry = createCandidateRegistry();
+  const jobStore = createJobStore(() => 1);
+  const historyStore = createHistoryStore(() => 1);
+  const candidate: MediaCandidate = {
+    id: 'direct-1',
+    tabId: 7,
+    mediaKind: 'video',
+    protocol: 'direct',
+    status: 'ready',
+    pageUrl: 'https://example.com/',
+    origin: 'https://example.com',
+    displayName: 'Direct',
+    sourceUrl: 'https://cdn.example.com/direct.mp4',
+    protection: { kind: 'none' },
+    variants: [],
+    audioTracks: [],
+    subtitleTracks: [],
+    evidence: [],
+    preview: { playable: true, adapter: 'native' },
+    createdAt: 1,
+    updatedAt: 1,
+  };
+  candidateRegistry.set(7, [candidate]);
+  const downloadQueue = {
+    enqueue: vi.fn(() => jobStore.create(candidate, { mode: 'best' })),
+    drain: vi.fn(async () => undefined),
+    stats: vi.fn(),
+    retry: vi.fn(() => true),
+    cancel: vi.fn(),
+    pause: vi.fn(),
+    resume: vi.fn(),
+    removeQueued: vi.fn(),
+    clearCompleted: vi.fn(() => ['job-1']),
+  };
+  const job = jobStore.create(candidate, { mode: 'best' });
+  jobStore.update(job.id, { phase: 'failed' });
+  const router = createRuntimeRouter({
+    candidateRegistry,
+    tabSnapshots: createTabSnapshotStore(),
+    jobStore,
+    historyStore,
+    downloadQueue,
+  });
+
+  expect(await router.handleMessage(createRuntimeRequest('GET_JOBS', {}, 'req-jobs')))
+    .toMatchObject({ type: 'GET_JOBS_RESULT' });
+  await router.handleMessage(createRuntimeRequest('RETRY_DOWNLOAD', { jobId: job.id }, 'req-retry'));
+  expect(downloadQueue.retry).toHaveBeenCalledWith(job.id);
+  await router.handleMessage(createRuntimeRequest('RESAVE_DOWNLOAD', { jobId: job.id }, 'req-resave'));
+  expect(downloadQueue.enqueue).toHaveBeenCalledWith(candidate, job.selection);
+  await router.handleMessage(createRuntimeRequest('REMOVE_DOWNLOAD', { jobId: job.id }, 'req-remove'));
+  expect(jobStore.get(job.id)).toBeUndefined();
+});
+
 test('INGEST_CONTENT_EVIDENCE stores DOM HLS manifests for the sender tab', async () => {
   const { router } = buildRouter();
 
@@ -177,6 +343,50 @@ test('INGEST_CONTENT_EVIDENCE stores DOM HLS manifests for the sender tab', asyn
       protection: { kind: 'none' },
     }),
   ]);
+});
+
+test('INGEST_CONTENT_EVIDENCE records only newly created detections', async () => {
+  const recordDetection = vi.fn();
+  const router = createRuntimeRouter({
+    candidateRegistry: createCandidateRegistry(),
+    tabSnapshots: createTabSnapshotStore(),
+    recordDetection,
+  });
+  const request = createRuntimeRequest(
+    'INGEST_CONTENT_EVIDENCE',
+    {
+      pageUrl: 'https://example.com/watch',
+      pageTitle: 'Fixture page',
+      evidence: [
+        {
+          source: 'dom',
+          confidence: 0.85,
+          url: 'https://cdn.example.com/master.m3u8',
+          notes: ['tag:video'],
+          createdAt: 1,
+          mediaKind: 'video',
+          pageUrl: 'https://example.com/watch',
+          sources: [{ url: 'https://cdn.example.com/master.m3u8' }],
+          tracks: [],
+        } as never,
+      ],
+    },
+    'req-content-notify',
+  );
+  const sender = {
+    tab: {
+      id: 7,
+      url: 'https://example.com/watch',
+      title: 'Fixture page',
+    } as chrome.tabs.Tab,
+    frameId: 0,
+  };
+
+  await router.handleMessage(request, sender);
+  await router.handleMessage(request, sender);
+
+  expect(recordDetection).toHaveBeenCalledTimes(1);
+  expect(recordDetection).toHaveBeenCalledWith('example.com', 1);
 });
 
 test('INGEST_MANUAL_HLS stores URL and raw-list candidates for the requested tab', async () => {
@@ -261,6 +471,26 @@ test('START_DOWNLOAD can find a candidate loaded for the side panel without send
   );
 
   expect(response.type).toBe('START_DOWNLOAD_RESULT');
+});
+
+test('CANCEL_DOWNLOAD delegates to the configured runtime cancellation path', async () => {
+  const cancelDownload = vi.fn(async () => ({ cancelled: true, downloadId: 77 }));
+  const router = createRuntimeRouter({
+    candidateRegistry: createCandidateRegistry(),
+    tabSnapshots: createTabSnapshotStore(),
+    cancelDownload,
+  });
+
+  const response = await router.handleMessage(
+    createRuntimeRequest('CANCEL_DOWNLOAD', { jobId: 'job-1' }, 'req-cancel'),
+  );
+
+  expect(cancelDownload).toHaveBeenCalledWith('job-1');
+  expect(response).toEqual({
+    type: 'CANCEL_DOWNLOAD_RESULT',
+    requestId: 'req-cancel',
+    payload: { cancelled: true, downloadId: 77 },
+  });
 });
 
 test('REQUEST_HOST_ACCESS delegates runtime origin grants through the permissions API', async () => {

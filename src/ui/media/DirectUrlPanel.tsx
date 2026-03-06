@@ -89,7 +89,7 @@ export function DirectUrlPanel({ results = [], onSubmit, onRetry, onStop }: Dire
         </label>
         <button type="submit">Start download</button>
       </form>
-      <ul aria-label="Manual download results" style={{ marginTop: 12, listStyle: 'none', padding: 0 }}>
+      <ul aria-label="Direct URL results" style={{ marginTop: 12, listStyle: 'none', padding: 0 }}>
         {results.map((result) => (
           <li
             key={result.id}

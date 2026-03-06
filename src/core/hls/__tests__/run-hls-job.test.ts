@@ -141,6 +141,49 @@ describe('HLS planning and execution', () => {
     spy.mockRestore();
   });
 
+  test('limits HLS output to the selected segment range while retaining init segments', async () => {
+    const manifest = parseHlsManifest({
+      manifestUrl: 'https://cdn.example.com/hls/video/720p/prog.m3u8',
+      content: mediaPlaylist,
+    });
+    const onPlan = vi.fn();
+    const spy = vi.spyOn(segmentScheduler, 'scheduleSegments').mockResolvedValue([
+      new Uint8Array([2]),
+      new Uint8Array([3]),
+    ]);
+
+    await runHlsJob({
+      job: buildJob({ selection: { mode: 'custom', segmentRange: { start: 2, end: 3 } } }),
+      manifest,
+      fetchSegment: vi.fn(),
+      writeOutput: vi.fn().mockResolvedValue({
+        fileName: 'partial.ts',
+        mimeType: 'video/mp2t',
+      }),
+      onPlan,
+    });
+
+    expect(spy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        segments: [
+          expect.objectContaining({ index: 0, initSegment: true }),
+          expect.objectContaining({ index: 2 }),
+          expect.objectContaining({ index: 3 }),
+        ],
+      }),
+    );
+    expect(onPlan).toHaveBeenCalledWith(
+      expect.objectContaining({
+        segments: [
+          expect.objectContaining({ index: 0 }),
+          expect.objectContaining({ index: 2 }),
+          expect.objectContaining({ index: 3 }),
+        ],
+      }),
+    );
+    spy.mockRestore();
+  });
+
   test('passes segmentTimeoutMs through to scheduleSegments', async () => {
     const manifest = parseHlsManifest({
       manifestUrl: 'https://cdn.example.com/hls/video/720p/prog.m3u8',

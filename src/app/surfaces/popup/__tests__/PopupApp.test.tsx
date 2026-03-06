@@ -1,9 +1,10 @@
-import { fireEvent, render, screen, within } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { vi } from 'vitest';
 import type { NativeHelperDiagnostic } from '@/src/native/native-helper-diagnostics';
 import { PopupApp, type PopupJob } from '../PopupApp';
 import { useSettingsStore } from '@/src/state/useSettingsStore';
+import type { RuntimeClient } from '@/src/lib/runtime/client';
 
 const nativeMocks = vi.hoisted(() => ({
   requestNativeMessagingPermission: vi.fn(),
@@ -34,6 +35,7 @@ function diagnostic(readiness: NativeHelperDiagnostic['readiness']): NativeHelpe
 }
 
 beforeEach(() => {
+  vi.spyOn(window, 'open').mockImplementation(() => null);
   nativeMocks.requestNativeMessagingPermission.mockReset();
   nativeMocks.checkNativeHelperReadiness.mockReset();
   nativeMocks.checkNativeHelperReadiness.mockResolvedValue(diagnostic('permission-needed'));
@@ -57,7 +59,25 @@ beforeEach(() => {
     captureRuleUrlBlacklist: [],
     captureRuleMinSizeBytes: 0,
     captureRuleSizePredicate: '',
+    captureRuleRegexRules: [],
+    customCommandTemplate: '',
+    autoDownloadEnabled: false,
+    autoDownloadMinSize: 102_400,
+    autoDownloadBlacklist: [],
+    aria2Enabled: false,
+    aria2RpcUrl: 'http://localhost:6800/jsonrpc',
+    aria2Secret: '',
+    webhookEnabled: false,
+    webhookUrl: '',
+    externalPlayerProfiles: [],
     advancedMode: false,
+    enableNativeFeatures: true,
+    enableBrowserFallbacks: true,
+    browserTransmuxWithMuxJs: true,
+    browserTransmuxMaxBytes: 150 * 1024 * 1024,
+    useDirectToDisk: false,
+    rememberOutputFolder: false,
+    autoDeleteAfterSave: false,
     previousSessionLimit: 50,
     nativeHelperOnboardingDismissed: false,
     nativeHelperPermissionPrompted: false,
@@ -65,6 +85,12 @@ beforeEach(() => {
     onboardingCompleted: false,
     uiLanguage: 'en',
   });
+});
+
+afterEach(() => {
+  cleanup();
+  vi.restoreAllMocks();
+  vi.unstubAllGlobals();
 });
 
 test('renders the popup header', () => {
@@ -110,14 +136,69 @@ test('renders source-equivalent download settings in the flat settings surface',
   expect(screen.getByRole('checkbox', { name: /network capture/i })).toBeChecked();
   expect(screen.getByRole('combobox', { name: /max concurrent downloads/i })).toHaveValue('3');
   expect(screen.getByRole('combobox', { name: /segments per download/i })).toHaveValue('5');
-  expect(screen.getByRole('combobox', { name: /preferred audio language/i })).toHaveValue('en');
+  expect(screen.getByLabelText(/preferred audio language/i)).toHaveValue('en');
   expect(screen.getByRole('textbox', { name: /filename template/i })).toHaveValue(
     '{title}_{quality}_{date}_{time}',
   );
   expect(screen.getByRole('combobox', { name: /preview mode/i })).toHaveValue('image');
   expect(screen.getByRole('combobox', { name: /preview format/i })).toHaveValue('webm');
-  expect(screen.getByText(/native ffmpeg helper/i)).toBeInTheDocument();
-  expect(screen.getByRole('button', { name: /check helper/i })).toBeInTheDocument();
+  expect(screen.getByRole('checkbox', { name: /native ffmpeg features/i })).toBeChecked();
+  expect(screen.getByRole('checkbox', { name: /browser fallbacks/i })).toBeChecked();
+  expect(screen.getByRole('checkbox', { name: /use direct-to-disk when available/i })).not.toBeChecked();
+  expect(screen.getByRole('checkbox', { name: /remember output folder/i })).not.toBeChecked();
+  expect(screen.getByRole('button', { name: /choose output folder/i })).toBeInTheDocument();
+  expect(screen.getByRole('checkbox', { name: /auto-delete fragments after save/i })).not.toBeChecked();
+  expect(screen.queryByRole('button', { name: /check helper/i })).not.toBeInTheDocument();
+});
+
+test('settings exposes language picker, regex rules, templates, auto-download, and integrations', async () => {
+  const user = userEvent.setup();
+  render(<PopupApp />);
+
+  await user.selectOptions(screen.getByLabelText(/preferred audio language/i), '__other__');
+  await user.type(screen.getByRole('textbox', { name: /custom language/i }), 'sv');
+  fireEvent.change(screen.getByRole('textbox', { name: /regex classification rules/i }), {
+    target: { value: JSON.stringify([{ pattern: '\\.m3u8$', category: 'hls_manifest' }]) },
+  });
+  fireEvent.change(screen.getByRole('textbox', { name: /custom command template/i }), {
+    target: { value: 'yt-dlp "{url}" -o "{filename}"' },
+  });
+  await user.click(screen.getByRole('checkbox', { name: /auto-download safe direct media/i }));
+  fireEvent.change(screen.getByRole('spinbutton', { name: /auto-download minimum size/i }), {
+    target: { value: '4096' },
+  });
+  fireEvent.change(screen.getByRole('textbox', { name: /auto-download blacklist/i }), {
+    target: { value: '*ads*' },
+  });
+  await user.click(screen.getByRole('checkbox', { name: /enable aria2/i }));
+  fireEvent.change(screen.getByRole('textbox', { name: /aria2 rpc url/i }), {
+    target: { value: 'http://aria2.local/jsonrpc' },
+  });
+  fireEvent.change(screen.getByLabelText(/aria2 secret/i), {
+    target: { value: 'token' },
+  });
+  await user.click(screen.getByRole('checkbox', { name: /enable webhook/i }));
+  fireEvent.change(screen.getByRole('textbox', { name: /webhook url/i }), {
+    target: { value: 'https://hook.example/notify' },
+  });
+  fireEvent.change(screen.getByRole('textbox', { name: /external player profiles json/i }), {
+    target: { value: JSON.stringify([{ id: 'vlc', name: 'VLC', path: 'vlc.exe' }]) },
+  });
+
+  expect(useSettingsStore.getState()).toMatchObject({
+    preferredAudioLanguage: 'sv',
+    captureRuleRegexRules: [{ pattern: '\\.m3u8$', category: 'hls_manifest' }],
+    customCommandTemplate: 'yt-dlp "{url}" -o "{filename}"',
+    autoDownloadEnabled: true,
+    autoDownloadMinSize: 4096,
+    autoDownloadBlacklist: ['*ads*'],
+    aria2Enabled: true,
+    aria2RpcUrl: 'http://aria2.local/jsonrpc',
+    aria2Secret: 'token',
+    webhookEnabled: true,
+    webhookUrl: 'https://hook.example/notify',
+    externalPlayerProfiles: [{ id: 'vlc', name: 'VLC', path: 'vlc.exe' }],
+  });
 });
 
 test('preview format selection persists to the settings store', async () => {
@@ -140,20 +221,48 @@ test('theme selection persists to the settings store and document token hook', a
 });
 
 test('popup shows first-run onboarding before settings rows when helper is not ready', async () => {
+  const user = userEvent.setup();
   render(<PopupApp />);
   const onboarding = await screen.findByLabelText(/welcome to unshackle/i);
 
   expect(onboarding).toBeInTheDocument();
-  expect(screen.getByText(/open source/i)).toBeInTheDocument();
-  expect(screen.getByText(/local-first/i)).toBeInTheDocument();
-  expect(screen.getByText(/detection and normal browser downloads work without native helper/i)).toBeInTheDocument();
-  expect(within(onboarding).getByRole('combobox', { name: /^language$/i })).toHaveValue('en');
+  expect(screen.getByText(/find downloadable video and audio/i)).toBeInTheDocument();
+  await user.click(within(onboarding).getByRole('button', { name: /next/i }));
+  expect(within(onboarding).getByRole('button', { name: /view on github/i })).toBeInTheDocument();
+  await user.click(within(onboarding).getByRole('button', { name: /next/i }));
+  expect(within(onboarding).getByRole('radio', { name: /dark/i })).toBeInTheDocument();
+});
+
+test('settings toggles native features and browser fallbacks independently', async () => {
+  const user = userEvent.setup();
+  render(<PopupApp />);
+
+  await user.click(screen.getByRole('checkbox', { name: /native ffmpeg features/i }));
+  await user.click(screen.getByRole('checkbox', { name: /browser fallbacks/i }));
+
+  expect(useSettingsStore.getState().enableNativeFeatures).toBe(false);
+  expect(useSettingsStore.getState().enableBrowserFallbacks).toBe(false);
+});
+
+test('settings exposes streaming write and cleanup controls', async () => {
+  const user = userEvent.setup();
+  render(<PopupApp />);
+
+  await user.click(screen.getByRole('checkbox', { name: /use direct-to-disk when available/i }));
+  await user.click(screen.getByRole('checkbox', { name: /remember output folder/i }));
+  await user.click(screen.getByRole('checkbox', { name: /auto-delete fragments after save/i }));
+
+  expect(useSettingsStore.getState().useDirectToDisk).toBe(true);
+  expect(useSettingsStore.getState().rememberOutputFolder).toBe(true);
+  expect(useSettingsStore.getState().autoDeleteAfterSave).toBe(true);
 });
 
 test('popup onboarding lets the user choose theme', async () => {
   const user = userEvent.setup();
   render(<PopupApp />);
 
+  await user.click(await screen.findByRole('button', { name: /next/i }));
+  await user.click(await screen.findByRole('button', { name: /next/i }));
   await user.click(await screen.findByRole('radio', { name: /light/i }));
 
   expect(useSettingsStore.getState().theme).toBe('light');
@@ -164,7 +273,10 @@ test('completing onboarding stores onboardingCompleted', async () => {
   const user = userEvent.setup();
   render(<PopupApp />);
 
-  await user.click(await screen.findByRole('button', { name: /complete/i }));
+  for (let index = 0; index < 6; index += 1) {
+    await user.click(await screen.findByRole('button', { name: /next/i }));
+  }
+  await user.click(await screen.findByRole('button', { name: /finish/i }));
 
   expect(useSettingsStore.getState().onboardingCompleted).toBe(true);
 });
@@ -177,8 +289,14 @@ test('Enable native helper requests optional permission and rechecks readiness a
   const user = userEvent.setup();
   render(<PopupApp />);
   const onboarding = await screen.findByLabelText(/welcome to unshackle/i);
+  for (let index = 0; index < 5; index += 1) {
+    await user.click(within(onboarding).getByRole('button', { name: /next/i }));
+  }
+  const enableButton = await within(onboarding).findByRole('button', {
+    name: /allow native messaging/i,
+  });
 
-  await user.click(within(onboarding).getByRole('button', { name: /enable native helper/i }));
+  await user.click(enableButton);
 
   expect(nativeMocks.requestNativeMessagingPermission).toHaveBeenCalledTimes(1);
   expect(nativeMocks.checkNativeHelperReadiness).toHaveBeenCalledTimes(2);
@@ -187,19 +305,37 @@ test('Enable native helper requests optional permission and rechecks readiness a
 
 test('host-missing state shows PowerShell setup action without implying silent install', async () => {
   nativeMocks.checkNativeHelperReadiness.mockResolvedValue(diagnostic('host-missing'));
+  const user = userEvent.setup();
   render(<PopupApp />);
   const onboarding = await screen.findByLabelText(/welcome to unshackle/i);
+  for (let index = 0; index < 6; index += 1) {
+    await user.click(within(onboarding).getByRole('button', { name: /next/i }));
+  }
 
-  expect(await screen.findByText(/powershell setup wrapper/i)).toBeInTheDocument();
-  expect(within(onboarding).getByRole('button', { name: /open setup/i })).toBeInTheDocument();
+  expect(await screen.findByText(/setup page explains helper registration/i)).toBeInTheDocument();
+  expect(await within(onboarding).findByRole('button', { name: /open setup/i })).toBeInTheDocument();
   expect(screen.queryByText(/installed automatically/i)).not.toBeInTheDocument();
+});
+
+test('open-source screen uses the repository github url', async () => {
+  const user = userEvent.setup();
+  render(<PopupApp />);
+
+  await user.click(await screen.findByRole('button', { name: /next/i }));
+  await user.click(await screen.findByRole('button', { name: /view on github/i }));
+
+  expect(window.open).toHaveBeenCalledWith(
+    'https://github.com/gecallidryas/Video-Downloader-Unshackle',
+    '_blank',
+    'noopener,noreferrer',
+  );
 });
 
 test('dismissed onboarding does not render on next popup open', async () => {
   const user = userEvent.setup();
   const { unmount } = render(<PopupApp />);
 
-  await user.click(await screen.findByRole('button', { name: /dismiss/i }));
+  await user.click(await screen.findByRole('button', { name: /close onboarding/i }));
   unmount();
   render(<PopupApp />);
 
@@ -313,4 +449,37 @@ test('empty jobs prop renders empty state and shortcut hints', () => {
   render(<PopupApp jobs={[]} />);
   expect(screen.getByText(/no active downloads/i)).toBeInTheDocument();
   expect(screen.getByLabelText(/keyboard shortcuts/i)).toBeInTheDocument();
+});
+
+test('popup loads runtime jobs when opened without injected jobs', async () => {
+  const downloadJobs = [
+    {
+      id: 'job-a',
+      candidateId: 'candidate-a',
+      tabId: 7,
+      phase: 'running',
+      createdAt: 1,
+      updatedAt: 2,
+      progressPct: 42,
+      bytesDownloaded: 1_024,
+      selection: { mode: 'best' },
+      output: {
+        fileName: 'Clip A',
+        mimeType: 'video/mp4',
+        outputUrl: 'blob:clip-a',
+      },
+      segmentStatuses: [
+        { index: 0, status: 'done' },
+        { index: 1, status: 'failed' },
+      ],
+    },
+  ];
+  const runtimeClient = {
+    getJobs: vi.fn().mockResolvedValue(downloadJobs),
+  } as Partial<RuntimeClient> as RuntimeClient;
+
+  render(<PopupApp runtimeClient={runtimeClient} loadRuntimeJobs />);
+
+  expect(await screen.findByText('Clip A')).toBeInTheDocument();
+  expect(runtimeClient.getJobs).toHaveBeenCalledTimes(1);
 });

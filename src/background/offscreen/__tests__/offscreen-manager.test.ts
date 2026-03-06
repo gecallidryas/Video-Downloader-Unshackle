@@ -29,7 +29,7 @@ describe('offscreen manager', () => {
 
     expect(chromeOffscreen.createDocument).toHaveBeenCalledWith({
       url: 'offscreen.html',
-      reasons: ['DOM_PARSER'],
+      reasons: ['DOM_SCRAPING', 'BLOBS'],
       justification: expect.stringMatching(/preview/i),
     });
     expect(chromeRuntime.sendMessage).toHaveBeenCalledWith({
@@ -51,6 +51,7 @@ describe('offscreen manager', () => {
     expect(chromeOffscreen.createDocument).toHaveBeenCalledWith(
       expect.objectContaining({
         url: 'offscreen.html',
+        reasons: ['DOM_SCRAPING', 'BLOBS'],
         justification: expect.stringMatching(/thumbnail/i),
       }),
     );
