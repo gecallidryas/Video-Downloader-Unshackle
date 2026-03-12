@@ -10,6 +10,7 @@ function defaultOptions(overrides: Partial<RecordPreviewOptions> = {}): RecordPr
     startSec: 5,
     durationSec: 3,
     timeoutMs: 10_000,
+    directMode: 'blob-fetch',
     ...overrides,
   };
 }

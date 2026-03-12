@@ -37,6 +37,8 @@ import { registerBackgroundCommandHandlers } from '@/src/background/commands/bac
 import { createAutoScanController } from '@/src/background/scanning/auto-scan';
 import { createTabSnapshotStore } from '@/src/background/state/tab-snapshots';
 import { createTabVideoStatusStore } from '@/src/background/state/tab-video-status';
+import { createMediaAssetService } from '@/src/background/assets/media-asset-service';
+import { createNativeAssetServer } from '@/src/background/assets/native-asset-server';
 import { getSidePanelBehavior } from '@/src/lib/chrome/sidePanel';
 import { probeDirectMedia } from '@/src/core/direct/probe-direct-media';
 import { downloadDirectWithRanges } from '@/src/core/download/range-splitter';
@@ -76,6 +78,24 @@ export function initializeBackgroundShell() {
   function getNativeClient(): NativeFfmpegClient {
     nativeClient ??= createNativeFfmpegClient();
     return nativeClient;
+  }
+
+  const nativeAssetServer =
+    typeof URL.createObjectURL === 'function'
+      ? createNativeAssetServer({
+          nativeClient: getNativeClient(),
+          createObjectUrl: URL.createObjectURL.bind(URL),
+          revokeObjectUrl: URL.revokeObjectURL?.bind(URL),
+        })
+      : undefined;
+
+  function headersForCandidate(candidate: MediaCandidate): Record<string, string> | undefined {
+    const inputUrl = candidate.sourceUrl ?? candidate.manifestUrl;
+    if (!inputUrl) {
+      return undefined;
+    }
+
+    return headerContext.getByUrl(inputUrl)?.headers;
   }
 
   function initializeHlsSegmentStatuses(jobId: string, plan: SegmentPlan): void {
@@ -119,11 +139,37 @@ export function initializeBackgroundShell() {
     const progressPct =
       event.total > 0 ? Math.round((completed / event.total) * 100) : job.progressPct;
 
+    const phase = ['transmuxing', 'exporting', 'finalizing'].includes(job.phase)
+      ? job.phase
+      : 'fetching';
+    const segmentBytes =
+      event.status === 'done' && event.segment?.byteRange
+        ? event.segment.byteRange.end - event.segment.byteRange.start + 1
+        : 0;
+
     jobStore.update(jobId, {
+      phase,
       progressPct,
       currentSegment: event.segment?.index ?? job.currentSegment,
       totalSegments: event.total,
+      bytesDownloaded: job.bytesDownloaded + segmentBytes,
       segmentStatuses: nextStatuses,
+    });
+  }
+
+  async function getStreamingCapabilities() {
+    const directoryHandle = await loadPersistedOutputDirectoryHandle();
+    const environment = globalThis as {
+      WritableStream?: unknown;
+      navigator?: { storage?: { getDirectory?: unknown } };
+      showDirectoryPicker?: unknown;
+    };
+
+    return detectStreamingWriteCapabilities({
+      WritableStream: environment.WritableStream,
+      navigator: environment.navigator,
+      showDirectoryPicker: environment.showDirectoryPicker,
+      persistedOutputDirectory: Boolean(directoryHandle),
     });
   }
 
@@ -249,13 +295,32 @@ export function initializeBackgroundShell() {
       }
 
       const writeFile = await getDirectToDiskWriter();
+      const streamingCapabilities = await getStreamingCapabilities();
 
       return runBrowserHlsExportJob({
         ...input,
         candidate,
         ...(writeFile ? { writeFile } : {}),
+        download: chrome.downloads.download,
+        offscreenExport: (command) => offscreenManager.sendMessage(command),
+        streamingCapabilities,
         onPlan: (plan) => initializeHlsSegmentStatuses(input.job.id, plan),
         onProgress: (event) => updateHlsSegmentProgress(input.job.id, event),
+        onExportRoute: (decision) =>
+          jobStore.update(input.job.id, {
+            browserExportRoute: decision.route,
+            browserExportSink: decision.sinkKind,
+            browserExportReason: decision.reason,
+            recoveryActions:
+              decision.rawFallbackAllowed && decision.outputExtension === 'mp4'
+                ? ['save_raw_ts', 'retry_mp4_conversion', 'retry_failed_segments', 'replace_manifest_url']
+                : ['retry_failed_segments', 'replace_manifest_url'],
+          }),
+        onOutputProgress: (bytesWritten) =>
+          jobStore.update(input.job.id, {
+            outputBytesWritten: bytesWritten,
+          }),
+        onExportPhase: (phase) => jobStore.update(input.job.id, { phase }),
       });
     },
     runDash: async (input) => {
@@ -370,6 +435,9 @@ export function initializeBackgroundShell() {
     ensurePreviewClip: (candidate, options) =>
       ensurePreviewClip(candidate, {
         ...(settingsStore.get('enableNativeFeatures') ? { nativeClient: getNativeClient() } : {}),
+        ...(settingsStore.get('enableNativeFeatures')
+          ? { headers: headersForCandidate(candidate) }
+          : {}),
         ...(settingsStore.get('enableBrowserFallbacks')
           ? { offscreenRecord: (message) => offscreenManager.sendMessage(message) }
           : {}),
@@ -378,10 +446,38 @@ export function initializeBackgroundShell() {
     ensureThumbnail: (candidate) =>
       ensureNativeThumbnail(candidate, {
         ...(settingsStore.get('enableNativeFeatures') ? { nativeClient: getNativeClient() } : {}),
+        ...(settingsStore.get('enableNativeFeatures')
+          ? { headers: headersForCandidate(candidate) }
+          : {}),
         ...(settingsStore.get('enableBrowserFallbacks')
           ? { offscreenCapture: (message) => offscreenManager.sendMessage(message) }
           : {}),
       }),
+    mediaAssetService: createMediaAssetService({
+      hasNativeSupport: () => settingsStore.get('enableNativeFeatures'),
+      nativeAssetServer,
+      ensureThumbnail: (candidate) =>
+        ensureNativeThumbnail(candidate, {
+          ...(settingsStore.get('enableNativeFeatures') ? { nativeClient: getNativeClient() } : {}),
+          ...(settingsStore.get('enableNativeFeatures')
+            ? { headers: headersForCandidate(candidate) }
+            : {}),
+          ...(settingsStore.get('enableBrowserFallbacks')
+            ? { offscreenCapture: (message) => offscreenManager.sendMessage(message) }
+            : {}),
+        }),
+      ensurePreviewClip: (candidate, options) =>
+        ensurePreviewClip(candidate, {
+          ...(settingsStore.get('enableNativeFeatures') ? { nativeClient: getNativeClient() } : {}),
+          ...(settingsStore.get('enableNativeFeatures')
+            ? { headers: headersForCandidate(candidate) }
+            : {}),
+          ...(settingsStore.get('enableBrowserFallbacks')
+            ? { offscreenRecord: (message) => offscreenManager.sendMessage(message) }
+            : {}),
+          ...options,
+        }),
+    }),
     cancelDownload: (jobId) => downloadController.abort(jobId, { jobStore }),
     recordDetection: (hostname, count) => detectionNotifier.recordDetection(hostname, count),
   });

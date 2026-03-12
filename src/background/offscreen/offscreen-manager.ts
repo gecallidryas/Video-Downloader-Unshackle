@@ -1,4 +1,4 @@
-type OffscreenReason = 'preview' | 'thumbnail' | 'trim';
+type OffscreenReason = 'preview' | 'thumbnail' | 'trim' | 'export';
 
 interface OffscreenApi {
   hasDocument?: () => Promise<boolean>;
@@ -10,7 +10,7 @@ interface OffscreenApi {
 }
 
 interface RuntimeApi {
-  sendMessage: <TResponse>(message: Record<string, unknown>) => Promise<TResponse>;
+  sendMessage: <TResponse>(message: unknown) => Promise<TResponse>;
 }
 
 interface OffscreenManagerInput {
@@ -35,16 +35,26 @@ function justification(reason: OffscreenReason): string {
       return 'Record browser WebM trim clips outside the extension service worker.';
     case 'preview':
       return 'Render media previews outside the extension service worker.';
+    case 'export':
+      return 'Export browser-only HLS media outside the extension service worker.';
   }
 }
 
-function reasonForMessage(message: Record<string, unknown>): OffscreenReason {
-  if (message.type === 'EXTRACT_THUMBNAIL') {
+function reasonForMessage(message: unknown): OffscreenReason {
+  const typedMessage = typeof message === 'object' && message !== null
+    ? message as Record<string, unknown>
+    : {};
+
+  if (typedMessage.type === 'EXTRACT_THUMBNAIL') {
     return 'thumbnail';
   }
 
-  if (message.type === 'GENERATE_PREVIEW_CLIP' && 'maxDurationSec' in message) {
+  if (typedMessage.type === 'GENERATE_PREVIEW_CLIP' && 'maxDurationSec' in typedMessage) {
     return 'trim';
+  }
+
+  if (typeof typedMessage.type === 'string' && typedMessage.type.includes('BROWSER_HLS_EXPORT')) {
+    return 'export';
   }
 
   return 'preview';
@@ -73,7 +83,7 @@ export function createOffscreenManager(input: OffscreenManagerInput = {}) {
     },
 
     async sendMessage<TResponse>(
-      message: Record<string, unknown>,
+      message: Record<string, unknown> | object,
     ): Promise<TResponse> {
       await this.ensure(reasonForMessage(message));
       return runtime.sendMessage<TResponse>(message);

@@ -25,6 +25,7 @@ export type NativeHelperRequest =
   | { type: 'EXPORT_MEDIA'; requestId: string; payload: FfmpegExportPayload }
   | { type: 'EXTRACT_THUMBNAIL'; requestId: string; payload: FfmpegThumbnailPayload }
   | { type: 'EXTRACT_PREVIEW_CLIP'; requestId: string; payload: FfmpegPreviewClipPayload }
+  | { type: 'READ_ASSET_BYTES'; requestId: string; payload: { outputPath: string; maxBytes: number } }
   | { type: 'CANCEL_JOB'; requestId: string; payload: { jobId: string } }
   | { type: 'CLEANUP_JOB'; requestId: string; payload: { jobId: string } };
 
@@ -43,7 +44,8 @@ export type NativeHelperResponse =
   | { type: 'PROBE_RESULT'; requestId: string; payload: ProbeResult }
   | { type: 'COMPLETED'; requestId: string; payload: ProcessJobResult }
   | { type: 'THUMBNAIL_RESULT'; requestId: string; payload: AssetResultPayload }
-  | { type: 'PREVIEW_CLIP_RESULT'; requestId: string; payload: AssetResultPayload }
+  | { type: 'PREVIEW_CLIP_RESULT'; requestId: string; payload: PreviewAssetResultPayload }
+  | { type: 'ASSET_BYTES_RESULT'; requestId: string; payload: AssetBytesPayload }
   | { type: 'CANCELLED'; requestId: string; payload: { jobId: string } }
   | { type: 'CLEANED_UP'; requestId: string; payload: { jobId: string } }
   | { type: 'ERROR'; requestId: string; payload: { code: string; message: string; detail?: NativeJson } };
@@ -61,6 +63,19 @@ type AssetResultPayload = {
   outputPath: string;
   mimeType: string;
   dataUrl: string;
+};
+
+type PreviewAssetResultPayload = {
+  candidateId: string;
+  outputPath: string;
+  mimeType: string;
+  sizeBytes?: number;
+};
+
+type AssetBytesPayload = {
+  outputPath: string;
+  sizeBytes: number;
+  base64: string;
 };
 
 export type DispatcherDeps = {
@@ -124,6 +139,9 @@ export async function dispatchNativeRequest(
           return errorResponse(request.requestId, 'FFMPEG_NOT_FOUND', 'ffmpeg was not found on PATH.');
         }
         return dispatchPreview(request, deps);
+
+      case 'READ_ASSET_BYTES':
+        return dispatchReadAssetBytes(request, deps);
 
       case 'CANCEL_JOB':
         (deps.registry ?? defaultJobRegistry).cancel(request.payload.jobId);
@@ -200,7 +218,7 @@ async function dispatchPreview(
   const outputPath = helperOwnedPath(dirs, 'previews', request.payload.candidateId, request.payload.format);
   const mimeType = mimeForPreview(request.payload.format);
 
-  await (deps.runProcessJob ?? runProcessJob)({
+  const result = await (deps.runProcessJob ?? runProcessJob)({
     jobId: `preview-${request.payload.candidateId}`,
     plan: buildPreviewClipArgs(request.payload, outputPath),
     outputPath,
@@ -216,7 +234,32 @@ async function dispatchPreview(
       candidateId: request.payload.candidateId,
       outputPath,
       mimeType,
-      dataUrl: await buildAssetDataUrl(outputPath, mimeType, deps),
+      sizeBytes: result.sizeBytes,
+    },
+  };
+}
+
+async function dispatchReadAssetBytes(
+  request: Extract<NativeHelperRequest, { type: 'READ_ASSET_BYTES' }>,
+  deps: DispatcherDeps,
+): Promise<NativeHelperResponse> {
+  const bytes = Buffer.from(await (deps.readAsset ?? readFile)(request.payload.outputPath));
+
+  if (bytes.byteLength > request.payload.maxBytes) {
+    return errorResponse(
+      request.requestId,
+      'ASSET_TOO_LARGE',
+      `Native asset exceeds the ${String(request.payload.maxBytes)} byte read cap.`,
+    );
+  }
+
+  return {
+    type: 'ASSET_BYTES_RESULT',
+    requestId: request.requestId,
+    payload: {
+      outputPath: request.payload.outputPath,
+      sizeBytes: bytes.byteLength,
+      base64: bytes.toString('base64'),
     },
   };
 }
@@ -321,6 +364,13 @@ function isNativeHelperRequest(value: unknown): value is NativeHelperRequest {
         isString(value.payload.inputUrl) &&
         typeof value.payload.durationSec === 'number' &&
         isString(value.payload.format)
+      );
+    case 'READ_ASSET_BYTES':
+      return (
+        isRecord(value.payload) &&
+        isString(value.payload.outputPath) &&
+        typeof value.payload.maxBytes === 'number' &&
+        value.payload.maxBytes > 0
       );
     case 'CANCEL_JOB':
     case 'CLEANUP_JOB':

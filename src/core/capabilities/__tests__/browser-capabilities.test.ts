@@ -100,7 +100,7 @@ describe('browser media capability resolver', () => {
     });
   });
 
-  test('resolves HLS browser fallback as raw TS when mux.js transmux is disabled', () => {
+  test('requires native export for HLS when mux.js transmux is disabled', () => {
     expect(
       resolveBrowserDownloadCapability({
         candidate: candidate({
@@ -113,10 +113,8 @@ describe('browser media capability resolver', () => {
         browserTransmuxWithMuxJs: false,
       }),
     ).toMatchObject({
-      available: true,
-      capability: 'hls-raw-ts',
-      outputExtension: 'ts',
-      outputMimeType: 'video/mp2t',
+      available: false,
+      reason: expect.stringMatching(/playable MP4/i),
     });
   });
 
@@ -219,7 +217,7 @@ describe('browser media capability resolver', () => {
     });
   });
 
-  test('requires native helper for HLS and DASH thumbnails without static assets', () => {
+  test('resolves HLS thumbnails without static assets to browser frame capture', () => {
     expect(
       resolveBrowserThumbnailCapability(
         candidate({
@@ -229,9 +227,14 @@ describe('browser media capability resolver', () => {
         }),
       ),
     ).toMatchObject({
-      available: false,
-      capability: 'native-required',
+      available: true,
+      capability: 'hls-frame-thumbnail',
+      outputExtension: 'jpg',
+      outputMimeType: 'image/jpeg',
     });
+  });
+
+  test('requires native helper for DASH thumbnails without static assets', () => {
     expect(
       resolveBrowserThumbnailCapability(
         candidate({

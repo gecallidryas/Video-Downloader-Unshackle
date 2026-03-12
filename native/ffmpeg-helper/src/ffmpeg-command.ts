@@ -40,6 +40,7 @@ export type FfmpegPreviewClipPayload = {
   startSec?: number;
   durationSec: number;
   format: FfmpegPreviewFormat;
+  headers?: Record<string, string>;
 };
 
 const OUTPUT_KINDS = new Set<FfmpegOutputKind>(['original', 'mp4', 'mkv', 'webm', 'audio-only']);
@@ -63,6 +64,7 @@ export function buildExportArgs(payload: FfmpegExportPayload, outputPath: string
   const kind = validateOutputKind(payload.outputKind);
   const args = baseFfmpegArgs();
 
+  addHeaderArgs(args, payload.headers);
   addProtocolArgs(args, payload.protocol);
   args.push('-i', input);
   addTrimArgs(args, payload.trim);
@@ -80,6 +82,7 @@ export function buildThumbnailArgs(payload: FfmpegThumbnailPayload, outputPath: 
   }
 
   const args = baseFfmpegArgs();
+  addHeaderArgs(args, payload.headers);
   args.push('-ss', formatSeconds(payload.atSec ?? 0), '-i', input);
   args.push('-frames:v', '1', '-f', 'image2', output);
 
@@ -99,6 +102,7 @@ export function buildPreviewClipArgs(payload: FfmpegPreviewClipPayload, outputPa
   }
 
   const args = baseFfmpegArgs();
+  addHeaderArgs(args, payload.headers);
   args.push('-ss', formatSeconds(payload.startSec ?? 0), '-i', input);
   args.push('-t', formatSeconds(payload.durationSec), '-an');
   args.push(...previewCodecArgs(payload.format), output);
@@ -114,6 +118,34 @@ function addProtocolArgs(args: string[], protocol: FfmpegProtocol): void {
   if (protocol === 'hls' || protocol === 'dash') {
     args.push('-protocol_whitelist', SEGMENTED_PROTOCOL_WHITELIST);
   }
+}
+
+function addHeaderArgs(args: string[], headers: Record<string, string> | undefined): void {
+  if (!headers) {
+    return;
+  }
+
+  const serialized = [
+    ['referer', 'Referer'],
+    ['origin', 'Origin'],
+    ['cookie', 'Cookie'],
+    ['authorization', 'Authorization'],
+  ]
+    .map(([key, label]) => {
+      const value = headerValue(headers, key)?.trim();
+      return value ? `${label}: ${value}` : undefined;
+    })
+    .filter((line): line is string => Boolean(line))
+    .join('\r\n');
+
+  if (serialized) {
+    args.push('-headers', `${serialized}\r\n`);
+  }
+}
+
+function headerValue(headers: Record<string, string>, key: string): string | undefined {
+  const match = Object.entries(headers).find(([name]) => name.toLowerCase() === key);
+  return match?.[1];
 }
 
 function addTrimArgs(args: string[], trim: FfmpegTrim | undefined): void {

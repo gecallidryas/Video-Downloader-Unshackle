@@ -38,6 +38,10 @@ interface MediaCardProps {
   onProtectedProceed?: (
     policy: Extract<ProviderPolicyResult, { kind: 'authorized-workflow' }>,
   ) => void;
+  isDownloading?: boolean;
+  showAssetDiagnostics?: boolean;
+  posterDiagnostic?: string;
+  hoverDiagnostic?: string;
 }
 
 function selectedQualityLabel(media: DetectedMedia): string {
@@ -106,6 +110,10 @@ export function MediaCard({
   outputFilename,
   providerPolicy,
   onProtectedProceed,
+  isDownloading = false,
+  showAssetDiagnostics = false,
+  posterDiagnostic,
+  hoverDiagnostic,
 }: MediaCardProps) {
   const isAudio = media.mediaType === 'audio';
   const primaryAction = media.primaryAction ?? {
@@ -113,8 +121,11 @@ export function MediaCard({
     label: 'Download',
   };
   const isBlocked = primaryAction.kind === 'blocked';
+  const downloadLabel = isDownloading && !isBlocked ? 'Downloading' : primaryAction.label;
+  const downloadDisabled = isBlocked || isDownloading;
   const protectedLabel = protectionBadge(media);
   const [hoveringThumb, setHoveringThumb] = useState(false);
+  const [showHoverLoading, setShowHoverLoading] = useState(false);
   const hoverRequested = useRef(false);
   const [filenameTooltipVisible, setFilenameTooltipVisible] = useState(false);
   const tooltipTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -126,6 +137,22 @@ export function MediaCard({
       }
     };
   }, []);
+
+  useEffect(() => {
+    if (!media.previewLoading && !media.previewAssetUrl) {
+      hoverRequested.current = false;
+    }
+  }, [media.previewAssetUrl, media.previewLoading]);
+
+  useEffect(() => {
+    if (!hoveringThumb || !media.previewLoading || media.previewAssetUrl) {
+      setShowHoverLoading(false);
+      return;
+    }
+
+    const timer = setTimeout(() => setShowHoverLoading(true), 250);
+    return () => clearTimeout(timer);
+  }, [hoveringThumb, media.previewAssetUrl, media.previewLoading]);
 
   function handleTitleEnter() {
     if (tooltipTimer.current !== null) {
@@ -267,7 +294,7 @@ export function MediaCard({
               autoPlay
               playsInline
             />
-          ) : hoveringThumb && media.previewLoading ? (
+          ) : hoveringThumb && media.previewLoading && showHoverLoading ? (
             <span className="media-card__preview-loading">Loading</span>
           ) : media.thumbnailUrl ? (
             <img
@@ -431,15 +458,29 @@ export function MediaCard({
             className={`media-card__download-btn ${
               isBlocked ? 'media-card__download-btn--blocked' : ''
             }`}
-            onClick={isBlocked ? undefined : onDownload}
-            aria-label={primaryAction.label}
-            disabled={isBlocked}
-            title={primaryAction.reason}
+            onClick={downloadDisabled ? undefined : onDownload}
+            aria-label={downloadLabel}
+            disabled={downloadDisabled}
+            title={isDownloading && !isBlocked ? 'Download in progress' : primaryAction.reason}
           >
-            {primaryAction.label}
+            {downloadLabel}
           </button>
         </div>
       </div>
+      {showAssetDiagnostics && (posterDiagnostic || hoverDiagnostic) ? (
+        <div className="media-card__asset-diagnostics" data-testid="media-asset-diagnostics">
+          {posterDiagnostic ? (
+            <span className="media-card__asset-diagnostic">
+              Poster: {posterDiagnostic}
+            </span>
+          ) : null}
+          {hoverDiagnostic ? (
+            <span className="media-card__asset-diagnostic">
+              Hover: {hoverDiagnostic}
+            </span>
+          ) : null}
+        </div>
+      ) : null}
       {isBlocked && providerPolicy ? (
         <ProtectedActionGate
           policy={providerPolicy}

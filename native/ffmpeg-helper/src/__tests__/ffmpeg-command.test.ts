@@ -151,6 +151,28 @@ describe('ffmpeg command builder', () => {
     });
   });
 
+  it('passes captured headers to thumbnail extraction before input', () => {
+    const plan = buildThumbnailArgs(
+      {
+        candidateId: 'candidate-1',
+        inputUrl: directMp4,
+        atSec: 8,
+        format: 'jpg',
+        headers: {
+          referer: 'https://example.com/watch',
+          origin: 'https://example.com',
+        },
+      },
+      'C:\\Users\\tester\\AppData\\Local\\VideoDownloaderUnshackle\\thumbs\\candidate-1.jpg',
+    );
+
+    expect(plan.args).toEqual(expect.arrayContaining([
+      '-headers',
+      'Referer: https://example.com/watch\r\nOrigin: https://example.com\r\n',
+    ]));
+    expect(plan.args.indexOf('-headers')).toBeLessThan(plan.args.indexOf('-i'));
+  });
+
   it('builds preview WebM and MP4 output args', () => {
     const webm = buildPreviewClipArgs(
       {
@@ -177,6 +199,29 @@ describe('ffmpeg command builder', () => {
     expect(webm.args).toEqual(expect.arrayContaining(['-t', '3', '-an', '-vf', 'scale=240:-1']));
     expect(webm.args).toEqual(expect.arrayContaining(['-c:v', 'libvpx-vp9']));
     expect(mp4.args).toEqual(expect.arrayContaining(['-c:v', 'libx264', '-movflags', '+faststart']));
+  });
+
+  it('passes captured headers to preview extraction before input', () => {
+    const plan = buildPreviewClipArgs(
+      {
+        candidateId: 'candidate-2',
+        inputUrl: directMp4,
+        startSec: 4,
+        durationSec: 3,
+        format: 'webm',
+        headers: {
+          referer: 'https://example.com/watch',
+          origin: 'https://example.com',
+        },
+      },
+      'C:\\Users\\tester\\AppData\\Local\\VideoDownloaderUnshackle\\previews\\candidate-2.webm',
+    );
+
+    expect(plan.args).toEqual(expect.arrayContaining([
+      '-headers',
+      'Referer: https://example.com/watch\r\nOrigin: https://example.com\r\n',
+    ]));
+    expect(plan.args.indexOf('-headers')).toBeLessThan(plan.args.indexOf('-i'));
   });
 
   it('builds preview GIF output args', () => {

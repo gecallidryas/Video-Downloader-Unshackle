@@ -1,9 +1,12 @@
 import type {
   DownloadSelection,
+  JobOutput,
   MediaCandidate,
+  StreamProtocol,
 } from '@/video_downloader_types_skeleton';
 import { isOffscreenCommand, type OffscreenCommand } from '@/src/shared/contracts/offscreen';
 import { captureVideoFrame } from './capture-video-frame';
+import { createBrowserHlsExportHost } from './export-host';
 import { recordPreviewClip } from './record-preview-clip';
 
 export type PreviewHostMessage =
@@ -19,12 +22,14 @@ export type PreviewHostMessage =
   | {
       type: 'EXTRACT_THUMBNAIL';
       url: string;
+      protocol?: StreamProtocol;
       atSec: number;
       format: 'jpeg' | 'png' | 'webp';
     }
   | {
       type: 'GENERATE_PREVIEW_CLIP';
       url: string;
+      protocol?: StreamProtocol;
       startSec: number;
       durationSec: number;
       maxDurationSec?: number;
@@ -35,6 +40,8 @@ export interface PreviewHostResponse {
   command?: OffscreenCommand['type'];
   assetUrl?: string;
   mimeType?: string;
+  bytesWritten?: number;
+  output?: JobOutput;
   error?: string;
 }
 
@@ -57,11 +64,18 @@ export interface PreviewRuntimeHost {
 
 export function createPreviewHost(): PreviewHost {
   let currentCandidate: MediaCandidate | undefined;
+  const exportHost = createBrowserHlsExportHost();
 
   return {
     handleMessage(message) {
       if (isOffscreenCommand(message)) {
-        return { ok: true, command: message.type };
+        const result = exportHost.handleCommand(message);
+
+        if (result instanceof Promise) {
+          return result.then((response) => response ?? { ok: true, command: message.type });
+        }
+
+        return result ?? { ok: true, command: message.type };
       }
 
       if (message.type === 'OPEN_PREVIEW') {
@@ -73,19 +87,27 @@ export function createPreviewHost(): PreviewHost {
       if (message.type === 'EXTRACT_THUMBNAIL') {
         return captureVideoFrame({
           url: message.url,
+          ...(message.protocol ? { protocol: message.protocol } : {}),
           atSec: message.atSec,
           format: message.format,
           timeoutMs: 10_000,
-        }).then((dataUrl) => ({
-          ok: true,
-          assetUrl: dataUrl,
-          mimeType: `image/${message.format}`,
-        }));
+        }).then(
+          (dataUrl) => ({
+            ok: true,
+            assetUrl: dataUrl,
+            mimeType: `image/${message.format}`,
+          }),
+          (error) => ({
+            ok: false,
+            error: error instanceof Error ? error.message : 'Thumbnail capture failed.',
+          }),
+        );
       }
 
       if (message.type === 'GENERATE_PREVIEW_CLIP') {
         return recordPreviewClip({
           url: message.url,
+          ...(message.protocol ? { protocol: message.protocol } : {}),
           startSec: message.startSec,
           durationSec: message.durationSec,
           maxDurationSec: message.maxDurationSec,
@@ -140,7 +162,14 @@ export function registerPreviewHost(
     const result = previewHost.handleMessage(message as PreviewHostMessage | OffscreenCommand);
 
     if (result instanceof Promise) {
-      void result.then(sendResponse);
+      void result.then(
+        sendResponse,
+        (error) =>
+          sendResponse({
+            ok: false,
+            error: error instanceof Error ? error.message : 'Preview host request failed.',
+          }),
+      );
       return true;
     }
 

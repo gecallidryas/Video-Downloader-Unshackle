@@ -116,6 +116,20 @@ describe('createPreviewHost', () => {
     });
   });
 
+  test('EXTRACT_THUMBNAIL returns an error response when capture fails', async () => {
+    mockedCaptureVideoFrame.mockRejectedValueOnce(new Error('seek failed'));
+
+    await expect(host.handleMessage({
+      type: 'EXTRACT_THUMBNAIL',
+      url: 'https://cdn.example.com/video.mp4',
+      atSec: 10,
+      format: 'jpeg',
+    })).resolves.toEqual({
+      ok: false,
+      error: 'seek failed',
+    });
+  });
+
   // ---- GENERATE_PREVIEW_CLIP ----
 
   test('GENERATE_PREVIEW_CLIP calls recordPreviewClip with correct params and returns asset response', async () => {
@@ -271,6 +285,26 @@ describe('registerPreviewHost', () => {
       ok: true,
       assetUrl: 'data:video/webm;base64,mock',
       mimeType: 'video/webm',
+    });
+  });
+
+  test('responds with an error object when an async handler rejects', async () => {
+    const sendResponse = vi.fn();
+    mockedCaptureVideoFrame.mockRejectedValueOnce(new Error('capture exploded'));
+
+    const result = capturedListener(
+      { type: 'EXTRACT_THUMBNAIL', url: 'https://cdn.example.com/video.mp4', atSec: 5, format: 'jpeg' },
+      {} as chrome.runtime.MessageSender,
+      sendResponse,
+    );
+
+    expect(result).toBe(true);
+
+    await vi.waitFor(() => {
+      expect(sendResponse).toHaveBeenCalledWith({
+        ok: false,
+        error: 'capture exploded',
+      });
     });
   });
 

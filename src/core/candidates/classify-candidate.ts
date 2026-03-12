@@ -200,7 +200,7 @@ function getStatus(
   protocol: StreamProtocol,
   protectionKind: MediaCandidate['protection']['kind'],
 ): CandidateStatus {
-  if (protectionKind === 'drm' || protectionKind === 'unknown') {
+  if (protectionKind === 'drm') {
     return 'protected';
   }
 
@@ -208,8 +208,12 @@ function getStatus(
     return 'ready';
   }
 
+  if (protocol === 'direct' && protectionKind === 'unknown') {
+    return 'partial';
+  }
+
   if (protocol === 'hls' || protocol === 'dash') {
-    return protectionKind === 'none' ? 'partial' : 'protected';
+    return protectionKind === 'sample-aes' ? 'protected' : 'partial';
   }
 
   return 'partial';

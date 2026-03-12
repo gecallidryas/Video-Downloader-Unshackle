@@ -90,16 +90,30 @@ describe('thumbnail service browser fallback', () => {
     await expect(ensureNativeThumbnail(candidate(), {})).rejects.toThrow();
   });
 
-  test('skips offscreen fallback for HLS protocol', async () => {
-    const offscreenCapture = vi.fn();
+  test('falls back to offscreen canvas capture for HLS protocol', async () => {
+    const offscreenCapture = vi.fn().mockResolvedValue({
+      ok: true,
+      assetUrl: 'data:image/jpeg;base64,b2ZmY2FudmFz',
+      mimeType: 'image/jpeg',
+    });
 
-    await expect(
-      ensureNativeThumbnail(
-        candidate({ protocol: 'hls', sourceUrl: undefined, manifestUrl: 'https://cdn.example.com/master.m3u8' }),
-        { offscreenCapture },
-      ),
-    ).rejects.toThrow();
-    expect(offscreenCapture).not.toHaveBeenCalled();
+    const result = await ensureNativeThumbnail(
+      candidate({ protocol: 'hls', sourceUrl: undefined, manifestUrl: 'https://cdn.example.com/master.m3u8' }),
+      { offscreenCapture },
+    );
+
+    expect(result).toEqual({
+      assetUrl: 'data:image/jpeg;base64,b2ZmY2FudmFz',
+      mimeType: 'image/jpeg',
+      generated: true,
+    });
+    expect(offscreenCapture).toHaveBeenCalledWith({
+      type: 'EXTRACT_THUMBNAIL',
+      url: 'https://cdn.example.com/master.m3u8',
+      protocol: 'hls',
+      atSec: 10,
+      format: 'jpeg',
+    });
   });
 
   test('still returns static thumbnail without any generation method', async () => {

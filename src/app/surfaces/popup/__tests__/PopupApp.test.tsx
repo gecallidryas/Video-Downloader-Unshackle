@@ -128,7 +128,7 @@ test('renders extension version info', () => {
   expect(screen.getByText(/v0\.1\.0/)).toBeInTheDocument();
 });
 
-test('renders source-equivalent download settings in the flat settings surface', () => {
+test('renders source-equivalent download settings in the sectioned settings surface', () => {
   render(<PopupApp />);
 
   expect(screen.getByRole('combobox', { name: /theme/i })).toHaveValue('dark');
@@ -143,15 +143,15 @@ test('renders source-equivalent download settings in the flat settings surface',
   expect(screen.getByRole('combobox', { name: /preview mode/i })).toHaveValue('image');
   expect(screen.getByRole('combobox', { name: /preview format/i })).toHaveValue('webm');
   expect(screen.getByRole('checkbox', { name: /native ffmpeg features/i })).toBeChecked();
-  expect(screen.getByRole('checkbox', { name: /browser fallbacks/i })).toBeChecked();
   expect(screen.getByRole('checkbox', { name: /use direct-to-disk when available/i })).not.toBeChecked();
   expect(screen.getByRole('checkbox', { name: /remember output folder/i })).not.toBeChecked();
   expect(screen.getByRole('button', { name: /choose output folder/i })).toBeInTheDocument();
   expect(screen.getByRole('checkbox', { name: /auto-delete fragments after save/i })).not.toBeChecked();
-  expect(screen.queryByRole('button', { name: /check helper/i })).not.toBeInTheDocument();
+  expect(screen.getByRole('button', { name: /check helper/i })).toBeInTheDocument();
 });
 
 test('settings exposes language picker, regex rules, templates, auto-download, and integrations', async () => {
+  useSettingsStore.setState({ advancedMode: true });
   const user = userEvent.setup();
   render(<PopupApp />);
 
@@ -210,6 +210,16 @@ test('preview format selection persists to the settings store', async () => {
   expect(useSettingsStore.getState().previewFormat).toBe('gif');
 });
 
+test('interface language selector only exposes supported UI languages', () => {
+  render(<PopupApp />);
+
+  const languageSelect = screen.getByRole('combobox', { name: /interface language/i });
+  const options = within(languageSelect).getAllByRole('option');
+
+  expect(languageSelect).toHaveValue('en');
+  expect(options.map((option) => option.getAttribute('value'))).toEqual(['en']);
+});
+
 test('theme selection persists to the settings store and document token hook', async () => {
   const user = userEvent.setup();
   render(<PopupApp />);
@@ -234,6 +244,7 @@ test('popup shows first-run onboarding before settings rows when helper is not r
 });
 
 test('settings toggles native features and browser fallbacks independently', async () => {
+  useSettingsStore.setState({ advancedMode: true });
   const user = userEvent.setup();
   render(<PopupApp />);
 
@@ -343,6 +354,7 @@ test('dismissed onboarding does not render on next popup open', async () => {
 });
 
 test('edits, exports, imports, and resets capture rules', async () => {
+  useSettingsStore.setState({ advancedMode: true });
   const user = userEvent.setup();
   render(<PopupApp />);
 
@@ -394,6 +406,7 @@ test('edits, exports, imports, and resets capture rules', async () => {
 });
 
 test('shows validation errors for invalid capture rules', async () => {
+  useSettingsStore.setState({ advancedMode: true });
   const user = userEvent.setup();
   render(<PopupApp />);
 

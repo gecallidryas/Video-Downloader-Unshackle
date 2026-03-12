@@ -1,11 +1,14 @@
 // src/offscreen/capture-video-frame.ts
-import { loadMediaObjectUrl, type LoadedMediaObjectUrl } from './load-media-object-url';
+import type { StreamProtocol } from '@/video_downloader_types_skeleton';
+import { loadVideoSource, type DirectLoadMode, type LoadedVideoSource } from './load-video-source';
 
 export interface CaptureFrameOptions {
   url: string;
+  protocol?: StreamProtocol;
   atSec: number;
   format: 'jpeg' | 'png' | 'webp';
   timeoutMs: number;
+  directMode?: DirectLoadMode;
 }
 
 export function captureVideoFrame(options: CaptureFrameOptions): Promise<string> {
@@ -16,7 +19,10 @@ export function captureVideoFrame(options: CaptureFrameOptions): Promise<string>
     const video = document.createElement('video');
     video.preload = 'metadata';
     video.muted = true;
-    let loadedMedia: LoadedMediaObjectUrl | undefined;
+    let loadedMedia: LoadedVideoSource | undefined;
+    let sourceReady = false;
+    let pendingLoadedMetadata = false;
+    let pendingSeeked = false;
     let settled = false;
 
     const timer = setTimeout(() => {
@@ -28,7 +34,7 @@ export function captureVideoFrame(options: CaptureFrameOptions): Promise<string>
       clearTimeout(timer);
       video.removeAttribute('src');
       video.load();
-      loadedMedia?.revoke();
+      loadedMedia?.cleanup();
     }
 
     function fail(error: unknown) {
@@ -49,11 +55,38 @@ export function captureVideoFrame(options: CaptureFrameOptions): Promise<string>
       fail(new Error(`Failed to load video: ${url}`));
     }, { once: true });
 
-    video.addEventListener('loadedmetadata', () => {
-      video.currentTime = Math.min(atSec, video.duration || atSec);
-    }, { once: true });
+    function handleLoadedMetadata() {
+      if (!sourceReady) {
+        pendingLoadedMetadata = true;
+        return;
+      }
+      const duration = Number.isFinite(video.duration) && video.duration > 0
+        ? video.duration
+        : atSec;
+      const targetTime = Math.min(atSec, duration);
 
-    video.addEventListener('seeked', () => {
+      if (Math.abs(video.currentTime - targetTime) < 0.001) {
+        captureWhenFrameReady();
+        return;
+      }
+
+      video.currentTime = targetTime;
+    }
+
+    function captureWhenFrameReady() {
+      if (video.readyState >= 2) {
+        requestAnimationFrame(handleSeeked);
+        return;
+      }
+
+      video.addEventListener('loadeddata', handleSeeked, { once: true });
+    }
+
+    function handleSeeked() {
+      if (!sourceReady) {
+        pendingSeeked = true;
+        return;
+      }
       try {
         const canvas = document.createElement('canvas');
         canvas.width = video.videoWidth;
@@ -71,16 +104,32 @@ export function captureVideoFrame(options: CaptureFrameOptions): Promise<string>
       } catch (error) {
         fail(error);
       }
-    }, { once: true });
+    }
 
-    void loadMediaObjectUrl(url)
+    video.addEventListener('loadedmetadata', handleLoadedMetadata, { once: true });
+
+    video.addEventListener('seeked', handleSeeked, { once: true });
+
+    const loadSource: Promise<LoadedVideoSource> = loadVideoSource(video, {
+      url,
+      protocol: options.protocol,
+      directMode: options.directMode ?? 'element-src',
+    });
+
+    void loadSource
       .then((media) => {
         if (settled) {
-          media.revoke();
+          media.cleanup();
           return;
         }
         loadedMedia = media;
-        video.src = media.objectUrl;
+        sourceReady = true;
+        if (pendingLoadedMetadata) {
+          handleLoadedMetadata();
+        }
+        if (pendingSeeked) {
+          handleSeeked();
+        }
       })
       .catch(fail);
   });

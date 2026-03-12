@@ -134,6 +134,21 @@ test('renders preview, overflow menu trigger, and download action buttons', () =
   expect(screen.getByRole('button', { name: /download/i })).toBeInTheDocument();
 });
 
+test('shows disabled downloading action while media is downloading', () => {
+  render(
+    <MediaCard
+      media={mockVideo}
+      isDownloading
+      onPreview={noop}
+      onRemove={noop}
+      onDownload={noop}
+      onQualityChange={noop}
+    />,
+  );
+
+  expect(screen.getByRole('button', { name: /downloading/i })).toBeDisabled();
+});
+
 test('overflow menu Remove action calls onRemove', async () => {
   const user = userEvent.setup();
   const onRemove = vi.fn();
@@ -562,8 +577,48 @@ test('requests a hover preview once and restores the static thumbnail on mouse l
   expect(screen.getByRole('img', { name: /ocean sunset/i })).toBeInTheDocument();
 });
 
-test('keeps preview loading state inside the fixed thumbnail slot', async () => {
+test('allows hover preview retry after a failed load attempt settles', async () => {
   const user = userEvent.setup();
+  const onPreviewHover = vi.fn();
+  const { rerender } = render(
+    <MediaCard
+      media={{
+        ...mockVideo,
+        thumbnailUrl: 'https://cdn.example.com/poster.jpg',
+      }}
+      onPreview={noop}
+      onRemove={noop}
+      onDownload={noop}
+      onQualityChange={noop}
+      onPreviewHover={onPreviewHover}
+    />,
+  );
+
+  const thumb = screen.getByTestId('media-thumb');
+  await user.hover(thumb);
+  await user.unhover(thumb);
+  rerender(
+    <MediaCard
+      media={{
+        ...mockVideo,
+        thumbnailUrl: 'https://cdn.example.com/poster.jpg',
+        previewLoading: false,
+      }}
+      onPreview={noop}
+      onRemove={noop}
+      onDownload={noop}
+      onQualityChange={noop}
+      onPreviewHover={onPreviewHover}
+    />,
+  );
+
+  await user.hover(screen.getByTestId('media-thumb'));
+
+  expect(onPreviewHover).toHaveBeenCalledTimes(2);
+});
+
+test('keeps preview loading state inside the fixed thumbnail slot', async () => {
+  vi.useFakeTimers();
 
   render(
     <MediaCard
@@ -580,6 +635,47 @@ test('keeps preview loading state inside the fixed thumbnail slot', async () => 
     />,
   );
 
-  await user.hover(screen.getByTestId('media-thumb'));
+  fireEvent.mouseEnter(screen.getByTestId('media-thumb'));
+  expect(screen.queryByText(/loading/i)).not.toBeInTheDocument();
+  act(() => {
+    vi.advanceTimersByTime(250);
+  });
   expect(screen.getByText(/loading/i)).toBeInTheDocument();
+  vi.useRealTimers();
+});
+
+test('renders compact asset diagnostics only when enabled', () => {
+  const { rerender } = render(
+    <MediaCard
+      media={mockVideo}
+      onPreview={noop}
+      onRemove={noop}
+      onDownload={noop}
+      onQualityChange={noop}
+      posterDiagnostic="failed · native · 120ms"
+      hoverDiagnostic="queued · offscreen-hls"
+    />,
+  );
+
+  expect(screen.queryByTestId('media-asset-diagnostics')).not.toBeInTheDocument();
+
+  rerender(
+    <MediaCard
+      media={mockVideo}
+      onPreview={noop}
+      onRemove={noop}
+      onDownload={noop}
+      onQualityChange={noop}
+      showAssetDiagnostics
+      posterDiagnostic="failed · native · 120ms"
+      hoverDiagnostic="queued · offscreen-hls"
+    />,
+  );
+
+  expect(screen.getByTestId('media-asset-diagnostics')).toHaveTextContent(
+    'Poster: failed · native · 120ms',
+  );
+  expect(screen.getByTestId('media-asset-diagnostics')).toHaveTextContent(
+    'Hover: queued · offscreen-hls',
+  );
 });

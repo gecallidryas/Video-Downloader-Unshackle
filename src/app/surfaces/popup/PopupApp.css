@@ -35,8 +35,92 @@
   padding: var(--panel-padding);
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 10px;
 }
+
+/* ── Settings Section (collapsible card) ── */
+
+.settings-section {
+  border: 1px solid var(--outline);
+  border-radius: var(--radius-md);
+  background: var(--surface-container-lowest);
+  overflow: hidden;
+}
+
+.settings-section[open] {
+  background: var(--surface-container-lowest);
+}
+
+.settings-section > summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  cursor: pointer;
+  user-select: none;
+  list-style: none;
+  font-size: var(--text-body-size);
+  font-weight: 600;
+  color: var(--on-surface);
+  border-bottom: 1px solid transparent;
+  transition: background-color 150ms;
+}
+
+.settings-section > summary::-webkit-details-marker {
+  display: none;
+}
+
+.settings-section > summary::before {
+  content: '▸';
+  display: inline-block;
+  font-size: 10px;
+  color: var(--on-surface-variant);
+  transition: transform 200ms ease;
+  flex-shrink: 0;
+  width: 12px;
+  text-align: center;
+}
+
+.settings-section[open] > summary::before {
+  transform: rotate(90deg);
+}
+
+.settings-section > summary:hover {
+  background: var(--surface-container-low);
+}
+
+.settings-section[open] > summary {
+  border-bottom-color: var(--outline);
+}
+
+.settings-section__badge {
+  margin-left: auto;
+  padding: 1px 6px;
+  border-radius: var(--radius-sm);
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  background: var(--surface-variant);
+  color: var(--on-surface-variant);
+  flex-shrink: 0;
+}
+
+.settings-section__body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 12px 12px;
+}
+
+.settings-section__description {
+  font-size: var(--text-label-size);
+  line-height: var(--text-label-lh);
+  color: var(--on-surface-variant);
+  margin-bottom: 6px;
+}
+
+/* ── Settings row (inside sections) ── */
 
 .popup__row {
   display: flex;
@@ -134,6 +218,23 @@
   box-shadow: var(--focus-glow);
 }
 
+.popup__button {
+  min-height: 28px;
+  border: 1px solid var(--outline);
+  border-radius: var(--radius);
+  background: var(--surface-container);
+  color: var(--on-surface);
+  font-size: 11px;
+  font-family: var(--font-base);
+  cursor: pointer;
+  padding: 4px 12px;
+  transition: background-color 150ms;
+}
+
+.popup__button:hover {
+  background: var(--surface-container-high);
+}
+
 .popup__footer {
   padding: 8px var(--panel-padding);
   border-top: 1px solid var(--outline);
@@ -145,13 +246,11 @@
   color: var(--outline);
 }
 
+/* ── Capture rules (nested inside section) ── */
+
 .capture-rules {
   display: grid;
   gap: 4px;
-  padding: 8px;
-  border: 1px solid var(--outline);
-  border-radius: var(--radius);
-  background: var(--surface-container-lowest);
 }
 
 .capture-rules__error {
@@ -167,6 +266,7 @@
   display: grid;
   grid-template-columns: 1fr;
   gap: 4px;
+  margin-top: 4px;
 }
 
 .capture-rules__button {
@@ -177,4 +277,112 @@
   color: var(--on-surface);
   font-size: 11px;
   cursor: pointer;
+  transition: background-color 150ms;
+}
+
+.capture-rules__button:hover {
+  background: var(--surface-container-high);
+}
+
+/* ── Native Helper Status (inline in settings) ── */
+
+.native-helper-status {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px;
+  border: 1px solid var(--outline);
+  border-radius: var(--radius);
+  background: var(--surface-container);
+}
+
+.native-helper-status > div:first-child {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.native-helper-status__label {
+  font-size: var(--text-body-size);
+  font-weight: 500;
+  color: var(--on-surface);
+}
+
+.native-helper-status__value {
+  font-size: var(--text-label-size);
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-variant);
+  color: var(--on-surface-variant);
+}
+
+.native-helper-status__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.native-helper-status__check {
+  min-height: 26px;
+  padding: 2px 10px;
+  border: 1px solid var(--outline);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--on-surface);
+  font-size: 11px;
+  font-family: var(--font-base);
+  cursor: pointer;
+  transition: background-color 150ms;
+}
+
+.native-helper-status__check:hover {
+  background: var(--surface-container-high);
+}
+
+.native-helper-status__check:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.native-helper-status__diagnostics {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding-top: 4px;
+  border-top: 1px solid var(--outline);
+}
+
+.native-helper-status__diagnostics input {
+  height: 22px;
+  font-size: 10px;
+  font-family: var(--font-mono);
+  border: 1px solid var(--outline);
+  border-radius: var(--radius-sm);
+  background: var(--surface-container-lowest);
+  color: var(--on-surface-variant);
+  padding: 0 6px;
+  outline: none;
+}
+
+/* ── Re-run onboarding button ── */
+
+.settings-section__rerun-btn {
+  margin-top: 6px;
+  min-height: 26px;
+  padding: 2px 10px;
+  border: 1px dashed var(--outline);
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--on-surface-variant);
+  font-size: 11px;
+  font-family: var(--font-base);
+  cursor: pointer;
+  transition: background-color 150ms, color 150ms;
+}
+
+.settings-section__rerun-btn:hover {
+  background: var(--surface-container);
+  color: var(--on-surface);
 }

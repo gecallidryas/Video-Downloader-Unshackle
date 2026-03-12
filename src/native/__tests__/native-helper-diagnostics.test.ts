@@ -13,6 +13,7 @@ function createClient(ping: NativeFfmpegClient['ping']): NativeFfmpegClient {
     exportMedia: unused,
     extractThumbnail: unused,
     extractPreviewClip: unused,
+    readAssetBytes: unused,
     cancelJob: unused,
     cleanupJob: unused,
   };

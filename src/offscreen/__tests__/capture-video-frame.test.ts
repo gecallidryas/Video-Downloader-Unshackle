@@ -11,6 +11,7 @@ interface MockVideo {
   src: string;
   currentTime: number;
   duration: number;
+  readyState: number;
   videoWidth: number;
   videoHeight: number;
   addEventListener: (event: string, cb: () => void, opts?: { once?: boolean }) => void;
@@ -32,6 +33,7 @@ function createMockVideo(): MockVideo {
     src: '',
     currentTime: 0,
     duration: 120,
+    readyState: 2,
     videoWidth: 1920,
     videoHeight: 1080,
     addEventListener(event: string, cb: () => void, _opts?: { once?: boolean }) {
@@ -83,6 +85,7 @@ const DEFAULT_OPTIONS: CaptureFrameOptions = {
   atSec: 5,
   format: 'jpeg',
   timeoutMs: 5000,
+  directMode: 'blob-fetch',
 };
 
 /* ---------- tests ---------- */
@@ -181,6 +184,42 @@ describe('captureVideoFrame', () => {
 
     // currentTime should be clamped to duration (10), not 999
     expect(mockVideo.currentTime).toBe(10);
+  });
+
+  test('captures immediately when the target timestamp is already current', async () => {
+    const expectedDataUrl = 'data:image/jpeg;base64,/9j/zero';
+    const mockVideo = createMockVideo();
+    mockVideo.currentTime = 0;
+    mockVideo.duration = Number.NaN;
+    mockVideo.readyState = 2;
+
+    const mockCanvas = createMockCanvas(expectedDataUrl);
+    (mockCanvas as any).toDataURL = vi.fn().mockReturnValue(expectedDataUrl);
+    const requestAnimationFrame = vi.fn((cb: FrameRequestCallback) => {
+      cb(0);
+      return 1;
+    });
+    vi.stubGlobal('requestAnimationFrame', requestAnimationFrame);
+
+    createElementSpy = vi.spyOn(document, 'createElement').mockImplementation((tag: string) => {
+      if (tag === 'video') return mockVideo as unknown as HTMLVideoElement;
+      if (tag === 'canvas') return mockCanvas as unknown as HTMLCanvasElement;
+      return document.createElement.call(document, tag);
+    });
+
+    const promise = captureVideoFrame({
+      ...DEFAULT_OPTIONS,
+      atSec: 0,
+      timeoutMs: 50,
+    });
+
+    await Promise.resolve();
+    await Promise.resolve();
+    mockVideo.fireLoadedMetadata();
+
+    await expect(promise).resolves.toBe(expectedDataUrl);
+    expect(mockVideo.currentTime).toBe(0);
+    expect(mockCanvas._ctx.drawImage).toHaveBeenCalledWith(mockVideo, 0, 0);
   });
 
   test('rejects with timeout error when events never fire', async () => {

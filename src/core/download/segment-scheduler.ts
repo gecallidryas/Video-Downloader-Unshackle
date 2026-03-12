@@ -47,6 +47,11 @@ export interface ScheduleSegmentsOptions {
   signal?: AbortSignal;
   segmentTimeoutMs?: number;
   onProgress?: SegmentProgressCallback;
+  onSegmentComplete?: (event: {
+    segment: SegmentDescriptor;
+    bytes: Uint8Array;
+    isInitSegment: boolean;
+  }) => Promise<void>;
 }
 
 const DEFAULT_SEGMENT_TIMEOUT_MS = 30_000;
@@ -391,6 +396,12 @@ export async function scheduleSegments(
         if (options.storage && options.jobId) {
           await options.storage.writeFragment(options.jobId, segment.index, finalData);
         }
+
+        await options.onSegmentComplete?.({
+          segment,
+          bytes: finalData,
+          isInitSegment: Boolean(segment.initSegment),
+        });
 
         downloaded += 1;
         options.onProgress?.({

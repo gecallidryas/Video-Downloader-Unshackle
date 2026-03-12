@@ -29,6 +29,7 @@ export interface PanelStoreState {
   setTrim: (id: string, trim: DetectedMedia['trim']) => void;
   getDownloadSelection: (id: string) => DownloadSelection | undefined;
   upsertQueueJob: (job: DownloadJob) => void;
+  syncQueueJobs: (jobs: DownloadJob[]) => void;
   downloadItem: (id: string) => void;
   setSurfaceState: (surfaceState: PanelSurfaceState) => void;
   setErrorMessage: (errorMessage: string | null) => void;
@@ -173,13 +174,49 @@ export const usePanelStore = create<PanelStoreState>((set, get) => ({
   upsertQueueJob: (job) =>
     set((state) => {
       const existing = state.queueJobs.some((queuedJob) => queuedJob.id === job.id);
+      const downloadingIds = new Set(state.downloadingIds);
+
+      if (job.phase === 'completed' || job.phase === 'failed' || job.phase === 'cancelled') {
+        downloadingIds.delete(job.candidateId);
+      }
 
       return {
+        downloadingIds,
         queueJobs: existing
           ? state.queueJobs.map((queuedJob) =>
               queuedJob.id === job.id ? job : queuedJob,
             )
           : [...state.queueJobs, job],
+      };
+    }),
+  syncQueueJobs: (jobs) =>
+    set((state) => {
+      const downloadingIds = new Set(state.downloadingIds);
+      const nextJobIds = new Set(jobs.map((job) => job.id));
+      const nextCandidateIds = new Set(jobs.map((job) => job.candidateId));
+      const queueJobs = [...jobs];
+
+      for (const job of jobs) {
+        if (job.phase === 'completed' || job.phase === 'failed' || job.phase === 'cancelled') {
+          downloadingIds.delete(job.candidateId);
+        }
+      }
+
+      for (const previousJob of state.queueJobs) {
+        if (nextJobIds.has(previousJob.id)) {
+          continue;
+        }
+
+        if (previousJob.phase === 'queued' && !nextCandidateIds.has(previousJob.candidateId)) {
+          queueJobs.push(previousJob);
+        } else {
+          downloadingIds.delete(previousJob.candidateId);
+        }
+      }
+
+      return {
+        downloadingIds,
+        queueJobs,
       };
     }),
   downloadItem: (id) =>

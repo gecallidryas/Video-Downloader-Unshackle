@@ -38,10 +38,16 @@ export interface NativeFfmpegPreviewClipPayload {
   startSec?: number;
   durationSec: number;
   format: NativeFfmpegPreviewFormat;
+  headers?: Record<string, string>;
 }
 
 export interface NativeFfmpegJobPayload {
   jobId: string;
+}
+
+export interface NativeFfmpegReadAssetBytesPayload {
+  outputPath: string;
+  maxBytes: number;
 }
 
 export type NativeFfmpegInstallKind = 'dev' | 'per-user' | 'system';
@@ -60,6 +66,7 @@ export type NativeFfmpegRequest =
   | { type: 'EXPORT_MEDIA'; requestId: string; payload: NativeFfmpegExportPayload }
   | { type: 'EXTRACT_THUMBNAIL'; requestId: string; payload: NativeFfmpegThumbnailPayload }
   | { type: 'EXTRACT_PREVIEW_CLIP'; requestId: string; payload: NativeFfmpegPreviewClipPayload }
+  | { type: 'READ_ASSET_BYTES'; requestId: string; payload: NativeFfmpegReadAssetBytesPayload }
   | { type: 'CANCEL_JOB'; requestId: string; payload: NativeFfmpegJobPayload }
   | { type: 'CLEANUP_JOB'; requestId: string; payload: NativeFfmpegJobPayload };
 
@@ -127,12 +134,17 @@ export type NativeFfmpegResponse =
   | {
       type: 'THUMBNAIL_RESULT';
       requestId: string;
-      payload: { candidateId: string; outputPath: string; mimeType: string; dataUrl?: string };
+      payload: { candidateId: string; outputPath: string; mimeType: string; dataUrl: string };
     }
   | {
       type: 'PREVIEW_CLIP_RESULT';
       requestId: string;
-      payload: { candidateId: string; outputPath: string; mimeType: string; dataUrl?: string };
+      payload: { candidateId: string; outputPath: string; mimeType: string; dataUrl?: string; sizeBytes?: number };
+    }
+  | {
+      type: 'ASSET_BYTES_RESULT';
+      requestId: string;
+      payload: { outputPath: string; mimeType?: string; sizeBytes: number; base64: string };
     }
   | { type: 'CANCELLED'; requestId: string; payload: NativeFfmpegJobPayload }
   | { type: 'CLEANED_UP'; requestId: string; payload: NativeFfmpegJobPayload }
@@ -144,6 +156,7 @@ type NativeFfmpegRequestPayloadMap = {
   EXPORT_MEDIA: NativeFfmpegExportPayload;
   EXTRACT_THUMBNAIL: NativeFfmpegThumbnailPayload;
   EXTRACT_PREVIEW_CLIP: NativeFfmpegPreviewClipPayload;
+  READ_ASSET_BYTES: NativeFfmpegReadAssetBytesPayload;
   CANCEL_JOB: NativeFfmpegJobPayload;
   CLEANUP_JOB: NativeFfmpegJobPayload;
 };
@@ -154,6 +167,7 @@ const REQUEST_TYPES = [
   'EXPORT_MEDIA',
   'EXTRACT_THUMBNAIL',
   'EXTRACT_PREVIEW_CLIP',
+  'READ_ASSET_BYTES',
   'CANCEL_JOB',
   'CLEANUP_JOB',
 ] as const satisfies readonly NativeFfmpegRequestType[];
@@ -222,6 +236,8 @@ export function isNativeFfmpegRequest(value: unknown): value is NativeFfmpegRequ
       return hasOnlyKeys(value, ['type', 'requestId', 'payload']) && isThumbnailPayload(value.payload);
     case 'EXTRACT_PREVIEW_CLIP':
       return hasOnlyKeys(value, ['type', 'requestId', 'payload']) && isPreviewClipPayload(value.payload);
+    case 'READ_ASSET_BYTES':
+      return hasOnlyKeys(value, ['type', 'requestId', 'payload']) && isReadAssetBytesPayload(value.payload);
     case 'CANCEL_JOB':
     case 'CLEANUP_JOB':
       return hasOnlyKeys(value, ['type', 'requestId', 'payload']) && isJobPayload(value.payload);
@@ -261,8 +277,11 @@ export function isNativeFfmpegResponse(value: unknown): value is NativeFfmpegRes
     case 'COMPLETED':
       return hasOnlyKeys(value, ['type', 'requestId', 'payload']) && isCompletedPayload(value.payload);
     case 'THUMBNAIL_RESULT':
-    case 'PREVIEW_CLIP_RESULT':
       return hasOnlyKeys(value, ['type', 'requestId', 'payload']) && isAssetResultPayload(value.payload);
+    case 'PREVIEW_CLIP_RESULT':
+      return hasOnlyKeys(value, ['type', 'requestId', 'payload']) && isPreviewAssetResultPayload(value.payload);
+    case 'ASSET_BYTES_RESULT':
+      return hasOnlyKeys(value, ['type', 'requestId', 'payload']) && isAssetBytesPayload(value.payload);
     case 'CANCELLED':
     case 'CLEANED_UP':
       return hasOnlyKeys(value, ['type', 'requestId', 'payload']) && isJobPayload(value.payload);
@@ -321,17 +340,27 @@ function isThumbnailPayload(value: unknown): value is NativeFfmpegThumbnailPaylo
 function isPreviewClipPayload(value: unknown): value is NativeFfmpegPreviewClipPayload {
   return (
     isRecord(value) &&
-    hasOnlyKeys(value, ['candidateId', 'inputUrl', 'startSec', 'durationSec', 'format']) &&
+    hasOnlyKeys(value, ['candidateId', 'inputUrl', 'startSec', 'durationSec', 'format', 'headers']) &&
     isString(value.candidateId) &&
     isString(value.inputUrl) &&
     isOptionalNonNegativeNumber(value.startSec) &&
     isPositiveNumber(value.durationSec) &&
-    includes(PREVIEW_FORMATS, value.format)
+    includes(PREVIEW_FORMATS, value.format) &&
+    isOptionalHeaders(value.headers)
   );
 }
 
 function isJobPayload(value: unknown): value is NativeFfmpegJobPayload {
   return isRecord(value) && hasOnlyKeys(value, ['jobId']) && isString(value.jobId);
+}
+
+function isReadAssetBytesPayload(value: unknown): value is NativeFfmpegReadAssetBytesPayload {
+  return (
+    isRecord(value) &&
+    hasOnlyKeys(value, ['outputPath', 'maxBytes']) &&
+    isString(value.outputPath) &&
+    isPositiveNumber(value.maxBytes)
+  );
 }
 
 function isProbeResultPayload(value: unknown): boolean {
@@ -375,7 +404,30 @@ function isAssetResultPayload(value: unknown): boolean {
     isString(value.candidateId) &&
     isString(value.outputPath) &&
     isString(value.mimeType) &&
-    isOptionalString(value.dataUrl)
+    isString(value.dataUrl)
+  );
+}
+
+function isPreviewAssetResultPayload(value: unknown): boolean {
+  return (
+    isRecord(value) &&
+    hasOnlyKeys(value, ['candidateId', 'outputPath', 'mimeType', 'dataUrl', 'sizeBytes']) &&
+    isString(value.candidateId) &&
+    isString(value.outputPath) &&
+    isString(value.mimeType) &&
+    isOptionalString(value.dataUrl) &&
+    isOptionalNonNegativeNumber(value.sizeBytes)
+  );
+}
+
+function isAssetBytesPayload(value: unknown): boolean {
+  return (
+    isRecord(value) &&
+    hasOnlyKeys(value, ['outputPath', 'mimeType', 'sizeBytes', 'base64']) &&
+    isString(value.outputPath) &&
+    isOptionalString(value.mimeType) &&
+    isNumberInRange(value.sizeBytes, 0, Number.POSITIVE_INFINITY) &&
+    isString(value.base64)
   );
 }
 

@@ -162,4 +162,40 @@ describe('RuntimeClient', () => {
       payload: { candidateId: 'candidate-1' },
     }));
   });
+
+  test('gets and queues background media assets', async () => {
+    const state = {
+      candidateId: 'candidate-1',
+      kind: 'poster' as const,
+      status: 'ready' as const,
+      assetUrl: 'thumb.jpg',
+      mimeType: 'image/jpeg' as const,
+      updatedAt: 1,
+    };
+    const transport = vi
+      .fn()
+      .mockResolvedValueOnce({
+        type: 'GET_MEDIA_ASSET_STATE_RESULT',
+        requestId: 'response-state',
+        payload: { states: [state] },
+      })
+      .mockResolvedValueOnce({
+        type: 'QUEUE_MEDIA_ASSET_RESULT',
+        requestId: 'response-queue',
+        payload: { state },
+      });
+    const client = createRuntimeClient(transport);
+
+    await expect(client.getMediaAssetState('candidate-1')).resolves.toEqual([state]);
+    await expect(client.queueMediaAsset('candidate-1', 'poster', { priority: 'visible' })).resolves.toEqual(state);
+
+    expect(transport).toHaveBeenNthCalledWith(1, expect.objectContaining({
+      type: 'GET_MEDIA_ASSET_STATE',
+      payload: { candidateId: 'candidate-1' },
+    }));
+    expect(transport).toHaveBeenNthCalledWith(2, expect.objectContaining({
+      type: 'QUEUE_MEDIA_ASSET',
+      payload: { candidateId: 'candidate-1', kind: 'poster', priority: 'visible' },
+    }));
+  });
 });

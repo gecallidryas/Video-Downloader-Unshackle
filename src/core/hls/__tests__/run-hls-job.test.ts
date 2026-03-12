@@ -22,6 +22,15 @@ function buildJob(overrides: Partial<DownloadJob> = {}): DownloadJob {
   };
 }
 
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((promiseResolve) => {
+    resolve = promiseResolve;
+  });
+
+  return { promise, resolve };
+}
+
 describe('HLS planning and execution', () => {
   test('plans ordered segment work for clear HLS media playlists', () => {
     const manifest = parseHlsManifest({
@@ -140,6 +149,52 @@ describe('HLS planning and execution', () => {
     );
     spy.mockRestore();
   });
+
+  test('streams segment export callbacks before final output while preserving plan order', async () => {
+    const manifest = parseHlsManifest({
+      manifestUrl: 'https://cdn.example.com/hls/video/720p/prog.m3u8',
+      content: [
+        '#EXTM3U',
+        '#EXTINF:4,',
+        'segment-1.ts',
+        '#EXTINF:4,',
+        'segment-2.ts',
+        '#EXT-X-ENDLIST',
+      ].join('\n'),
+    });
+    const events: string[] = [];
+    const first = deferred<Uint8Array>();
+    const second = deferred<Uint8Array>();
+    const outputPromise = runHlsJob({
+      job: buildJob(),
+      manifest,
+      concurrency: 2,
+      fetchSegment: vi.fn((segment) => {
+        events.push(`fetch-${segment.index}`);
+        return segment.index === 1 ? first.promise : second.promise;
+      }),
+      onSegmentExport: async (event) => {
+        events.push(`export-${event.segment.index}`);
+      },
+      writeOutput: vi.fn().mockImplementation(async () => {
+        events.push('write-output');
+        return {
+          fileName: 'streamed.ts',
+          mimeType: 'video/mp2t',
+        };
+      }),
+    });
+
+    await vi.waitFor(() => expect(events).toEqual(['fetch-1', 'fetch-2']));
+    second.resolve(new Uint8Array([2]));
+    await Promise.resolve();
+    expect(events).toEqual(['fetch-1', 'fetch-2']);
+    first.resolve(new Uint8Array([1]));
+
+    await expect(outputPromise).resolves.toMatchObject({ fileName: 'streamed.ts' });
+    expect(events).toEqual(['fetch-1', 'fetch-2', 'export-1', 'export-2', 'write-output']);
+  });
+
 
   test('limits HLS output to the selected segment range while retaining init segments', async () => {
     const manifest = parseHlsManifest({

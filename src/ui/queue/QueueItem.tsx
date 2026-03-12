@@ -1,4 +1,5 @@
 import { useMemo } from 'react';
+import type { HlsRecoveryAction } from '@/video_downloader_types_skeleton';
 import { OverflowMenu, type MenuAction } from '@/src/ui/shared/OverflowMenu';
 import { SegmentGrid, type SegmentCell, type SegmentRange } from '@/src/ui/shared/SegmentGrid';
 
@@ -15,6 +16,7 @@ export interface QueueViewItem {
   outputUrl?: string;
   outputMimeType?: string;
   notes?: string[];
+  recoveryActions?: HlsRecoveryAction[];
   segments?: SegmentCell[];
   selectedSegmentRange?: SegmentRange;
 }
@@ -31,7 +33,9 @@ export type QueueAction =
   | 'copy-filename'
   | 'copy-command'
   | 'retry-failed-segments'
-  | 'export-partial';
+  | 'export-partial'
+  | 'retry-mp4-conversion'
+  | 'replace-manifest-url';
 
 interface QueueItemProps {
   item: QueueViewItem;
@@ -181,6 +185,26 @@ export function QueueItem({
             onClick={() => onAction('retry-failed-segments', item.id)}
           >
             Retry failed segments
+          </button>
+        ) : null}
+        {item.recoveryActions?.includes('retry_mp4_conversion') ? (
+          <button
+            type="button"
+            className="queue-item__button"
+            aria-label={`Retry MP4 conversion for ${item.title}`}
+            onClick={() => onAction('retry-mp4-conversion', item.id)}
+          >
+            Retry MP4 conversion
+          </button>
+        ) : null}
+        {item.recoveryActions?.includes('replace_manifest_url') ? (
+          <button
+            type="button"
+            className="queue-item__button"
+            aria-label={`Replace manifest URL for ${item.title}`}
+            onClick={() => onAction('replace-manifest-url', item.id)}
+          >
+            Replace URL
           </button>
         ) : null}
         {item.selectedSegmentRange ? (

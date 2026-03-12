@@ -25,6 +25,16 @@ export type WriteHlsOutput = (
   parts: Uint8Array[],
 ) => Promise<JobOutput>;
 
+export interface HlsSegmentExportEvent {
+  segment: SegmentDescriptor;
+  bytes: Uint8Array;
+  isInitSegment: boolean;
+}
+
+export type HlsSegmentExportCallback = (
+  event: HlsSegmentExportEvent,
+) => Promise<void>;
+
 export interface RunHlsJobInput {
   job: DownloadJob;
   manifest: ParsedHlsManifest;
@@ -40,8 +50,9 @@ export interface RunHlsJobInput {
   maxConcurrentPerHost?: number;
   segmentTimeoutMs?: number;
   qualityPolicy?: DefaultQualityPolicy;
-  onPlan?: (plan: SegmentPlan) => void;
+  onPlan?: (plan: SegmentPlan) => void | Promise<void>;
   onProgress?: SegmentProgressCallback;
+  onSegmentExport?: HlsSegmentExportCallback;
 }
 
 function filterSegmentsForSelection(plan: SegmentPlan, job: DownloadJob): SegmentPlan {
@@ -81,7 +92,30 @@ export async function runHlsJob(input: RunHlsJobInput): Promise<JobOutput> {
   });
   const plan = filterSegmentsForSelection(fullPlan, input.job);
   const liveTelemetry = input.manifest.isLive ? createLiveHlsTelemetry() : undefined;
-  input.onPlan?.(plan);
+  await input.onPlan?.(plan);
+  const segmentOrder = new Map(
+    plan.segments.map((segment, index) => [segment.id, index]),
+  );
+  const orderedExportBuffer = new Map<number, HlsSegmentExportEvent>();
+  let nextExportIndex = 0;
+
+  async function flushOrderedExport(): Promise<void> {
+    if (!input.onSegmentExport) {
+      return;
+    }
+
+    while (orderedExportBuffer.has(nextExportIndex)) {
+      const event = orderedExportBuffer.get(nextExportIndex);
+
+      if (!event) {
+        return;
+      }
+
+      orderedExportBuffer.delete(nextExportIndex);
+      nextExportIndex += 1;
+      await input.onSegmentExport(event);
+    }
+  }
 
   if (liveTelemetry) {
     const lastSequence = Math.max(
@@ -102,6 +136,18 @@ export async function runHlsJob(input: RunHlsJobInput): Promise<JobOutput> {
     segmentTimeoutMs: input.segmentTimeoutMs,
     signal: input.signal,
     fetchKey: input.fetchKey,
+    onSegmentComplete: input.onSegmentExport
+      ? async (event) => {
+          const order = segmentOrder.get(event.segment.id);
+
+          if (order === undefined) {
+            throw new Error(`Completed segment is not in the selected HLS plan: ${event.segment.id}`);
+          }
+
+          orderedExportBuffer.set(order, event);
+          await flushOrderedExport();
+        }
+      : undefined,
     onProgress: input.onProgress
       ? (event) =>
           input.onProgress?.({

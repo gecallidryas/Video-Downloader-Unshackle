@@ -121,6 +121,80 @@ test('upsertQueueJob stores the latest queue job status', () => {
   ]);
 });
 
+test('upsertQueueJob clears optimistic downloading marker for terminal runtime jobs', () => {
+  usePanelStore.getState().downloadItem('media-1');
+
+  usePanelStore.getState().upsertQueueJob({
+    id: 'job-1',
+    candidateId: 'media-1',
+    tabId: 7,
+    phase: 'completed',
+    createdAt: 1,
+    updatedAt: 2,
+    selection: { mode: 'custom' },
+    progressPct: 100,
+    bytesDownloaded: 100,
+  });
+
+  expect(usePanelStore.getState().downloadingIds.has('media-1')).toBe(false);
+});
+
+test('syncQueueJobs clears optimistic markers for failed and disappeared runtime jobs', () => {
+  usePanelStore.getState().downloadItem('media-1');
+  usePanelStore.getState().syncQueueJobs([
+    {
+      id: 'job-1',
+      candidateId: 'media-1',
+      tabId: 7,
+      phase: 'exporting',
+      createdAt: 1,
+      updatedAt: 1,
+      selection: { mode: 'custom' },
+      progressPct: 95,
+      bytesDownloaded: 10,
+    },
+  ]);
+
+  usePanelStore.getState().syncQueueJobs([
+    {
+      id: 'job-1',
+      candidateId: 'media-1',
+      tabId: 7,
+      phase: 'failed',
+      createdAt: 1,
+      updatedAt: 2,
+      selection: { mode: 'custom' },
+      progressPct: 95,
+      bytesDownloaded: 10,
+      failure: {
+        code: 'ASSEMBLY_ERROR',
+        message: 'Browser HLS transmux failed',
+        retryable: true,
+      },
+    },
+  ]);
+
+  expect(usePanelStore.getState().downloadingIds.has('media-1')).toBe(false);
+
+  usePanelStore.getState().downloadItem('media-2');
+  usePanelStore.getState().syncQueueJobs([
+    {
+      id: 'job-2',
+      candidateId: 'media-2',
+      tabId: 7,
+      phase: 'exporting',
+      createdAt: 1,
+      updatedAt: 1,
+      selection: { mode: 'custom' },
+      progressPct: 95,
+      bytesDownloaded: 10,
+    },
+  ]);
+  usePanelStore.getState().syncQueueJobs([]);
+
+  expect(usePanelStore.getState().downloadingIds.has('media-2')).toBe(false);
+});
+
 test('removeItem removes queue jobs for that media item', () => {
   usePanelStore.setState({
     surfaceState: 'results',

@@ -130,7 +130,7 @@ function isProtected(candidate: MediaCandidate): boolean {
 function failureFromError(error: unknown): JobFailure {
   const message = error instanceof Error ? error.message : 'Download failed';
   const protectedMedia = /protected media|drm|sample-aes/i.test(message);
-  const assemblyFailure = /assembl|blob|raw .*export/i.test(message);
+  const assemblyFailure = /assembl|blob|raw .*export|transmux/i.test(message);
   const nonRetryable = isNonRetryableError(error);
 
   return {

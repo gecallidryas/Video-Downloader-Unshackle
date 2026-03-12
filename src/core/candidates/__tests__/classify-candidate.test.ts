@@ -236,6 +236,29 @@ describe('classifyCandidate', () => {
     expect(candidate.protection.kind).toBe('drm');
     expect(candidate.preview).toEqual({ playable: false, adapter: 'none' });
   });
+
+  test('does not force unknown protection into the protected status', () => {
+    const candidate = classifyCandidate({
+      tabId: 7,
+      pageUrl: 'https://example.com/watch',
+      evidence: [
+        networkEvidence({
+          category: 'hls_manifest',
+          protocol: 'hls',
+          url: 'https://cdn.example.com/unknown.m3u8',
+          evidence: baseDetectionEvidence({
+            url: 'https://cdn.example.com/unknown.m3u8',
+            notes: ['category:hls_manifest', 'encrypted:unknown'],
+          }),
+        }),
+      ],
+      now: () => 450,
+    });
+
+    expect(candidate.protection.kind).toBe('unknown');
+    expect(candidate.status).toBe('partial');
+    expect(candidate.preview).toEqual({ playable: false, adapter: 'none' });
+  });
 });
 
 describe('mergeCandidateEvidence', () => {

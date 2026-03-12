@@ -133,6 +133,11 @@ export function VideoPlayer({ videoRef, sourceUrl, playerKey }: VideoPlayerProps
   async function toggleFullscreen() {
     const c = containerRef.current;
     if (!c) return;
+    const video = internalRef.current;
+    const playResult = video?.play();
+    if (playResult && typeof playResult.catch === 'function') {
+      void playResult.catch(() => undefined);
+    }
     if (document.fullscreenElement) {
       await document.exitFullscreen();
       return;

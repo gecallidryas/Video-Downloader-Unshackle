@@ -56,7 +56,7 @@ describe('native preview service', () => {
       candidateId: 'candidate-1',
       inputUrl: 'https://cdn.example.com/video.mp4',
       startSec: 10,
-      durationSec: 3,
+      durationSec: 10,
       format: 'webm',
     });
     expect(first).toEqual({
@@ -68,18 +68,24 @@ describe('native preview service', () => {
     expect(getCachedPreview('candidate-1')).toEqual(first);
   });
 
-  test('rejects generated previews without extension-safe asset data', async () => {
+  test('returns native preview metadata when the helper omits inline asset data', async () => {
     const client = nativeClient();
     vi.mocked(client.extractPreviewClip).mockResolvedValueOnce({
       candidateId: 'candidate-1',
       outputPath: 'C:\\Users\\tester\\AppData\\Local\\VideoDownloaderUnshackle\\previews\\candidate-1.webm',
       mimeType: 'video/webm',
-    });
+    } as Awaited<ReturnType<NativeFfmpegClient['extractPreviewClip']>>);
     clearPreviewCache('candidate-1');
 
-    await expect(ensurePreviewClip(candidate(), { nativeClient: client })).rejects.toThrow(
-      /extension-safe preview asset/i,
-    );
+    await expect(ensurePreviewClip(candidate(), { nativeClient: client })).resolves.toMatchObject({
+      assetUrl: '',
+      mimeType: 'video/webm',
+      generated: true,
+      nativeAssetRef: {
+        outputPath: 'C:\\Users\\tester\\AppData\\Local\\VideoDownloaderUnshackle\\previews\\candidate-1.webm',
+        mimeType: 'video/webm',
+      },
+    });
   });
 
   test('uses requested format settings in the preview cache key', async () => {
@@ -92,6 +98,31 @@ describe('native preview service', () => {
     expect(client.extractPreviewClip).toHaveBeenCalledTimes(2);
   });
 
+  test('passes captured headers to native preview extraction', async () => {
+    const client = nativeClient();
+    clearPreviewCache('candidate-1');
+
+    await ensurePreviewClip(candidate(), {
+      nativeClient: client,
+      headers: {
+        referer: 'https://example.com/watch',
+        origin: 'https://example.com',
+      },
+    });
+
+    expect(client.extractPreviewClip).toHaveBeenCalledWith({
+      candidateId: 'candidate-1',
+      inputUrl: 'https://cdn.example.com/video.mp4',
+      startSec: 10,
+      durationSec: 10,
+      format: 'webm',
+      headers: {
+        referer: 'https://example.com/watch',
+        origin: 'https://example.com',
+      },
+    });
+  });
+
   test('does not request previews for protected media', async () => {
     const client = nativeClient();
 
@@ -102,5 +133,37 @@ describe('native preview service', () => {
       ),
     ).rejects.toThrow(/Protected media/);
     expect(client.extractPreviewClip).not.toHaveBeenCalled();
+  });
+
+  test('records HLS preview clips through the offscreen browser fallback', async () => {
+    clearPreviewCache('candidate-hls');
+    const offscreenRecord = vi.fn().mockResolvedValue({
+      ok: true,
+      assetUrl: 'data:video/webm;base64,aGxz',
+      mimeType: 'video/webm',
+    });
+
+    await expect(
+      ensurePreviewClip(
+        candidate({
+          id: 'candidate-hls',
+          protocol: 'hls',
+          sourceUrl: undefined,
+          manifestUrl: 'https://cdn.example.com/master.m3u8',
+        }),
+        { offscreenRecord },
+      ),
+    ).resolves.toEqual({
+      assetUrl: 'data:video/webm;base64,aGxz',
+      mimeType: 'video/webm',
+      generated: true,
+    });
+    expect(offscreenRecord).toHaveBeenCalledWith({
+      type: 'GENERATE_PREVIEW_CLIP',
+      url: 'https://cdn.example.com/master.m3u8',
+      protocol: 'hls',
+      startSec: 10,
+      durationSec: 10,
+    });
   });
 });

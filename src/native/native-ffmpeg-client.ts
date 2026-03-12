@@ -4,6 +4,7 @@ import {
   type NativeFfmpegExportPayload,
   type NativeFfmpegJobPayload,
   type NativeFfmpegPreviewClipPayload,
+  type NativeFfmpegReadAssetBytesPayload,
   type NativeFfmpegRequest,
   type NativeFfmpegResponse,
   type NativeFfmpegThumbnailPayload,
@@ -21,6 +22,7 @@ type NativePongPayload = Extract<NativeFfmpegResponse, { type: 'PONG' }>['payloa
 type NativeCompletedPayload = Extract<NativeFfmpegResponse, { type: 'COMPLETED' }>['payload'];
 type NativeThumbnailPayload = Extract<NativeFfmpegResponse, { type: 'THUMBNAIL_RESULT' }>['payload'];
 type NativePreviewClipPayload = Extract<NativeFfmpegResponse, { type: 'PREVIEW_CLIP_RESULT' }>['payload'];
+type NativeAssetBytesPayload = Extract<NativeFfmpegResponse, { type: 'ASSET_BYTES_RESULT' }>['payload'];
 type NativeSuccessResponse = Exclude<NativeFfmpegResponse, { type: 'ERROR' }>;
 
 export class NativeFfmpegClientError extends Error {
@@ -67,11 +69,14 @@ export interface NativeFfmpegClient {
   exportMedia(payload: NativeFfmpegExportPayload): Promise<NativeCompletedPayload>;
   extractThumbnail(payload: NativeFfmpegThumbnailPayload): Promise<NativeThumbnailPayload>;
   extractPreviewClip(payload: NativeFfmpegPreviewClipPayload): Promise<NativePreviewClipPayload>;
+  readAssetBytes(payload: NativeFfmpegReadAssetBytesPayload): Promise<NativeAssetBytesPayload>;
   cancelJob(jobId: string): Promise<NativeFfmpegJobPayload>;
   cleanupJob(jobId: string): Promise<NativeFfmpegJobPayload>;
 }
 
-const DEFAULT_NATIVE_RESPONSE_TIMEOUT_MS = 10_000;
+const DEFAULT_NATIVE_CONTROL_RESPONSE_TIMEOUT_MS = 10_000;
+const DEFAULT_NATIVE_ASSET_RESPONSE_TIMEOUT_MS = 120_000;
+const DEFAULT_NATIVE_EXPORT_RESPONSE_TIMEOUT_MS = 4 * 60 * 60 * 1000;
 
 export function createNativeFfmpegClient(
   options: NativeFfmpegClientOptions = {},
@@ -80,7 +85,14 @@ export function createNativeFfmpegClient(
 
   return {
     ping: async () =>
-      (await sendAndExpect(hostName, createNativeRequest('PING', undefined), 'PONG', options))
+      (
+        await sendAndExpect(
+          hostName,
+          createNativeRequest('PING', undefined),
+          'PONG',
+          withDefaultTimeout(options, DEFAULT_NATIVE_CONTROL_RESPONSE_TIMEOUT_MS),
+        )
+      )
         .payload as NativePongPayload,
     exportMedia: async (payload) =>
       (
@@ -88,7 +100,7 @@ export function createNativeFfmpegClient(
           hostName,
           createNativeRequest('EXPORT_MEDIA', payload),
           'COMPLETED',
-          options,
+          withDefaultTimeout(options, DEFAULT_NATIVE_EXPORT_RESPONSE_TIMEOUT_MS),
         )
       ).payload as NativeCompletedPayload,
     extractThumbnail: async (payload) =>
@@ -97,7 +109,7 @@ export function createNativeFfmpegClient(
           hostName,
           createNativeRequest('EXTRACT_THUMBNAIL', payload),
           'THUMBNAIL_RESULT',
-          options,
+          withDefaultTimeout(options, DEFAULT_NATIVE_ASSET_RESPONSE_TIMEOUT_MS),
         )
       ).payload as NativeThumbnailPayload,
     extractPreviewClip: async (payload) =>
@@ -106,16 +118,25 @@ export function createNativeFfmpegClient(
           hostName,
           createNativeRequest('EXTRACT_PREVIEW_CLIP', payload),
           'PREVIEW_CLIP_RESULT',
-          options,
+          withDefaultTimeout(options, DEFAULT_NATIVE_ASSET_RESPONSE_TIMEOUT_MS),
         )
       ).payload as NativePreviewClipPayload,
+    readAssetBytes: async (payload) =>
+      (
+        await sendAndExpect(
+          hostName,
+          createNativeRequest('READ_ASSET_BYTES', payload),
+          'ASSET_BYTES_RESULT',
+          withDefaultTimeout(options, DEFAULT_NATIVE_ASSET_RESPONSE_TIMEOUT_MS),
+        )
+      ).payload as NativeAssetBytesPayload,
     cancelJob: async (jobId) =>
       (
         await sendAndExpect(
           hostName,
           createNativeRequest('CANCEL_JOB', { jobId }),
           'CANCELLED',
-          options,
+          withDefaultTimeout(options, DEFAULT_NATIVE_CONTROL_RESPONSE_TIMEOUT_MS),
         )
       ).payload as NativeFfmpegJobPayload,
     cleanupJob: async (jobId) =>
@@ -124,9 +145,19 @@ export function createNativeFfmpegClient(
           hostName,
           createNativeRequest('CLEANUP_JOB', { jobId }),
           'CLEANED_UP',
-          options,
+          withDefaultTimeout(options, DEFAULT_NATIVE_CONTROL_RESPONSE_TIMEOUT_MS),
         )
       ).payload as NativeFfmpegJobPayload,
+  };
+}
+
+function withDefaultTimeout(
+  options: NativeFfmpegClientOptions,
+  defaultTimeoutMs: number,
+): NativeFfmpegClientOptions {
+  return {
+    ...options,
+    timeoutMs: options.timeoutMs ?? defaultTimeoutMs,
   };
 }
 
@@ -201,11 +232,11 @@ function sendNativeRequest(
         new NativeFfmpegClientError(
           'NATIVE_TIMEOUT',
           `Native helper did not respond within ${String(
-            options.timeoutMs ?? DEFAULT_NATIVE_RESPONSE_TIMEOUT_MS,
+            options.timeoutMs ?? DEFAULT_NATIVE_CONTROL_RESPONSE_TIMEOUT_MS,
           )}ms.`,
         ),
       );
-    }, options.timeoutMs ?? DEFAULT_NATIVE_RESPONSE_TIMEOUT_MS);
+    }, options.timeoutMs ?? DEFAULT_NATIVE_CONTROL_RESPONSE_TIMEOUT_MS);
 
     const settle = (callback: () => void) => {
       if (settled) {

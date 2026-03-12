@@ -89,6 +89,23 @@ describe('native ffmpeg message contract', () => {
     expect(isNativeFfmpegRequest(request)).toBe(true);
   });
 
+  test('accepts EXTRACT_PREVIEW_CLIP requests with safe request headers', () => {
+    const request = createNativeRequest(
+      'EXTRACT_PREVIEW_CLIP',
+      {
+        candidateId: 'candidate-1',
+        inputUrl: 'https://cdn.example.com/video.mp4',
+        startSec: 3,
+        durationSec: 5,
+        format: 'webm',
+        headers: { referer: 'https://example.com/watch', origin: 'https://example.com' },
+      },
+      'req-preview-headers',
+    );
+
+    expect(isNativeFfmpegRequest(request)).toBe(true);
+  });
+
   test('accepts CANCEL_JOB requests with a job id', () => {
     const request = createNativeRequest('CANCEL_JOB', { jobId: 'job-1' }, 'req-cancel');
 
@@ -211,7 +228,7 @@ describe('native ffmpeg message contract', () => {
           inputUrl: 'https://cdn.example.com/video.mp4',
           durationSec: 5,
           format: 'webm',
-          headers: { Referer: 'https://example.com/watch' },
+          command: 'ffmpeg -i input output',
         },
       }),
     ).toBe(false);
@@ -227,6 +244,17 @@ describe('native ffmpeg message contract', () => {
         type: 'PONG',
         requestId: 'req-ping',
         payload: { version: '0.1.0', ffmpegAvailable: true },
+      }),
+    ).toBe(false);
+    expect(
+      isNativeFfmpegResponse({
+        type: 'THUMBNAIL_RESULT',
+        requestId: 'req-thumb',
+        payload: {
+          candidateId: 'candidate-1',
+          outputPath: 'C:\\Users\\tester\\AppData\\Local\\VideoDownloaderUnshackle\\thumbs\\candidate-1.jpg',
+          mimeType: 'image/jpeg',
+        },
       }),
     ).toBe(false);
   });

@@ -85,6 +85,34 @@ describe('native ffmpeg client', () => {
     vi.useRealTimers();
   });
 
+  test('media operations use longer default timeouts than readiness ping', async () => {
+    vi.useFakeTimers();
+    const client = createNativeFfmpegClient({
+      sendNativeMessage: (_hostName, request, callback) => {
+        setTimeout(() => {
+          callback({
+            type: 'COMPLETED',
+            requestId: request.requestId,
+            payload: {
+              jobId: request.type === 'EXPORT_MEDIA' ? request.payload.jobId : 'job-1',
+              outputPath: 'C:\\Temp\\clip.mp4',
+              mimeType: 'video/mp4',
+            },
+          });
+        }, 10_001);
+      },
+    });
+
+    const result = expect(client.exportMedia(exportPayload)).resolves.toMatchObject({
+      jobId: 'job-1',
+      outputPath: 'C:\\Temp\\clip.mp4',
+    });
+
+    await vi.advanceTimersByTimeAsync(10_001);
+    await result;
+    vi.useRealTimers();
+  });
+
   test('helper ERROR responses throw typed client errors', async () => {
     const client = createNativeFfmpegClient({
       sendNativeMessage: (_hostName, request, callback) => {
@@ -156,6 +184,7 @@ describe('native ffmpeg client', () => {
               candidateId: request.payload.candidateId,
               outputPath: 'C:\\Temp\\thumb.jpg',
               mimeType: 'image/jpeg',
+              dataUrl: 'data:image/jpeg;base64,dGh1bWI=',
             },
           });
           return;
@@ -169,6 +198,7 @@ describe('native ffmpeg client', () => {
               candidateId: request.payload.candidateId,
               outputPath: 'C:\\Temp\\preview.webm',
               mimeType: 'video/webm',
+              dataUrl: 'data:video/webm;base64,cHJldmlldw==',
             },
           });
           return;
@@ -249,6 +279,7 @@ describe('native ffmpeg client', () => {
               candidateId: request.payload.candidateId,
               outputPath: 'C:\\Temp\\thumb.jpg',
               mimeType: 'image/jpeg',
+              dataUrl: 'data:image/jpeg;base64,dGh1bWI=',
             },
           });
           return;
@@ -262,6 +293,7 @@ describe('native ffmpeg client', () => {
               candidateId: request.payload.candidateId,
               outputPath: 'C:\\Temp\\preview.webm',
               mimeType: 'video/webm',
+              dataUrl: 'data:video/webm;base64,cHJldmlldw==',
             },
           });
           return;

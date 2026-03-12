@@ -7,10 +7,10 @@ export type BrowserExportCapability =
   | 'direct-download'
   | 'direct-webm-recording'
   | 'hls-muxjs-mp4'
-  | 'hls-raw-ts'
   | 'dash-raw-segments'
   | 'static-thumbnail'
   | 'direct-frame-thumbnail'
+  | 'hls-frame-thumbnail'
   | 'direct-preview-recording'
   | 'hls-browser-preview'
   | 'native-required'
@@ -68,7 +68,6 @@ function isBlockedProtection(candidate: MediaCandidate): boolean {
   return (
     candidate.status === 'protected' ||
     candidate.protection.kind === 'drm' ||
-    candidate.protection.kind === 'unknown' ||
     candidate.protection.kind === 'sample-aes'
   );
 }
@@ -147,11 +146,15 @@ export function resolveBrowserDownloadCapability(
       return unsupported('HLS browser export requires a manifest URL.');
     }
 
+    if (input.browserTransmuxWithMuxJs === false) {
+      return nativeRequired('HLS downloads must produce playable MP4 output; enable mux.js or native FFmpeg export.');
+    }
+
     return {
       available: true,
-      capability: input.browserTransmuxWithMuxJs === false ? 'hls-raw-ts' : 'hls-muxjs-mp4',
-      outputExtension: input.browserTransmuxWithMuxJs === false ? 'ts' : 'mp4',
-      outputMimeType: input.browserTransmuxWithMuxJs === false ? 'video/mp2t' : 'video/mp4',
+      capability: 'hls-muxjs-mp4',
+      outputExtension: 'mp4',
+      outputMimeType: 'video/mp4',
     };
   }
 
@@ -262,7 +265,24 @@ export function resolveBrowserThumbnailCapability(
     };
   }
 
-  if (candidate.protocol === 'hls' || candidate.protocol === 'dash') {
+  if (candidate.protocol === 'hls') {
+    if (options.enableBrowserFallbacks === false) {
+      return browserFallbackDisabled();
+    }
+
+    if (!hasManifestUrl(candidate)) {
+      return unsupported('HLS browser thumbnail capture requires a manifest URL.');
+    }
+
+    return {
+      available: true,
+      capability: 'hls-frame-thumbnail',
+      outputExtension: 'jpg',
+      outputMimeType: 'image/jpeg',
+    };
+  }
+
+  if (candidate.protocol === 'dash') {
     return nativeRequired('Generated HLS and DASH thumbnails require the native helper.');
   }
 

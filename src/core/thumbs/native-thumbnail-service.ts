@@ -16,6 +16,7 @@ export interface EnsureNativeThumbnailOptions {
   offscreenCapture?: (message: Record<string, unknown>) => Promise<{ ok: boolean; assetUrl: string; mimeType: string }>;
   format?: NativeFfmpegThumbnailFormat;
   atSec?: number;
+  headers?: Record<string, string>;
 }
 
 export class ThumbnailGenerationError extends Error {
@@ -32,7 +33,6 @@ function isProtected(candidate: MediaCandidate): boolean {
   return (
     candidate.status === 'protected' ||
     candidate.protection.kind === 'drm' ||
-    candidate.protection.kind === 'unknown' ||
     candidate.protection.kind === 'sample-aes'
   );
 }
@@ -100,6 +100,7 @@ export async function ensureNativeThumbnail(
         inputUrl: inputUrlFor(candidate),
         atSec: options.atSec ?? defaultAtSec(candidate),
         format,
+        ...(options.headers ? { headers: options.headers } : {}),
       });
       const dataUrl = result.dataUrl;
 
@@ -121,11 +122,12 @@ export async function ensureNativeThumbnail(
     }
   }
 
-  if (options.offscreenCapture && candidate.protocol === 'direct') {
+  if (options.offscreenCapture && (candidate.protocol === 'direct' || candidate.protocol === 'hls')) {
     const canvasFormat = format === 'jpg' ? 'jpeg' : format;
     const result = await options.offscreenCapture({
       type: 'EXTRACT_THUMBNAIL',
       url: inputUrlFor(candidate),
+      ...(candidate.protocol === 'hls' ? { protocol: candidate.protocol } : {}),
       atSec: options.atSec ?? defaultAtSec(candidate),
       format: canvasFormat,
     });

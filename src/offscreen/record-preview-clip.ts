@@ -1,11 +1,14 @@
-import { loadMediaObjectUrl, type LoadedMediaObjectUrl } from './load-media-object-url';
+import type { StreamProtocol } from '@/video_downloader_types_skeleton';
+import { loadVideoSource, type DirectLoadMode, type LoadedVideoSource } from './load-video-source';
 
 export interface RecordPreviewOptions {
   url: string;
+  protocol?: StreamProtocol;
   startSec: number;
   durationSec: number;
   timeoutMs: number;
   maxDurationSec?: number;
+  directMode?: DirectLoadMode;
 }
 
 export interface PreviewClipResult {
@@ -27,7 +30,7 @@ export function recordPreviewClip(options: RecordPreviewOptions): Promise<Previe
     const video = document.createElement('video');
     video.preload = 'auto';
     video.muted = true;
-    let loadedMedia: LoadedMediaObjectUrl | undefined;
+    let loadedMedia: LoadedVideoSource | undefined;
     let settled = false;
 
     const timer = setTimeout(() => {
@@ -40,7 +43,7 @@ export function recordPreviewClip(options: RecordPreviewOptions): Promise<Previe
       video.pause();
       video.removeAttribute('src');
       video.load();
-      loadedMedia?.revoke();
+      loadedMedia?.cleanup();
     }
 
     function fail(error: unknown) {
@@ -114,14 +117,19 @@ export function recordPreviewClip(options: RecordPreviewOptions): Promise<Previe
       startRecording();
     }, { once: true });
 
-    void loadMediaObjectUrl(url)
+    const loadSource: Promise<LoadedVideoSource> = loadVideoSource(video, {
+      url,
+      protocol: options.protocol,
+      directMode: options.directMode ?? 'element-src',
+    });
+
+    void loadSource
       .then((media) => {
         if (settled) {
-          media.revoke();
+          media.cleanup();
           return;
         }
         loadedMedia = media;
-        video.src = media.objectUrl;
       })
       .catch(fail);
   });

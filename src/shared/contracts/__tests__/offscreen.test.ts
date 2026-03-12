@@ -15,6 +15,10 @@ describe('offscreen command contract', () => {
       'START_MEMORY_MUX',
       'APPEND_SEGMENT_MEMORY',
       'CLEANUP_MUX_JOB',
+      'START_BROWSER_HLS_EXPORT',
+      'APPEND_BROWSER_HLS_SEGMENT',
+      'FINALIZE_BROWSER_HLS_EXPORT',
+      'ABORT_BROWSER_HLS_EXPORT',
     ]);
   });
 
@@ -29,5 +33,35 @@ describe('offscreen command contract', () => {
     expect(isOffscreenCommand(command)).toBe(true);
     expect(isOffscreenCommand({ type: 'WRITE_SEGMENT', payload: {} })).toBe(false);
     expect(isOffscreenCommand({ type: 'UNKNOWN', payload: {} })).toBe(false);
+  });
+
+  test('validates browser HLS append messages with JSON-safe bytes', () => {
+    expect(
+      isOffscreenCommand(
+        createOffscreenCommand('APPEND_BROWSER_HLS_SEGMENT', {
+          jobId: 'job-1',
+          segment: {
+            id: 'segment-1',
+            index: 1,
+            url: 'https://cdn.example.com/segment.ts',
+          },
+          bytesBase64: 'Rw==',
+          isInitSegment: false,
+        }),
+      ),
+    ).toBe(true);
+
+    expect(
+      isOffscreenCommand({
+        type: 'APPEND_BROWSER_HLS_SEGMENT',
+        requestId: 'request-1',
+        payload: {
+          jobId: 'job-1',
+          segment: { id: 'segment-1', index: 1 },
+          bytes: new ArrayBuffer(1),
+          isInitSegment: false,
+        },
+      }),
+    ).toBe(false);
   });
 });

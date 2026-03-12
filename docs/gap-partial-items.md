@@ -10,10 +10,10 @@ Extracted from `feature-parity-report.md` across all 8 reference analyses. Every
 |---|---|---|---|---|
 | 1 | `suppressProtectedDownloads` defaults to `false` | done | Unified baseline | Release default is safe: `suppressProtectedDownloads` defaults to `true` and protected downloads are gated. |
 | 2 | `captureCredentialHeaders` defaults to `true`; stores Cookie/Authorization | done | Policy risk | Release default is safe: credential header capture defaults to `false`. |
-| 3 | Request header context forwards sensitive headers | done | live-stream (referer/origin only), stream-detector, cat-catch | Header context only captures credential headers when advanced mode and explicit setting allow it. |
-| 4 | Production HLS/DASH path audit — confirm native export is intended default | improved | Unified | Native export remains optional and setting-gated; when native features are off the background starts with native disabled, lazily creates the native client only for native-enabled paths, and browser fallbacks cover raw HLS/DASH saves, HLS preview playback, direct thumbnail capture, and explicit WebM trim. |
+| 3 | Request header context forwards sensitive headers | improved | live-stream (referer/origin only), stream-detector, cat-catch | Header context forwards safe Referer/Origin to native FFmpeg asset calls; Cookie/Authorization stay out of UI/log/diagnostics by default and require advanced explicit credential capture. |
+| 4 | Production HLS/DASH path audit — confirm native export is intended default | improved | Unified | Native export remains optional and setting-gated; browser-only HLS now resolves an explicit route before segment fetch, probes first media-segment bytes for TS/fMP4 and PAT/PMT codec evidence before mux.js, keeps mux.js out of the MV3 background bundle, and streams HLS export through offscreen when native is disabled. DASH remains bounded browser fallback/native-first. |
 | 5 | Safe default policy against store/experimental build split | done | puemos | Risky features are runtime-gated behind advanced/native/browser fallback settings with safe defaults for release builds. |
-| 6 | Protected-content refusal checks for deep capture modes | done | cat-catch (has it, risky) | Protected media is refused for native/browser export and preview/thumbnail generation paths. |
+| 6 | Protected-content refusal checks for deep capture modes | improved | cat-catch (has it, risky) | Protected/DRM/SAMPLE-AES media is refused for native/browser export and asset generation; unclassified `unknown` protection no longer blocks thumbnail/hover asset generation unless the candidate is actually protected. |
 | 7 | First-class stream detector classifier fixtures | done | stream-detector | Network classifier fixtures cover HLS, DASH, HDS, MSS, subtitles, and direct media formats. |
 | 8 | Safe command generation policy | done | stream-detector | Command generation policy redacts cookie/auth headers by default and gates sensitive variables behind consent. |
 | 9 | Stream detection/downloading as stated core capability | done | stream-detector, ViewTube | Product docs and runtime flow now treat stream detection/downloading as the primary extension capability. |
@@ -92,7 +92,7 @@ Extracted from `feature-parity-report.md` across all 8 reference analyses. Every
 
 | # | Item | Status | Stronger in | Action |
 |---|---|---|---|---|
-| 56 | File System Access direct writes | improved | live-stream | Browser HLS/DASH blob exports can write through a File System Access writer; background loads persisted handles when direct-to-disk is enabled. |
+| 56 | File System Access direct writes | done | live-stream | Browser HLS exports can stream through an offscreen File System Access sink when a persisted output folder is available; OPFS and memory sinks cover staged/default fallback routes without background Blob assembly. |
 | 57 | Persistent output directory handle | improved | live-stream | Popup folder choice now uses the File System Access store and opt-in IndexedDB handle persistence. |
 | 58 | Bucket metadata persisted separately | ~~done~~ partial | puemos | Metadata helper exists, but scheduler/runtime fragment writes still need production `recordChunk()` wiring. |
 | 59 | Track bytes written and stored chunks | ~~done~~ partial | puemos | Metadata helper tracks bytes/chunks in tests; production segment writes still need metadata calls. |
@@ -107,10 +107,10 @@ Extracted from `feature-parity-report.md` across all 8 reference analyses. Every
 | 68 | Storage summary in Settings and Downloads footer | ~~done~~ partial | puemos | Downloads footer shows storage state; popup settings still need a diagnostics-backed usage summary. |
 | 69 | Auto delete after save setting | done | puemos | Added `autoDeleteAfterSave` setting, popup control, controller cleanup hook, and fragment/metadata/subtitle cleanup. |
 | 70 | Cleanup cancels active jobs first | improved | puemos | Runtime `CANCEL_DOWNLOAD` now reaches the controller abort path, queue UI cancel is wired, and queue/controller completion paths preserve `cancelled` instead of overwriting it with failed/completed state. |
-| 71 | "Save raw TS" export option | done | hls_downloader (`-f` flag), cat-catch | Browser HLS fallback exports raw `.ts` through `chrome.downloads`; the primary user action is labeled `Download` while queue/output notes remain explicit about raw fallback output. |
+| 71 | Playable HLS export output | done | hls_downloader (`-f` flag), cat-catch | Browser HLS export no longer saves raw `.ts`, staged `.m4s`, or octet-stream artifacts. It only succeeds with mux.js-created MP4; unsafe codecs, unknown containers, fMP4 assembly, disabled mux.js, or failed transmux now require native FFmpeg instead of downloading segment files. |
 | 72 | Sidecar subtitle download option | done | hls_downloader | Media card exposes Embed/Sidecar/Both, selection flows into native export, and sidecar outputs are stored/reported. |
 | 73 | Force-export of partial HLS downloads | done | m3u8-downloader, cat-catch | HLS jobs can select a segment range and queue partial export through runtime actions. |
-| 74 | Streaming write feature detection | improved | m3u8-downloader | Capability detection is now used by the background direct-to-disk writer path to require a persisted output directory. |
+| 74 | Streaming write feature detection | done | m3u8-downloader | Capability detection now feeds browser HLS route selection for persisted File System Access, OPFS, WritableStream, and memory fallback decisions before segment fetch starts. |
 
 ### Settings & Configuration
 
@@ -137,7 +137,7 @@ Extracted from `feature-parity-report.md` across all 8 reference analyses. Every
 | 84 | Popup job details modal/panel | done | live-stream, Unified | The real popup entrypoint loads runtime jobs through `GET_JOBS`; selecting a job opens progress/error detail and injected-job tests remain supported. |
 | 85 | Progressive preview while downloading | partial-core | live-stream (MP4Box/MSE), Unified | Helper/modal range props remain component-only; production progressive/MSE preview is not claimed until queue range/live segment data is wired. |
 | 86 | Codec sniff via MP4Box | partial-core | live-stream, Unified | Codec sniff helpers and badges remain available, but no production preview asset caller passes codec info yet. |
-| 87 | hls.js preview when native HLS unsupported | improved | puemos | `hls.js` is now bundled, non-native HLS preview opens the manifest directly in `PreviewModal`, and generated native preview assets are skipped when native features are disabled. |
+| 87 | hls.js preview when native HLS unsupported | improved | puemos | Full preview playback is separated from hover clips: the eye button opens the original source/manifest, poster and hover assets are queued/deduped in the background with native-first HLS/DASH extraction, persisted asset metadata survives background restarts, and advanced-mode diagnostics stay sanitized. |
 | 88 | Preview reload button | done | puemos | Refresh icon button in `PreviewModal` header bumps `key` to destroy and recreate the player. |
 | 89 | Preview duration callback | partial-core | puemos | `PreviewModal` can emit duration, but no production parent consumes it to update candidate/job metadata yet. |
 | 90 | Copy all playlist URLs (bulk copy) | ~~partial~~ done | puemos | Real candidate variant/audio/subtitle URLs are preserved through `toDetectedMedia`; SidePanelApp copy-all includes video, variant, audio, and subtitle URLs. |
@@ -212,7 +212,7 @@ Extracted from `feature-parity-report.md` across all 8 reference analyses. Every
 | 137 | Storybook for components | deferred/not-scope | puemos | Kept out of scope for now; release tester guide and existing component tests remain visual QA until the design system needs Storybook. |
 | 138 | `unlimitedStorage` permission | done | puemos | Added `unlimitedStorage` to manifest permissions for OPFS/IndexedDB browser fallback storage headroom. |
 | 139 | ffmpeg.wasm as optional fallback | deferred/by-design | puemos | Native remains optional and browser fallback stays non-native-only; ffmpeg.wasm is deferred because it adds large wasm/runtime policy surface. |
-| 140 | mux.js as lightweight browser-only TS-to-MP4 fallback | done | m3u8-downloader, cat-catch | Added real `mux.js` dependency, `transmuxTsToMp4()` adapter, HLS browser export MP4 fallback under a 150 MB default limit, raw TS fallback notes, settings toggle, and capability docs distinguishing `hls.js` preview from `mux.js` export. |
+| 140 | mux.js as lightweight browser-only TS-to-MP4 fallback | done | m3u8-downloader, cat-catch | `mux.js` now loads only in the offscreen export host, receives MPEG-TS segments from the background-safe export protocol after byte-level TS/PAT/PMT probing, flushes MP4 once per job, dedupes repeated init boxes, reports typed mux diagnostics, refuses raw recovery downloads, and has a build regression preventing background mux/preload imports. |
 | 141 | Online filename resolution | done | live-stream | MediaCard overflow now exposes user-initiated `resolveOnlineFilename()` using HEAD, browser-managed credentials, redirects, and Content-Disposition parsing. |
 | 142 | Manifest/icon/package release checks | done | cat-catch | Added `scripts/release-checks.mjs`, `release:check`, manifest icons, and tests for release metadata sanity. |
 | 143 | Release tester guide | done | puemos (`FOR-DEAR-TESTERS.md`) | Added `docs/release-tester-guide.md` with non-native fallback smoke tests and regression gates. |

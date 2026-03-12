@@ -3,6 +3,9 @@ import type {
   DownloadJob,
   DownloadSelection,
   GeneratedAssetResult,
+  MediaAssetKind,
+  MediaAssetPriority,
+  MediaAssetState,
   MediaCandidate,
   PreviewAssetFormat,
   QueueStats,
@@ -41,12 +44,23 @@ export interface RuntimeClient {
   getDebugEvidence(candidateId: string): Promise<DetectionEvidence[]>;
   getPreviewAsset(candidateId: string, options?: { format?: PreviewAssetFormat }): Promise<GeneratedAssetResult>;
   getThumbnailAsset(candidateId: string): Promise<GeneratedAssetResult>;
+  getMediaAssetState(candidateId: string): Promise<MediaAssetState[]>;
+  queueMediaAsset(
+    candidateId: string,
+    kind: MediaAssetKind,
+    options?: { priority?: MediaAssetPriority },
+  ): Promise<MediaAssetState>;
   startDownload(candidateId: string, selection: DownloadSelection): Promise<DownloadJob>;
   cancelDownload(jobId: string): Promise<{ cancelled: boolean; downloadId?: number }>;
   retrySegment(jobId: string, segmentIndex: number): Promise<DownloadJob | undefined>;
   retryFailedSegments(jobId: string): Promise<DownloadJob | undefined>;
   exportPartialHls(jobId: string, range: { start: number; end: number }): Promise<DownloadJob | undefined>;
   updateHlsSegmentRange(jobId: string, range: { start: number; end: number }): Promise<DownloadJob | undefined>;
+  recoverHlsExport(
+    jobId: string,
+    action: 'save_raw_ts' | 'retry_mp4_conversion',
+  ): Promise<DownloadJob | undefined>;
+  replaceHlsManifestUrl(jobId: string, manifestUrl: string): Promise<DownloadJob | undefined>;
   retryDownload(jobId: string): Promise<DownloadJob | undefined>;
   resaveDownload(jobId: string): Promise<DownloadJob | undefined>;
   removeDownload(jobId: string): Promise<boolean>;
@@ -261,6 +275,56 @@ export function createRuntimeClient(
       return response.payload;
     },
 
+    async getMediaAssetState(candidateId) {
+      const response = await transport(
+        createRuntimeRequest('GET_MEDIA_ASSET_STATE', { candidateId }),
+      );
+
+      if (isRuntimeErrorResponse(response)) {
+        throw new RuntimeClientError(
+          response.payload.message,
+          response.payload.code,
+          response.payload.detail,
+        );
+      }
+
+      if (response.type !== 'GET_MEDIA_ASSET_STATE_RESULT') {
+        throw new RuntimeClientError(
+          `Unexpected runtime response: ${response.type}`,
+          'UNEXPECTED_RESPONSE',
+        );
+      }
+
+      return response.payload.states;
+    },
+
+    async queueMediaAsset(candidateId, kind, options = {}) {
+      const response = await transport(
+        createRuntimeRequest('QUEUE_MEDIA_ASSET', {
+          candidateId,
+          kind,
+          ...(options.priority ? { priority: options.priority } : {}),
+        }),
+      );
+
+      if (isRuntimeErrorResponse(response)) {
+        throw new RuntimeClientError(
+          response.payload.message,
+          response.payload.code,
+          response.payload.detail,
+        );
+      }
+
+      if (response.type !== 'QUEUE_MEDIA_ASSET_RESULT') {
+        throw new RuntimeClientError(
+          `Unexpected runtime response: ${response.type}`,
+          'UNEXPECTED_RESPONSE',
+        );
+      }
+
+      return response.payload.state;
+    },
+
     async startDownload(candidateId, selection) {
       const response = await transport(
         createRuntimeRequest('START_DOWNLOAD', { candidateId, selection }),
@@ -365,6 +429,38 @@ export function createRuntimeClient(
       }
 
       if (response.type !== 'UPDATE_HLS_SEGMENT_RANGE_RESULT') {
+        throw new RuntimeClientError(`Unexpected runtime response: ${response.type}`, 'UNEXPECTED_RESPONSE');
+      }
+
+      return response.payload.job;
+    },
+
+    async recoverHlsExport(jobId, action) {
+      const response = await transport(
+        createRuntimeRequest('RECOVER_HLS_EXPORT', { jobId, action }),
+      );
+
+      if (isRuntimeErrorResponse(response)) {
+        throw new RuntimeClientError(response.payload.message, response.payload.code, response.payload.detail);
+      }
+
+      if (response.type !== 'RECOVER_HLS_EXPORT_RESULT') {
+        throw new RuntimeClientError(`Unexpected runtime response: ${response.type}`, 'UNEXPECTED_RESPONSE');
+      }
+
+      return response.payload.job;
+    },
+
+    async replaceHlsManifestUrl(jobId, manifestUrl) {
+      const response = await transport(
+        createRuntimeRequest('REPLACE_HLS_MANIFEST_URL', { jobId, manifestUrl }),
+      );
+
+      if (isRuntimeErrorResponse(response)) {
+        throw new RuntimeClientError(response.payload.message, response.payload.code, response.payload.detail);
+      }
+
+      if (response.type !== 'REPLACE_HLS_MANIFEST_URL_RESULT') {
         throw new RuntimeClientError(`Unexpected runtime response: ${response.type}`, 'UNEXPECTED_RESPONSE');
       }
 

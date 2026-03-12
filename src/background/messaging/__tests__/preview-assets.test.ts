@@ -151,4 +151,37 @@ describe('preview asset runtime messages', () => {
     });
     expect(ensureThumbnail).not.toHaveBeenCalled();
   });
+
+  test('asset requests allow unknown protection when the candidate is not marked protected', async () => {
+    const ensureThumbnail = vi.fn().mockResolvedValue({
+      assetUrl: 'data:image/jpeg;base64,unknown',
+      mimeType: 'image/jpeg',
+      generated: true,
+    });
+    const router = routerWithCandidate(
+      candidate({
+        status: 'partial',
+        protocol: 'hls',
+        sourceUrl: undefined,
+        manifestUrl: 'https://cdn.example.com/master.m3u8',
+        protection: { kind: 'unknown', reason: 'Needs classification' },
+      }),
+      { ensureThumbnail },
+    );
+
+    const response = await router.handleMessage(
+      createRuntimeRequest('GET_THUMBNAIL_ASSET', { candidateId: 'candidate-1' }, 'req-thumb-unknown'),
+    );
+
+    expect(response).toEqual({
+      type: 'GET_THUMBNAIL_ASSET_RESULT',
+      requestId: 'req-thumb-unknown',
+      payload: {
+        assetUrl: 'data:image/jpeg;base64,unknown',
+        mimeType: 'image/jpeg',
+        generated: true,
+      },
+    });
+    expect(ensureThumbnail).toHaveBeenCalledTimes(1);
+  });
 });

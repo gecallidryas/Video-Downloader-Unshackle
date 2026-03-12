@@ -68,7 +68,7 @@ describe('preview service browser fallback', () => {
       type: 'GENERATE_PREVIEW_CLIP',
       url: 'https://cdn.example.com/video.mp4',
       startSec: 10,
-      durationSec: 3,
+      durationSec: 10,
     });
     expect(result).toEqual({
       assetUrl: 'data:video/webm;base64,b2Zmc2NyZWVu',
@@ -118,7 +118,7 @@ describe('preview service browser fallback', () => {
       type: 'GENERATE_PREVIEW_CLIP',
       url: 'https://cdn.example.com/video.mp4',
       startSec: 10,
-      durationSec: 3,
+      durationSec: 10,
     });
     expect(result).toEqual({
       assetUrl: 'data:video/webm;base64,b2Zmc2NyZWVu',
@@ -131,17 +131,34 @@ describe('preview service browser fallback', () => {
     await expect(ensurePreviewClip(candidate(), {})).rejects.toThrow();
   });
 
-  test('skips offscreen fallback for HLS protocol', async () => {
+  test('falls back to offscreen MediaRecorder for HLS protocol', async () => {
     const offscreenRecord = vi.fn().mockResolvedValue({
       ok: true,
       assetUrl: 'data:video/webm;base64,b2Zmc2NyZWVu',
       mimeType: 'video/webm',
     });
 
-    await expect(
-      ensurePreviewClip(candidate({ protocol: 'hls' }), { offscreenRecord }),
-    ).rejects.toThrow();
-    expect(offscreenRecord).not.toHaveBeenCalled();
+    const result = await ensurePreviewClip(
+      candidate({
+        protocol: 'hls',
+        sourceUrl: undefined,
+        manifestUrl: 'https://cdn.example.com/master.m3u8',
+      }),
+      { offscreenRecord },
+    );
+
+    expect(offscreenRecord).toHaveBeenCalledWith({
+      type: 'GENERATE_PREVIEW_CLIP',
+      url: 'https://cdn.example.com/master.m3u8',
+      protocol: 'hls',
+      startSec: 10,
+      durationSec: 10,
+    });
+    expect(result).toEqual({
+      assetUrl: 'data:video/webm;base64,b2Zmc2NyZWVu',
+      mimeType: 'video/webm',
+      generated: true,
+    });
   });
 
   test('returns typed native-required error for HLS when native preview is unavailable', async () => {
@@ -160,7 +177,7 @@ describe('preview service browser fallback', () => {
           sourceUrl: undefined,
           manifestUrl: 'https://cdn.example.com/master.m3u8',
         }),
-        { nativeClient: client, offscreenRecord: vi.fn() },
+        { nativeClient: client },
       ),
     ).rejects.toMatchObject({
       name: 'PreviewGenerationError',

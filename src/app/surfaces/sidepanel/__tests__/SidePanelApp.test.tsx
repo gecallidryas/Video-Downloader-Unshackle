@@ -1,4 +1,4 @@
-import { act, render, screen } from '@testing-library/react';
+import { act, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { vi } from 'vitest';
 import { SidePanelApp } from '../SidePanelApp';
@@ -6,7 +6,10 @@ import { usePanelStore } from '@/src/state/usePanelStore';
 import { useSettingsStore } from '@/src/state/useSettingsStore';
 import type { RuntimeClient } from '@/src/lib/runtime/client';
 import type { DetectedMedia } from '@/src/types/media';
-import type { MediaCandidate } from '@/video_downloader_types_skeleton';
+import type {
+  MediaAssetState,
+  MediaCandidate,
+} from '@/video_downloader_types_skeleton';
 
 function buildCandidate(
   overrides: Partial<MediaCandidate> = {},
@@ -63,11 +66,24 @@ function buildRuntimeClient(candidates: MediaCandidate[]): RuntimeClient {
       mimeType: 'image/jpeg',
       generated: true,
     }),
+    getMediaAssetState: vi.fn().mockResolvedValue([]),
+    queueMediaAsset: vi.fn().mockImplementation((candidateId: string, kind: MediaAssetState['kind']) =>
+      Promise.resolve({
+        candidateId,
+        kind,
+        status: 'ready',
+        assetUrl: kind === 'poster' ? 'thumb.jpg' : 'preview.webm',
+        mimeType: kind === 'poster' ? 'image/jpeg' : 'video/webm',
+        updatedAt: 1,
+      }),
+    ),
     cancelDownload: vi.fn().mockResolvedValue({ cancelled: true }),
     retrySegment: vi.fn().mockResolvedValue(undefined),
     retryFailedSegments: vi.fn().mockResolvedValue(undefined),
     exportPartialHls: vi.fn().mockResolvedValue(undefined),
     updateHlsSegmentRange: vi.fn().mockResolvedValue(undefined),
+    recoverHlsExport: vi.fn().mockResolvedValue(undefined),
+    replaceHlsManifestUrl: vi.fn().mockResolvedValue(undefined),
     getAllCandidates: vi.fn().mockResolvedValue(candidates),
     getJobs: vi.fn().mockResolvedValue([]),
     retryDownload: vi.fn().mockResolvedValue(undefined),
@@ -98,6 +114,30 @@ function buildRuntimeClient(candidates: MediaCandidate[]): RuntimeClient {
       bytesDownloaded: 0,
     }),
   };
+}
+
+function buildRuntimeClientWithAssets(
+  candidates: MediaCandidate[],
+  assetStates: MediaAssetState[],
+): RuntimeClient {
+  const runtimeClient = buildRuntimeClient(candidates);
+  vi.mocked(runtimeClient.getMediaAssetState).mockImplementation((candidateId) =>
+    Promise.resolve(assetStates.filter((state) => state.candidateId === candidateId)),
+  );
+  vi.mocked(runtimeClient.queueMediaAsset).mockImplementation((candidateId, kind) => {
+    const readyState = assetStates.find(
+      (state) => state.candidateId === candidateId && state.kind === kind,
+    );
+    return Promise.resolve(
+      readyState ?? {
+        candidateId,
+        kind,
+        status: 'queued',
+        updatedAt: 1,
+      },
+    );
+  });
+  return runtimeClient;
 }
 
 beforeEach(() => {
@@ -334,6 +374,7 @@ test('labels DASH browser fallback primary action as Download', async () => {
 
 test('does not show a broken preview spinner when browser preview is unavailable', async () => {
   const user = userEvent.setup();
+  useSettingsStore.setState({ enableNativeFeatures: false, enableBrowserFallbacks: true });
   const runtimeClient = buildRuntimeClient([
     buildCandidate({
       id: 'dash-preview-unavailable',
@@ -354,6 +395,60 @@ test('does not show a broken preview spinner when browser preview is unavailable
   expect(screen.getByText(/preview unavailable/i)).toBeInTheDocument();
   expect(screen.queryByText(/loading/i)).not.toBeInTheDocument();
   expect(runtimeClient.getPreviewAsset).not.toHaveBeenCalled();
+});
+
+test('loads native DASH hover preview when browser preview is unavailable', async () => {
+  const user = userEvent.setup();
+  useSettingsStore.setState({ enableNativeFeatures: true, enableBrowserFallbacks: false });
+  const runtimeClient = buildRuntimeClient([
+    buildCandidate({
+      id: 'dash-native-hover-preview',
+      protocol: 'dash',
+      status: 'partial',
+      displayName: 'Native DASH hover preview',
+      sourceUrl: undefined,
+      manifestUrl: 'https://cdn.example.com/manifest.mpd',
+      mimeType: 'application/dash+xml',
+      posterUrl: undefined,
+      thumbnails: undefined,
+    }),
+  ]);
+
+  render(<SidePanelApp activeTabId={7} runtimeClient={runtimeClient} />);
+
+  expect(await screen.findByText('Native DASH hover preview')).toBeInTheDocument();
+  await user.hover(screen.getByTestId('media-thumb'));
+
+  expect(runtimeClient.queueMediaAsset).toHaveBeenCalledWith('dash-native-hover-preview', 'hoverClip', {
+    priority: 'hover',
+  });
+  expect(await screen.findByLabelText(/hover preview/i)).toHaveAttribute('src', 'preview.webm');
+});
+
+test('loads native DASH thumbnails when browser fallbacks are disabled', async () => {
+  useSettingsStore.setState({ enableNativeFeatures: true, enableBrowserFallbacks: false });
+  const runtimeClient = buildRuntimeClient([
+    buildCandidate({
+      id: 'dash-native-thumb',
+      protocol: 'dash',
+      status: 'partial',
+      displayName: 'Native DASH thumbnail stream',
+      sourceUrl: undefined,
+      manifestUrl: 'https://cdn.example.com/manifest.mpd',
+      mimeType: 'application/dash+xml',
+      posterUrl: undefined,
+      thumbnails: undefined,
+    }),
+  ]);
+
+  render(<SidePanelApp activeTabId={7} runtimeClient={runtimeClient} />);
+
+  expect(await screen.findByText('Native DASH thumbnail stream')).toBeInTheDocument();
+  expect(await screen.findByAltText(/native dash thumbnail stream thumbnail/i))
+    .toHaveAttribute('src', 'thumb.jpg');
+  expect(runtimeClient.queueMediaAsset).toHaveBeenCalledWith('dash-native-thumb', 'poster', {
+    priority: 'visible',
+  });
 });
 
 test('opens HLS preview directly through browser playback when native features are disabled', async () => {
@@ -385,6 +480,35 @@ test('opens HLS preview directly through browser playback when native features a
   );
 });
 
+test('opens HLS eye preview with the original manifest instead of a generated clip', async () => {
+  const user = userEvent.setup();
+  useSettingsStore.setState({ enableNativeFeatures: true, enableBrowserFallbacks: true });
+  const runtimeClient = buildRuntimeClient([
+    buildCandidate({
+      id: 'hls-generated-preview',
+      protocol: 'hls',
+      displayName: 'Generated HLS preview stream',
+      sourceUrl: undefined,
+      manifestUrl: 'https://cdn.example.com/master.m3u8',
+      posterUrl: undefined,
+      thumbnails: undefined,
+    }),
+  ]);
+
+  render(<SidePanelApp activeTabId={7} runtimeClient={runtimeClient} />);
+
+  expect(await screen.findByText('Generated HLS preview stream')).toBeInTheDocument();
+  await user.click(screen.getByRole('button', { name: /preview/i }));
+
+  expect(runtimeClient.getPreviewAsset).not.toHaveBeenCalled();
+  expect(await screen.findByRole('dialog', { name: /preview generated hls preview stream/i }))
+    .toBeInTheDocument();
+  expect(screen.getByLabelText(/preview video/i)).toHaveAttribute(
+    'src',
+    'https://cdn.example.com/master.m3u8',
+  );
+});
+
 test('loads direct thumbnails through browser fallback when native features are disabled', async () => {
   useSettingsStore.setState({ enableNativeFeatures: false, enableBrowserFallbacks: true });
   const runtimeClient = buildRuntimeClient([
@@ -402,12 +526,176 @@ test('loads direct thumbnails through browser fallback when native features are 
   expect(await screen.findByText('Direct thumbnail stream')).toBeInTheDocument();
   expect(await screen.findByAltText(/direct thumbnail stream thumbnail/i))
     .toHaveAttribute('src', 'thumb.jpg');
-  expect(runtimeClient.getThumbnailAsset).toHaveBeenCalledWith('direct-thumb');
+  expect(runtimeClient.queueMediaAsset).toHaveBeenCalledWith('direct-thumb', 'poster', {
+    priority: 'visible',
+  });
+});
+
+test('loads HLS thumbnails through browser fallback when native features are disabled', async () => {
+  useSettingsStore.setState({ enableNativeFeatures: false, enableBrowserFallbacks: true });
+  const runtimeClient = buildRuntimeClient([
+    buildCandidate({
+      id: 'hls-thumb',
+      protocol: 'hls',
+      displayName: 'HLS thumbnail stream',
+      sourceUrl: undefined,
+      manifestUrl: 'https://cdn.example.com/master.m3u8',
+      posterUrl: undefined,
+      thumbnails: undefined,
+    }),
+  ]);
+
+  render(<SidePanelApp activeTabId={7} runtimeClient={runtimeClient} />);
+
+  expect(await screen.findByText('HLS thumbnail stream')).toBeInTheDocument();
+  expect(await screen.findByAltText(/hls thumbnail stream thumbnail/i))
+    .toHaveAttribute('src', 'thumb.jpg');
+  expect(runtimeClient.queueMediaAsset).toHaveBeenCalledWith('hls-thumb', 'poster', {
+    priority: 'visible',
+  });
+});
+
+test('loads browser fallback thumbnails even when native features are enabled', async () => {
+  useSettingsStore.setState({ enableNativeFeatures: true, enableBrowserFallbacks: true });
+  const runtimeClient = buildRuntimeClient([
+    buildCandidate({
+      id: 'direct-thumb-native-enabled',
+      protocol: 'direct',
+      displayName: 'Direct fallback thumbnail stream',
+      posterUrl: undefined,
+      thumbnails: undefined,
+    }),
+  ]);
+
+  render(<SidePanelApp activeTabId={7} runtimeClient={runtimeClient} />);
+
+  expect(await screen.findByText('Direct fallback thumbnail stream')).toBeInTheDocument();
+  expect(await screen.findByAltText(/direct fallback thumbnail stream thumbnail/i))
+    .toHaveAttribute('src', 'thumb.jpg');
+  expect(runtimeClient.queueMediaAsset).toHaveBeenCalledWith('direct-thumb-native-enabled', 'poster', {
+    priority: 'visible',
+  });
+});
+
+test('loads HLS hover preview clips through browser fallback when native features are disabled', async () => {
+  const user = userEvent.setup();
+  useSettingsStore.setState({ enableNativeFeatures: false, enableBrowserFallbacks: true });
+  const runtimeClient = buildRuntimeClient([
+    buildCandidate({
+      id: 'hls-hover-preview',
+      protocol: 'hls',
+      displayName: 'HLS hover preview stream',
+      sourceUrl: undefined,
+      manifestUrl: 'https://cdn.example.com/master.m3u8',
+      posterUrl: undefined,
+      thumbnails: undefined,
+    }),
+  ]);
+
+  render(<SidePanelApp activeTabId={7} runtimeClient={runtimeClient} />);
+
+  expect(await screen.findByText('HLS hover preview stream')).toBeInTheDocument();
+  await user.hover(screen.getByTestId('media-thumb'));
+
+  expect(runtimeClient.queueMediaAsset).toHaveBeenCalledWith('hls-hover-preview', 'hoverClip', {
+    priority: 'hover',
+  });
+  expect(await screen.findByLabelText(/hover preview/i)).toHaveAttribute('src', 'preview.webm');
+});
+
+test('eye preview opens the full media source instead of the hover preview clip', async () => {
+  const user = userEvent.setup();
+  const candidate = buildCandidate({
+    id: 'candidate-hls',
+    protocol: 'hls',
+    displayName: 'Original HLS stream',
+    sourceUrl: undefined,
+    manifestUrl: 'https://cdn.example.com/master.m3u8',
+  });
+  const runtimeClient = buildRuntimeClientWithAssets([candidate], [
+    {
+      candidateId: 'candidate-hls',
+      kind: 'hoverClip',
+      status: 'ready',
+      assetUrl: 'data:video/webm;base64,hoverclip',
+      mimeType: 'video/webm',
+      updatedAt: 1,
+    },
+  ]);
+
+  render(<SidePanelApp activeTabId={7} runtimeClient={runtimeClient} />);
+
+  expect(await screen.findByText('Original HLS stream')).toBeInTheDocument();
+  await user.hover(screen.getByTestId('media-thumb'));
+  expect(await screen.findByLabelText(/hover preview/i)).toHaveAttribute(
+    'src',
+    'data:video/webm;base64,hoverclip',
+  );
+
+  await user.click(screen.getByRole('button', { name: /preview/i }));
+
+  expect(screen.getByLabelText(/preview video/i)).toHaveAttribute(
+    'src',
+    'https://cdn.example.com/master.m3u8',
+  );
+  expect(runtimeClient.getPreviewAsset).not.toHaveBeenCalled();
+});
+
+test('advanced mode shows sanitized asset diagnostics from background state', async () => {
+  useSettingsStore.setState({ advancedMode: true });
+  const runtimeClient = buildRuntimeClientWithAssets(
+    [
+      buildCandidate({
+        id: 'candidate-diagnostics',
+        displayName: 'Diagnostics stream',
+      }),
+    ],
+    [
+      {
+        candidateId: 'candidate-diagnostics',
+        kind: 'poster',
+        status: 'failed',
+        error: 'request failed Authorization=[redacted]',
+        retryAfter: Date.now() + 60_000,
+        updatedAt: 1,
+        diagnostics: {
+          strategy: 'native',
+          inputKind: 'sourceUrl',
+          elapsedMs: 120,
+          errorCode: 'Error',
+        },
+      },
+    ],
+  );
+
+  render(<SidePanelApp activeTabId={7} runtimeClient={runtimeClient} />);
+
+  expect(await screen.findByText('Diagnostics stream')).toBeInTheDocument();
+  expect(screen.getByTestId('media-asset-diagnostics')).toHaveTextContent(
+    'Poster: failed · native · 120ms · request failed Authorization=[redacted]',
+  );
 });
 
 test('download queue cancel and copy URL actions are wired to runtime and clipboard', async () => {
   const user = userEvent.setup();
   const runtimeClient = buildRuntimeClient([buildCandidate()]);
+  const queuedJob = {
+    id: 'job-1',
+    candidateId: 'candidate-1',
+    tabId: 7,
+    phase: 'fetching' as const,
+    createdAt: 1,
+    updatedAt: 1,
+    selection: { mode: 'custom' as const },
+    progressPct: 12,
+    bytesDownloaded: 0,
+    output: {
+      fileName: 'queued.mp4',
+      mimeType: 'video/mp4',
+      outputUrl: 'blob:queued-file',
+    },
+  };
+  vi.mocked(runtimeClient.getJobs).mockResolvedValue([queuedJob]);
   const writeText = vi.fn().mockResolvedValue(undefined);
   Object.defineProperty(globalThis.navigator, 'clipboard', {
     configurable: true,
@@ -427,24 +715,7 @@ test('download queue cancel and copy URL actions are wired to runtime and clipbo
         selectedQuality: '',
       },
     ],
-    queueJobs: [
-      {
-        id: 'job-1',
-        candidateId: 'candidate-1',
-        tabId: 7,
-        phase: 'fetching',
-        createdAt: 1,
-        updatedAt: 1,
-        selection: { mode: 'custom' },
-        progressPct: 12,
-        bytesDownloaded: 0,
-        output: {
-          fileName: 'queued.mp4',
-          mimeType: 'video/mp4',
-          outputUrl: 'blob:queued-file',
-        },
-      },
-    ],
+    queueJobs: [queuedJob],
   });
 
   render(<SidePanelApp activeTabId={7} runtimeClient={runtimeClient} />);
@@ -458,6 +729,105 @@ test('download queue cancel and copy URL actions are wired to runtime and clipbo
 
   expect(writeText).toHaveBeenCalledWith('blob:queued-file');
 });
+
+test('refreshes runtime download jobs after a queued start', async () => {
+  const user = userEvent.setup();
+  const runtimeClient = buildRuntimeClient([
+    buildCandidate({
+      id: 'queued-refresh',
+      displayName: 'Refreshing queued stream',
+    }),
+  ]);
+  const queuedJob = {
+    id: 'job-refresh',
+    candidateId: 'queued-refresh',
+    tabId: 7,
+    phase: 'queued' as const,
+    createdAt: 1,
+    updatedAt: 1,
+    selection: { mode: 'custom' as const },
+    progressPct: 0,
+    bytesDownloaded: 0,
+  };
+  vi.mocked(runtimeClient.startDownload).mockResolvedValue(queuedJob);
+  vi.mocked(runtimeClient.getJobs).mockResolvedValueOnce([]).mockResolvedValue([
+    {
+      ...queuedJob,
+      phase: 'fetching',
+      progressPct: 12,
+      updatedAt: 2,
+    },
+  ]);
+
+  render(<SidePanelApp activeTabId={7} runtimeClient={runtimeClient} />);
+
+  expect(await screen.findByText('Refreshing queued stream')).toBeInTheDocument();
+  await user.click(screen.getByRole('button', { name: /^download$/i }));
+  await user.click(screen.getByRole('button', { name: /downloads/i }));
+
+  await waitFor(() => {
+    expect(runtimeClient.getJobs).toHaveBeenCalled();
+  });
+  expect(await screen.findByText('fetching')).toBeInTheDocument();
+  expect(screen.queryByText('queued')).not.toBeInTheDocument();
+});
+
+test('marks the current media card as downloading after start', async () => {
+  const user = userEvent.setup();
+  const runtimeClient = buildRuntimeClient([
+    buildCandidate({
+      id: 'download-label',
+      displayName: 'Download label stream',
+    }),
+  ]);
+
+  render(<SidePanelApp activeTabId={7} runtimeClient={runtimeClient} />);
+
+  expect(await screen.findByText('Download label stream')).toBeInTheDocument();
+  await user.click(screen.getByRole('button', { name: /^download$/i }));
+
+  expect(await screen.findByRole('button', { name: /^downloading$/i })).toBeDisabled();
+});
+
+test('restores current media card download action after runtime job completes', async () => {
+  const user = userEvent.setup();
+  const runtimeClient = buildRuntimeClient([
+    buildCandidate({
+      id: 'download-complete-label',
+      displayName: 'Completing label stream',
+    }),
+  ]);
+  vi.mocked(runtimeClient.getJobs)
+    .mockResolvedValueOnce([])
+    .mockResolvedValue([
+      {
+        id: 'job-complete-label',
+        candidateId: 'download-complete-label',
+        tabId: 7,
+        phase: 'completed',
+        createdAt: 1,
+        updatedAt: 2,
+        selection: { mode: 'custom' },
+        progressPct: 100,
+        bytesDownloaded: 100,
+      },
+    ]);
+
+  render(<SidePanelApp activeTabId={7} runtimeClient={runtimeClient} />);
+
+  expect(await screen.findByText('Completing label stream')).toBeInTheDocument();
+  await user.click(screen.getByRole('button', { name: /^download$/i }));
+  expect(await screen.findByRole('button', { name: /^downloading$/i })).toBeDisabled();
+
+  await waitFor(
+    () => {
+      expect(runtimeClient.getJobs).toHaveBeenCalledTimes(2);
+    },
+    { timeout: 2_500 },
+  );
+
+  expect(await screen.findByRole('button', { name: /^download$/i })).toBeEnabled();
+}, 6_000);
 
 test('current media copy URL action writes the browser fallback source URL', async () => {
   const user = userEvent.setup();
@@ -631,28 +1001,28 @@ test('queue overflow actions retry, resave, remove, copy filename, and copy comm
     value: { writeText },
   });
   const runtimeClient = buildRuntimeClient([buildCandidate()]);
+  const completedJob = {
+    id: 'job-1',
+    candidateId: 'candidate-1',
+    tabId: 7,
+    phase: 'completed' as const,
+    createdAt: 1,
+    updatedAt: 1,
+    selection: { mode: 'custom' as const },
+    progressPct: 100,
+    bytesDownloaded: 0,
+    output: {
+      fileName: 'queued.mp4',
+      mimeType: 'video/mp4',
+      outputUrl: 'https://cdn.example.com/queued.mp4',
+    },
+  };
+  vi.mocked(runtimeClient.getJobs).mockResolvedValue([completedJob]);
   globalThis.localStorage.setItem('unshackle:sidepanel:activeTab', 'downloads');
   useSettingsStore.setState({ customCommandTemplate: 'yt-dlp "{url}" -o "{filename}"' });
   usePanelStore.setState({
     mediaItems: [],
-    queueJobs: [
-      {
-        id: 'job-1',
-        candidateId: 'candidate-1',
-        tabId: 7,
-        phase: 'completed',
-        createdAt: 1,
-        updatedAt: 1,
-        selection: { mode: 'custom' },
-        progressPct: 100,
-        bytesDownloaded: 0,
-        output: {
-          fileName: 'queued.mp4',
-          mimeType: 'video/mp4',
-          outputUrl: 'https://cdn.example.com/queued.mp4',
-        },
-      },
-    ],
+    queueJobs: [completedJob],
   });
 
   render(<SidePanelApp activeTabId={7} runtimeClient={runtimeClient} />);
@@ -730,7 +1100,7 @@ test('current media copy URL action falls back when navigator clipboard is unava
   expect(execCommand).toHaveBeenCalledWith('copy');
 });
 
-test('preview eye requests a direct browser preview asset before opening', async () => {
+test('preview eye opens the direct source without queuing a hover clip', async () => {
   const user = userEvent.setup();
   const runtimeClient = buildRuntimeClient([
     buildCandidate({
@@ -748,9 +1118,16 @@ test('preview eye requests a direct browser preview asset before opening', async
   expect(await screen.findByText('Direct preview stream')).toBeInTheDocument();
   await user.click(screen.getByRole('button', { name: /preview/i }));
 
-  expect(runtimeClient.getPreviewAsset).toHaveBeenCalledWith('direct-preview', {
-    format: 'webm',
-  });
+  expect(runtimeClient.getPreviewAsset).not.toHaveBeenCalled();
+  expect(runtimeClient.queueMediaAsset).not.toHaveBeenCalledWith(
+    'direct-preview',
+    'hoverClip',
+    expect.anything(),
+  );
   expect(await screen.findByRole('dialog', { name: /preview direct preview stream/i }))
     .toBeInTheDocument();
+  expect(screen.getByLabelText(/preview video/i)).toHaveAttribute(
+    'src',
+    'https://cdn.example.com/video.webm',
+  );
 });

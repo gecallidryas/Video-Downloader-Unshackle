@@ -157,6 +157,7 @@ describe('native ffmpeg helper dispatcher', () => {
       jobId: 'preview-candidate-2',
       outputPath: `${dirs.previewsDir}\\candidate-2.webm`,
       mimeType: 'video/webm',
+      sizeBytes: 12345,
     });
 
     const response = await dispatchNativeRequest(
@@ -185,7 +186,33 @@ describe('native ffmpeg helper dispatcher', () => {
         candidateId: 'candidate-2',
         outputPath: `${dirs.previewsDir}\\candidate-2.webm`,
         mimeType: 'video/webm',
-        dataUrl: 'data:video/webm;base64,d2VibS1ieXRlcw==',
+        sizeBytes: 12345,
+      },
+    });
+  });
+
+  it('dispatches READ_ASSET_BYTES with a strict byte cap', async () => {
+    const response = await dispatchNativeRequest(
+      {
+        type: 'READ_ASSET_BYTES',
+        requestId: 'req-read',
+        payload: {
+          outputPath: `${dirs.previewsDir}\\candidate-2.webm`,
+          maxBytes: 1024,
+        },
+      },
+      {
+        readAsset: vi.fn().mockResolvedValue(Buffer.from('webm-bytes')),
+      },
+    );
+
+    expect(response).toEqual({
+      type: 'ASSET_BYTES_RESULT',
+      requestId: 'req-read',
+      payload: {
+        outputPath: `${dirs.previewsDir}\\candidate-2.webm`,
+        sizeBytes: 10,
+        base64: 'd2VibS1ieXRlcw==',
       },
     });
   });

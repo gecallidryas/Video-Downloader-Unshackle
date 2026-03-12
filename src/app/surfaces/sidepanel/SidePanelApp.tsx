@@ -48,7 +48,8 @@ import type { DetectedMedia } from '@/src/types/media';
 import type {
   DownloadJob,
   DownloadPhase,
-  GeneratedAssetResult,
+  MediaAssetKind,
+  MediaAssetState,
   MediaCandidate,
 } from '@/video_downloader_types_skeleton';
 import './SidePanelApp.css';
@@ -58,9 +59,67 @@ type DetectionView = 'current' | 'all' | 'previous';
 
 const ACTIVE_TAB_STORAGE_KEY = 'unshackle:sidepanel:activeTab';
 const CURRENT_TAB_REFRESH_INTERVAL_MS = 1_500;
+const MEDIA_DOWNLOADING_PHASES = new Set<DownloadPhase>([
+  'queued',
+  'preparing',
+  'fetching',
+  'decrypting',
+  'transmuxing',
+  'assembling',
+  'finalizing',
+  'exporting',
+]);
 
 function mergeCandidatesById(candidates: MediaCandidate[]): MediaCandidate[] {
   return Array.from(new Map(candidates.map((candidate) => [candidate.id, candidate])).values());
+}
+
+function isAssetGenerationBlocked(candidate: MediaCandidate): boolean {
+  return (
+    candidate.status === 'protected' ||
+    candidate.protection.kind === 'drm' ||
+    candidate.protection.kind === 'sample-aes'
+  );
+}
+
+function isNativeAssetProtocol(candidate: MediaCandidate): boolean {
+  return candidate.protocol === 'direct' || candidate.protocol === 'hls' || candidate.protocol === 'dash';
+}
+
+function canRequestGeneratedPreview(
+  candidate: MediaCandidate,
+  options: { enableNativeFeatures: boolean; enableBrowserFallbacks: boolean },
+): boolean {
+  if (isAssetGenerationBlocked(candidate)) {
+    return false;
+  }
+
+  if (options.enableNativeFeatures && isNativeAssetProtocol(candidate)) {
+    return true;
+  }
+
+  return resolveBrowserPreviewCapability(candidate, {
+    enableBrowserFallbacks: options.enableBrowserFallbacks,
+  }).available;
+}
+
+function canRequestGeneratedThumbnail(
+  candidate: MediaCandidate,
+  options: { enableNativeFeatures: boolean; enableBrowserFallbacks: boolean },
+): boolean {
+  if (candidate.thumbnails?.heroUrl || candidate.posterUrl || isAssetGenerationBlocked(candidate)) {
+    return false;
+  }
+
+  if (options.enableNativeFeatures && isNativeAssetProtocol(candidate)) {
+    return true;
+  }
+
+  return ['direct-frame-thumbnail', 'hls-frame-thumbnail'].includes(
+    resolveBrowserThumbnailCapability(candidate, {
+      enableBrowserFallbacks: options.enableBrowserFallbacks,
+    }).capability,
+  );
 }
 
 function readPersistedTab(): PanelTab | null {
@@ -95,6 +154,32 @@ function computeStorageLevel(usage: number, quota: number): StorageLevel {
   if (pct >= 80) return 'high';
   if (pct >= 60) return 'moderate';
   return 'ok';
+}
+
+function formatAssetDiagnostic(state?: MediaAssetState): string | undefined {
+  if (!state) {
+    return undefined;
+  }
+
+  const parts: string[] = [state.status];
+
+  if (state.diagnostics?.strategy) {
+    parts.push(state.diagnostics.strategy);
+  }
+
+  if (typeof state.diagnostics?.elapsedMs === 'number' && state.diagnostics.elapsedMs > 0) {
+    parts.push(`${state.diagnostics.elapsedMs}ms`);
+  }
+
+  if (state.error) {
+    parts.push(state.error);
+  }
+
+  if (state.retryAfter !== undefined) {
+    parts.push(`retry ${Math.max(0, state.retryAfter - Date.now())}ms`);
+  }
+
+  return parts.join(' · ');
 }
 
 interface DetectionViewProps {
@@ -160,21 +245,24 @@ function DetectionView({ activeTabId, runtimeClient }: DetectionViewProps) {
   const getDownloadSelection = usePanelStore((s) => s.getDownloadSelection);
   const upsertQueueJob = usePanelStore((s) => s.upsertQueueJob);
   const downloadItem = usePanelStore((s) => s.downloadItem);
+  const syncQueueJobs = usePanelStore((s) => s.syncQueueJobs);
+  const queueJobs = usePanelStore((s) => s.queueJobs);
+  const downloadingIds = usePanelStore((s) => s.downloadingIds);
   const setCandidates = usePanelStore((s) => s.setCandidates);
   const setErrorMessage = usePanelStore((s) => s.setErrorMessage);
   const fileCount = mediaItems.length;
   const fileLabel = `${fileCount} ${fileCount === 1 ? 'File' : 'Files'}`;
   const showResults = surfaceState === 'results';
   const [previewCandidateId, setPreviewCandidateId] = useState<string | null>(null);
-  const [previewAssets, setPreviewAssets] = useState<Record<string, GeneratedAssetResult>>({});
-  const [thumbnailAssets, setThumbnailAssets] = useState<Record<string, GeneratedAssetResult>>({});
-  const [previewLoadingIds, setPreviewLoadingIds] = useState<Set<string>>(new Set());
+  const [mediaAssetStates, setMediaAssetStates] = useState<Record<string, MediaAssetState>>({});
   const [manualHlsInput, setManualHlsInput] = useState('');
   const [manualHlsBaseUrl, setManualHlsBaseUrl] = useState('');
   const [shareUrl, setShareUrl] = useState<string | null>(null);
   const [resolvedFilenames, setResolvedFilenames] = useState<Record<string, string>>({});
   const [directUrlResults, setDirectUrlResults] = useState<DirectUrlPanelResult[]>([]);
   const autoDownloadedIdsRef = useRef<Set<string>>(new Set());
+  const requestedAssetKeysRef = useRef<Set<string>>(new Set());
+  const mediaAssetStatesRef = useRef<Record<string, MediaAssetState>>({});
   const pendingManualCandidatesRef = useRef<MediaCandidate[]>([]);
   const advancedMode = useSettingsStore((s) => s.advancedMode);
   const aria2Enabled = useSettingsStore((s) => s.aria2Enabled);
@@ -224,6 +312,19 @@ function DetectionView({ activeTabId, runtimeClient }: DetectionViewProps) {
       }),
     );
   }, [mediaItems]);
+  const downloadingMediaIds = useMemo(() => {
+    const ids = new Set(downloadingIds);
+
+    for (const job of queueJobs) {
+      if (MEDIA_DOWNLOADING_PHASES.has(job.phase)) {
+        ids.add(job.candidateId);
+      } else {
+        ids.delete(job.candidateId);
+      }
+    }
+
+    return ids;
+  }, [downloadingIds, queueJobs]);
 
   useEffect(() => {
     if (activeTabId === undefined || !runtimeClient) {
@@ -290,6 +391,38 @@ function DetectionView({ activeTabId, runtimeClient }: DetectionViewProps) {
   }, [activeTabId, runtimeClient, setCandidates, setErrorMessage]);
 
   useEffect(() => {
+    if (!runtimeClient) {
+      return;
+    }
+
+    let cancelled = false;
+    const refreshJobs = async () => {
+      try {
+        const jobs = await runtimeClient.getJobs();
+        if (!cancelled) {
+          syncQueueJobs(jobs);
+        }
+      } catch (error) {
+        if (!cancelled) {
+          setErrorMessage(
+            error instanceof Error ? error.message : 'Unable to refresh downloads',
+          );
+        }
+      }
+    };
+    void refreshJobs();
+    const intervalId = window.setInterval(
+      () => void refreshJobs(),
+      CURRENT_TAB_REFRESH_INTERVAL_MS,
+    );
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(intervalId);
+    };
+  }, [runtimeClient, setErrorMessage, syncQueueJobs]);
+
+  useEffect(() => {
     if (!runtimeClient) return;
     for (const candidate of viewCandidates) {
       if (autoDownloadedIdsRef.current.has(candidate.id)) continue;
@@ -339,95 +472,118 @@ function DetectionView({ activeTabId, runtimeClient }: DetectionViewProps) {
     }
   }
 
-  async function loadPreviewAsset(id: string): Promise<GeneratedAssetResult | undefined> {
+  function mediaAssetKey(candidateId: string, kind: MediaAssetKind): string {
+    return `${candidateId}:${kind}`;
+  }
+
+  function upsertMediaAssetState(state: MediaAssetState) {
+    setMediaAssetStates((current) => ({
+      ...current,
+      [mediaAssetKey(state.candidateId, state.kind)]: state,
+    }));
+    mediaAssetStatesRef.current = {
+      ...mediaAssetStatesRef.current,
+      [mediaAssetKey(state.candidateId, state.kind)]: state,
+    };
+  }
+
+  async function queueMediaAsset(
+    id: string,
+    kind: MediaAssetKind,
+    priority: 'visible' | 'hover' | 'background',
+  ): Promise<MediaAssetState | undefined> {
     const candidate = candidateById.get(id);
 
     if (!runtimeClient || !candidate) {
       return undefined;
     }
 
-    const capability = resolveBrowserPreviewCapability(candidate, {
-      enableBrowserFallbacks,
-    });
-    if (!capability.available) {
+    const canRequest = kind === 'poster'
+      ? canRequestGeneratedThumbnail(candidate, { enableNativeFeatures, enableBrowserFallbacks })
+      : canRequestGeneratedPreview(candidate, { enableNativeFeatures, enableBrowserFallbacks });
+
+    if (!canRequest) {
       return undefined;
     }
 
-    if (!enableNativeFeatures && candidate.protocol !== 'direct') {
-      return undefined;
-    }
-
-    const existing = previewAssets[id];
-    if (existing) {
+    const key = mediaAssetKey(id, kind);
+    const existing = mediaAssetStates[key];
+    if (
+      existing?.status === 'ready' ||
+      existing?.status === 'queued' ||
+      existing?.status === 'generating' ||
+      existing?.status === 'failed'
+    ) {
       return existing;
     }
 
-    setPreviewLoadingIds((current) => new Set([...current, id]));
+    if (requestedAssetKeysRef.current.has(key)) {
+      return existing;
+    }
 
+    requestedAssetKeysRef.current.add(key);
     try {
-      const asset = await runtimeClient.getPreviewAsset(id, { format: 'webm' });
-      setPreviewAssets((current) => ({ ...current, [id]: asset }));
-      return asset;
+      const state = await runtimeClient.queueMediaAsset(id, kind, { priority });
+      upsertMediaAssetState(state);
+      return state;
     } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : 'Unable to load preview asset');
+      requestedAssetKeysRef.current.delete(key);
+      setErrorMessage(error instanceof Error ? error.message : 'Unable to queue media asset');
       return undefined;
-    } finally {
-      setPreviewLoadingIds((current) => {
-        const next = new Set(current);
-        next.delete(id);
-        return next;
-      });
     }
   }
 
-  async function openPreviewFor(id: string) {
+  function openPreviewFor(id: string) {
     const candidate = candidateById.get(id);
     if (!candidate) {
       return;
-    }
-
-    if (enableNativeFeatures) {
-      await loadPreviewAsset(id);
     }
 
     setPreviewCandidateId(id);
   }
 
   useEffect(() => {
-    if (!runtimeClient || enableNativeFeatures || !enableBrowserFallbacks) {
+    if (!runtimeClient) {
       return;
     }
 
     let cancelled = false;
-    const candidatesNeedingBrowserThumb = viewCandidates.filter((candidate) => {
-      if (thumbnailAssets[candidate.id]) {
-        return false;
-      }
+    void Promise.all(
+      viewCandidates.map(async (candidate) => {
+        const states = await runtimeClient.getMediaAssetState(candidate.id);
+        if (cancelled) {
+          return;
+        }
 
-      return (
-        resolveBrowserThumbnailCapability(candidate, { enableBrowserFallbacks }).capability ===
-        'direct-frame-thumbnail'
-      );
-    });
-
-    for (const candidate of candidatesNeedingBrowserThumb) {
-      void runtimeClient
-        .getThumbnailAsset(candidate.id)
-        .then((asset) => {
-          if (cancelled) {
-            return;
+        setMediaAssetStates((current) => {
+          const next = { ...current };
+          for (const state of states) {
+            next[mediaAssetKey(state.candidateId, state.kind)] = state;
           }
-
-          setThumbnailAssets((current) => ({ ...current, [candidate.id]: asset }));
-        })
-        .catch((error) => {
-          if (!cancelled) {
-            setErrorMessage(
-              error instanceof Error ? error.message : 'Unable to load thumbnail asset',
-            );
-          }
+          mediaAssetStatesRef.current = next;
+          return next;
         });
-    }
+
+        const posterKey = mediaAssetKey(candidate.id, 'poster');
+        const posterState =
+          states.find((state) => state.kind === 'poster') ?? mediaAssetStatesRef.current[posterKey];
+
+        if (
+          !posterState &&
+          !requestedAssetKeysRef.current.has(posterKey) &&
+          canRequestGeneratedThumbnail(candidate, {
+            enableNativeFeatures,
+            enableBrowserFallbacks,
+          })
+        ) {
+          void queueMediaAsset(candidate.id, 'poster', 'visible');
+        }
+      }),
+    ).catch((error) => {
+      if (!cancelled) {
+        setErrorMessage(error instanceof Error ? error.message : 'Unable to load media asset state');
+      }
+    });
 
     return () => {
       cancelled = true;
@@ -437,7 +593,6 @@ function DetectionView({ activeTabId, runtimeClient }: DetectionViewProps) {
     enableNativeFeatures,
     runtimeClient,
     setErrorMessage,
-    thumbnailAssets,
     viewCandidates,
   ]);
 
@@ -661,10 +816,8 @@ function DetectionView({ activeTabId, runtimeClient }: DetectionViewProps) {
 
   const previewCandidate = previewCandidateId ? candidateById.get(previewCandidateId) : undefined;
   const previewMedia = previewCandidateId ? mediaItems.find((item) => item.id === previewCandidateId) : undefined;
-  const previewSourceUrl =
-    previewCandidateId && previewAssets[previewCandidateId]
-      ? previewAssets[previewCandidateId].assetUrl
-      : previewCandidate?.sourceUrl ?? previewCandidate?.manifestUrl ?? '';
+  const previewSourceUrl = previewCandidate?.sourceUrl ?? previewCandidate?.manifestUrl ?? '';
+  const previewProtocol = previewCandidate?.protocol;
   const previewBrowserRecordingAvailable = previewCandidate
     ? resolveBrowserDownloadCapability({
         candidate: previewCandidate,
@@ -717,7 +870,7 @@ function DetectionView({ activeTabId, runtimeClient }: DetectionViewProps) {
             }}
             onCopyUrls={(urls) => void copyText(urls.join('\n'))}
             onRemoveSelected={(ids) => ids.forEach((id) => removeItem(id))}
-            onRetryProbe={(id) => void loadPreviewAsset(id)}
+            onRetryProbe={(id) => void queueMediaAsset(id, 'hoverClip', 'hover')}
           />
           <DirectUrlPanel
             results={directUrlResults}
@@ -812,16 +965,37 @@ function DetectionView({ activeTabId, runtimeClient }: DetectionViewProps) {
         <div className="side-panel__list">
           <ProtectedWarning items={mediaItems} />
           {mediaItems.map((item) => (
+            (() => {
+              const posterState = mediaAssetStates[mediaAssetKey(item.id, 'poster')];
+              const hoverState = mediaAssetStates[mediaAssetKey(item.id, 'hoverClip')];
+              return (
             <MediaCard
               key={item.id}
               media={{
                 ...item,
-                thumbnailUrl: thumbnailAssets[item.id]?.assetUrl ?? item.thumbnailUrl,
-                previewAssetUrl: previewAssets[item.id]?.assetUrl,
-                previewLoading: previewLoadingIds.has(item.id),
+                thumbnailUrl:
+                  posterState?.status === 'ready'
+                    ? posterState.assetUrl ?? item.thumbnailUrl
+                    : item.thumbnailUrl,
+                previewAssetUrl:
+                  hoverState?.status === 'ready'
+                    ? hoverState.assetUrl
+                    : undefined,
+                previewLoading: hoverState?.status === 'queued' || hoverState?.status === 'generating',
+                thumbnailUnavailableReason:
+                  posterState?.status === 'failed'
+                    ? 'Thumbnail unavailable'
+                    : item.thumbnailUnavailableReason,
+                previewUnavailableReason: candidateById.has(item.id) &&
+                  canRequestGeneratedPreview(candidateById.get(item.id)!, {
+                    enableNativeFeatures,
+                    enableBrowserFallbacks,
+                  })
+                  ? undefined
+                  : item.previewUnavailableReason,
               }}
-              onPreview={() => void openPreviewFor(item.id)}
-              onPreviewHover={() => void loadPreviewAsset(item.id)}
+              onPreview={() => openPreviewFor(item.id)}
+              onPreviewHover={() => void queueMediaAsset(item.id, 'hoverClip', 'hover')}
               onRemove={() => removeItem(item.id)}
               onDownload={() => void startDownload(item.id)}
               onCopyUrl={(url) => void copyText(url).catch((error: unknown) => {
@@ -862,10 +1036,16 @@ function DetectionView({ activeTabId, runtimeClient }: DetectionViewProps) {
               onProtectedProceed={(policy) => {
                 window.open(policy.proceedUrl, '_blank', 'noopener,noreferrer');
               }}
+              isDownloading={downloadingMediaIds.has(item.id)}
+              showAssetDiagnostics={advancedMode}
+              posterDiagnostic={formatAssetDiagnostic(posterState)}
+              hoverDiagnostic={formatAssetDiagnostic(hoverState)}
               duplicateCount={(duplicateCounts.get(item.id) ?? 1) > 1 ? duplicateCounts.get(item.id) : undefined}
               onDuplicateClick={() => setRecentExpanded(true)}
               outputFilename={expectedOutputFilename(candidateById.get(item.id), item)}
             />
+              );
+            })()
           ))}
           {recentOnly && !recentExpanded && viewMediaItems.length > mediaItems.length ? (
             <button
@@ -881,7 +1061,7 @@ function DetectionView({ activeTabId, runtimeClient }: DetectionViewProps) {
               open
               title={previewMedia.title}
               sourceUrl={previewSourceUrl}
-              protocol={previewCandidate.protocol}
+              protocol={previewProtocol ?? previewCandidate.protocol}
               browserRecordingAvailable={previewBrowserRecordingAvailable}
               onClose={() => setPreviewCandidateId(null)}
               onDownload={(trim, options) => void downloadPreviewSelection(trim, options)}
@@ -937,6 +1117,22 @@ function queueStatusText(job: DownloadJob): string {
   return job.phase;
 }
 
+function formatBytes(bytes: number): string {
+  if (bytes >= 1024 * 1024 * 1024) {
+    return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)} GB`;
+  }
+
+  if (bytes >= 1024 * 1024) {
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  }
+
+  if (bytes >= 1024) {
+    return `${(bytes / 1024).toFixed(1)} KB`;
+  }
+
+  return `${bytes} B`;
+}
+
 interface DownloadsPanelProps {
   runtimeClient: RuntimeClient;
 }
@@ -947,6 +1143,7 @@ function DownloadsPanel({ runtimeClient }: DownloadsPanelProps) {
   const queueJobs = usePanelStore((s) => s.queueJobs);
   const downloadingIds = usePanelStore((s) => s.downloadingIds);
   const upsertQueueJob = usePanelStore((s) => s.upsertQueueJob);
+  const syncQueueJobs = usePanelStore((s) => s.syncQueueJobs);
   const setErrorMessage = usePanelStore((s) => s.setErrorMessage);
   const customCommandTemplate = useSettingsStore((s) => s.customCommandTemplate);
   const advancedMode = useSettingsStore((s) => s.advancedMode);
@@ -974,6 +1171,36 @@ function DownloadsPanel({ runtimeClient }: DownloadsPanelProps) {
     };
   }, []);
 
+  useEffect(() => {
+    let cancelled = false;
+
+    const refreshJobs = async () => {
+      try {
+        const jobs = await runtimeClient.getJobs();
+        if (!cancelled) {
+          syncQueueJobs(jobs);
+        }
+      } catch (error) {
+        if (!cancelled) {
+          setErrorMessage(
+            error instanceof Error ? error.message : 'Unable to refresh downloads',
+          );
+        }
+      }
+    };
+
+    void refreshJobs();
+    const intervalId = window.setInterval(
+      () => void refreshJobs(),
+      CURRENT_TAB_REFRESH_INTERVAL_MS,
+    );
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(intervalId);
+    };
+  }, [runtimeClient, setErrorMessage, syncQueueJobs]);
+
   const queueItems = useMemo<QueueViewItem[]>(
     () => {
       const mediaById = new Map(mediaItems.map((item) => [item.id, item]));
@@ -992,7 +1219,14 @@ function DownloadsPanel({ runtimeClient }: DownloadsPanelProps) {
           outputUrl: job.output?.outputUrl ?? candidate?.sourceUrl ?? candidate?.manifestUrl,
           outputLabel: job.output?.fileName ?? item?.format,
           outputMimeType: job.output?.mimeType,
-          notes: job.output?.notes,
+          notes: [
+            ...(job.output?.notes ?? []),
+            ...(job.browserExportReason ? [job.browserExportReason] : []),
+            ...(job.outputBytesWritten !== undefined
+              ? [`Output written: ${formatBytes(job.outputBytesWritten)}`]
+              : []),
+          ],
+          recoveryActions: job.phase === 'failed' ? job.recoveryActions : undefined,
           segments: job.segmentStatuses?.map((segment) => ({
             index: segment.index,
             status: segment.status,
@@ -1105,6 +1339,34 @@ function DownloadsPanel({ runtimeClient }: DownloadsPanelProps) {
         const updated = await runtimeClient.exportPartialHls(
           job.id,
           item.selectedSegmentRange,
+        );
+        if (updated) {
+          upsertQueueJob(updated);
+        }
+        return;
+      }
+
+      if (action === 'retry-mp4-conversion' && job) {
+        const updated = await runtimeClient.recoverHlsExport(
+          job.id,
+          'retry_mp4_conversion',
+        );
+        if (updated) {
+          upsertQueueJob(updated);
+        }
+        return;
+      }
+
+      if (action === 'replace-manifest-url' && job) {
+        const manifestUrl = window.prompt('Replacement HLS manifest URL');
+
+        if (!manifestUrl?.trim()) {
+          return;
+        }
+
+        const updated = await runtimeClient.replaceHlsManifestUrl(
+          job.id,
+          manifestUrl.trim(),
         );
         if (updated) {
           upsertQueueJob(updated);

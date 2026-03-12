@@ -103,6 +103,12 @@ test('opens the preview source in a new tab when native fullscreen is rejected',
   );
 
   const player = screen.getByRole('group', { name: /video player/i });
+  const video = screen.getByLabelText(/preview video/i) as HTMLVideoElement;
+  const play = vi.fn().mockResolvedValue(undefined);
+  Object.defineProperty(video, 'play', {
+    configurable: true,
+    value: play,
+  });
   Object.defineProperty(player, 'requestFullscreen', {
     configurable: true,
     value: vi.fn().mockRejectedValue(new Error('Denied by side panel')),
@@ -115,6 +121,7 @@ test('opens the preview source in a new tab when native fullscreen is rejected',
     '_blank',
     'noopener,noreferrer',
   );
+  expect(play).toHaveBeenCalled();
   expect(player).not.toHaveClass('vp--fallback-fullscreen');
   expect(screen.getByRole('button', { name: /fullscreen/i })).toBeInTheDocument();
 });

@@ -256,6 +256,12 @@ export interface DownloadSelection {
   };
 }
 
+export type HlsRecoveryAction =
+  | 'save_raw_ts'
+  | 'retry_mp4_conversion'
+  | 'retry_failed_segments'
+  | 'replace_manifest_url';
+
 export type PreviewAssetFormat = 'webm' | 'mp4' | 'gif';
 export type GeneratedAssetMimeType =
   | 'video/webm'
@@ -269,6 +275,43 @@ export interface GeneratedAssetResult {
   assetUrl: string;
   mimeType: GeneratedAssetMimeType;
   generated: boolean;
+  nativeAssetRef?: NativeAssetReference;
+}
+
+export type MediaAssetKind = 'poster' | 'hoverClip';
+export type MediaAssetStatus = 'missing' | 'queued' | 'generating' | 'ready' | 'failed';
+export type MediaAssetPriority = 'visible' | 'hover' | 'background';
+export type MediaAssetStrategy =
+  | 'static'
+  | 'native'
+  | 'offscreen-hls'
+  | 'offscreen-direct'
+  | 'none';
+
+export interface MediaAssetDiagnostics {
+  strategy: MediaAssetStrategy;
+  inputKind: 'sourceUrl' | 'manifestUrl';
+  elapsedMs: number;
+  errorCode?: string;
+  retryAfter?: number;
+}
+
+export interface NativeAssetReference {
+  outputPath: string;
+  mimeType: GeneratedAssetMimeType;
+  sizeBytes?: number;
+}
+
+export interface MediaAssetState {
+  candidateId: string;
+  kind: MediaAssetKind;
+  status: MediaAssetStatus;
+  assetUrl?: string;
+  mimeType?: GeneratedAssetMimeType;
+  error?: string;
+  diagnostics?: MediaAssetDiagnostics;
+  retryAfter?: number;
+  updatedAt: number;
 }
 
 export interface DownloadJob {
@@ -287,6 +330,11 @@ export interface DownloadJob {
   segmentStatuses?: JobSegmentStatus[];
   selectedSegmentRange?: { start: number; end: number };
   hlsTimelinePolicy?: DownloadSelection['hlsTimelinePolicy'];
+  browserExportRoute?: string;
+  browserExportSink?: string;
+  browserExportReason?: string;
+  outputBytesWritten?: number;
+  recoveryActions?: HlsRecoveryAction[];
   resumeToken?: string;
   output?: JobOutput;
   failure?: JobFailure;
@@ -416,6 +464,8 @@ export type RuntimeRequest =
   | MessageEnvelope<'STOP_PREVIEW', { candidateId: string }>
   | MessageEnvelope<'GET_PREVIEW_ASSET', { candidateId: string; format?: PreviewAssetFormat }>
   | MessageEnvelope<'GET_THUMBNAIL_ASSET', { candidateId: string }>
+  | MessageEnvelope<'GET_MEDIA_ASSET_STATE', { candidateId: string }>
+  | MessageEnvelope<'QUEUE_MEDIA_ASSET', { candidateId: string; kind: MediaAssetKind; priority?: MediaAssetPriority }>
   | MessageEnvelope<'START_DOWNLOAD', { candidateId: string; selection: DownloadSelection }>
   | MessageEnvelope<'PAUSE_DOWNLOAD', { jobId: string }>
   | MessageEnvelope<'RESUME_DOWNLOAD', { jobId: string }>
@@ -432,6 +482,8 @@ export type RuntimeRequest =
   | MessageEnvelope<'RETRY_FAILED_HLS_SEGMENTS', { jobId: string }>
   | MessageEnvelope<'EXPORT_PARTIAL_HLS', { jobId: string; range: { start: number; end: number } }>
   | MessageEnvelope<'UPDATE_HLS_SEGMENT_RANGE', { jobId: string; range: { start: number; end: number } }>
+  | MessageEnvelope<'RECOVER_HLS_EXPORT', { jobId: string; action: Extract<HlsRecoveryAction, 'save_raw_ts' | 'retry_mp4_conversion'> }>
+  | MessageEnvelope<'REPLACE_HLS_MANIFEST_URL', { jobId: string; manifestUrl: string }>
   | MessageEnvelope<'GET_QUEUE_STATS', Record<string, never>>
   | MessageEnvelope<'DEBUG_GET_EVIDENCE', { candidateId: string }>;
 
@@ -448,6 +500,8 @@ export type RuntimeResponse =
   | MessageEnvelope<'STOP_PREVIEW_RESULT', { ok: boolean }>
   | MessageEnvelope<'GET_PREVIEW_ASSET_RESULT', GeneratedAssetResult>
   | MessageEnvelope<'GET_THUMBNAIL_ASSET_RESULT', GeneratedAssetResult>
+  | MessageEnvelope<'GET_MEDIA_ASSET_STATE_RESULT', { states: MediaAssetState[] }>
+  | MessageEnvelope<'QUEUE_MEDIA_ASSET_RESULT', { state: MediaAssetState }>
   | MessageEnvelope<'START_DOWNLOAD_RESULT', { job: DownloadJob }>
   | MessageEnvelope<'CANCEL_DOWNLOAD_RESULT', { cancelled: boolean; downloadId?: number }>
   | MessageEnvelope<'GET_JOB_RESULT', { job?: DownloadJob }>
@@ -462,6 +516,8 @@ export type RuntimeResponse =
   | MessageEnvelope<'RETRY_FAILED_HLS_SEGMENTS_RESULT', { job?: DownloadJob; queued: boolean }>
   | MessageEnvelope<'EXPORT_PARTIAL_HLS_RESULT', { job?: DownloadJob; queued: boolean }>
   | MessageEnvelope<'UPDATE_HLS_SEGMENT_RANGE_RESULT', { job?: DownloadJob }>
+  | MessageEnvelope<'RECOVER_HLS_EXPORT_RESULT', { job?: DownloadJob; queued: boolean }>
+  | MessageEnvelope<'REPLACE_HLS_MANIFEST_URL_RESULT', { job?: DownloadJob; queued: boolean }>
   | MessageEnvelope<'GET_QUEUE_STATS_RESULT', { stats: QueueStats }>
   | MessageEnvelope<'DEBUG_GET_EVIDENCE_RESULT', { evidence: DetectionEvidence[] }>
   | MessageEnvelope<'ERROR', { code: string; message: string; detail?: unknown }>;

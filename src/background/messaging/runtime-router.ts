@@ -6,6 +6,8 @@ import type {
   RuntimeRequest,
   RuntimeResponse,
   GeneratedAssetResult,
+  MediaAssetKind,
+  MediaAssetState,
 } from '@/video_downloader_types_skeleton';
 import {
   createRuntimeErrorResponse,
@@ -53,6 +55,14 @@ export interface RuntimeRouterDependencies {
     options: { format?: 'webm' | 'mp4' | 'gif' },
   ) => Promise<GeneratedAssetResult>;
   ensureThumbnail?: (candidate: MediaCandidate) => Promise<GeneratedAssetResult>;
+  mediaAssetService?: {
+    getState(candidateId: string): Promise<MediaAssetState[]>;
+    queueAsset(
+      candidate: MediaCandidate,
+      kind: MediaAssetKind,
+      options?: { priority?: 'visible' | 'hover' | 'background' },
+    ): Promise<MediaAssetState>;
+  };
   getQueueStats?: () => QueueStats | Promise<QueueStats>;
   requestHostAccess?: (originPattern: string) => Promise<boolean>;
   drmDetections?: Map<string, DrmDetectionRecord[]>;
@@ -93,6 +103,8 @@ type RoutedRuntimeRequest = Extract<
       | 'REQUEST_HOST_ACCESS'
       | 'GET_PREVIEW_ASSET'
       | 'GET_THUMBNAIL_ASSET'
+      | 'GET_MEDIA_ASSET_STATE'
+      | 'QUEUE_MEDIA_ASSET'
       | 'DEBUG_GET_EVIDENCE'
       | 'START_DOWNLOAD'
       | 'CANCEL_DOWNLOAD'
@@ -107,7 +119,9 @@ type RoutedRuntimeRequest = Extract<
       | 'RETRY_HLS_SEGMENT'
       | 'RETRY_FAILED_HLS_SEGMENTS'
       | 'EXPORT_PARTIAL_HLS'
-      | 'UPDATE_HLS_SEGMENT_RANGE';
+      | 'UPDATE_HLS_SEGMENT_RANGE'
+      | 'RECOVER_HLS_EXPORT'
+      | 'REPLACE_HLS_MANIFEST_URL';
   }
 >;
 
@@ -122,6 +136,8 @@ const handledRequestTypes = new Set<RoutedRuntimeRequest['type']>([
   'REQUEST_HOST_ACCESS',
   'GET_PREVIEW_ASSET',
   'GET_THUMBNAIL_ASSET',
+  'GET_MEDIA_ASSET_STATE',
+  'QUEUE_MEDIA_ASSET',
   'DEBUG_GET_EVIDENCE',
   'START_DOWNLOAD',
   'CANCEL_DOWNLOAD',
@@ -137,6 +153,8 @@ const handledRequestTypes = new Set<RoutedRuntimeRequest['type']>([
   'RETRY_FAILED_HLS_SEGMENTS',
   'EXPORT_PARTIAL_HLS',
   'UPDATE_HLS_SEGMENT_RANGE',
+  'RECOVER_HLS_EXPORT',
+  'REPLACE_HLS_MANIFEST_URL',
 ]);
 
 function buildDefaultQueueStats(): QueueStats {
@@ -180,7 +198,6 @@ function isCandidateEvidence(evidence: NetworkRequestEvidence): boolean {
 function previewForCandidate(candidate: MediaCandidate): MediaCandidate['preview'] {
   if (
     candidate.protection.kind === 'drm' ||
-    candidate.protection.kind === 'unknown' ||
     candidate.status === 'protected'
   ) {
     return {
@@ -243,7 +260,7 @@ async function hydrateManifestCandidate(
         durationSec,
         protection: manifest.protection,
         status:
-          manifest.protection.kind === 'drm' || manifest.protection.kind === 'unknown'
+          manifest.protection.kind === 'drm'
             ? 'protected'
             : candidate.status,
         variants: manifest.variants.length > 0 ? manifest.variants : candidate.variants,
@@ -263,7 +280,7 @@ async function hydrateManifestCandidate(
         ...candidate,
         protection: manifest.protection,
         status:
-          manifest.protection.kind === 'drm' || manifest.protection.kind === 'unknown'
+          manifest.protection.kind === 'drm'
             ? 'protected'
             : candidate.status,
         variants: manifest.variants.length > 0 ? manifest.variants : candidate.variants,
@@ -518,7 +535,6 @@ function isProtectedCandidateForAsset(candidate: MediaCandidate): boolean {
   return (
     candidate.status === 'protected' ||
     candidate.protection.kind === 'drm' ||
-    candidate.protection.kind === 'unknown' ||
     candidate.protection.kind === 'sample-aes'
   );
 }
@@ -857,6 +873,54 @@ export function createRuntimeRouter(
           }
         }
 
+        case 'GET_MEDIA_ASSET_STATE': {
+          if (!dependencies.mediaAssetService) {
+            return createRuntimeResponse(
+              'GET_MEDIA_ASSET_STATE_RESULT',
+              { states: [] },
+              request.requestId,
+            );
+          }
+
+          return createRuntimeResponse(
+            'GET_MEDIA_ASSET_STATE_RESULT',
+            { states: await dependencies.mediaAssetService.getState(request.payload.candidateId) },
+            request.requestId,
+          );
+        }
+
+        case 'QUEUE_MEDIA_ASSET': {
+          const candidate = dependencies.candidateRegistry.findById(
+            request.payload.candidateId,
+          );
+
+          if (!candidate) {
+            return createRuntimeErrorResponse(
+              'NOT_FOUND',
+              `Candidate not found: ${request.payload.candidateId}`,
+              request.requestId,
+            );
+          }
+
+          if (!dependencies.mediaAssetService) {
+            return createRuntimeErrorResponse(
+              'NOT_CONFIGURED',
+              'Media asset service is not configured.',
+              request.requestId,
+            );
+          }
+
+          const state = await dependencies.mediaAssetService.queueAsset(candidate, request.payload.kind, {
+            priority: request.payload.priority,
+          });
+
+          return createRuntimeResponse(
+            'QUEUE_MEDIA_ASSET_RESULT',
+            { state },
+            request.requestId,
+          );
+        }
+
         case 'DEBUG_GET_EVIDENCE': {
           const candidate = dependencies.candidateRegistry.findById(
             request.payload.candidateId,
@@ -1104,7 +1168,7 @@ export function createRuntimeRouter(
                 : segment,
             ),
           });
-          const queued = dependencies.downloadQueue?.retry(job.id) ?? true;
+          const queued = true;
           void dependencies.downloadQueue?.drain();
 
           return createRuntimeResponse(
@@ -1210,6 +1274,91 @@ export function createRuntimeRouter(
           return createRuntimeResponse(
             'EXPORT_PARTIAL_HLS_RESULT',
             { job: updated, queued },
+            request.requestId,
+          );
+        }
+
+        case 'RECOVER_HLS_EXPORT': {
+          const job = dependencies.jobStore?.get(request.payload.jobId);
+
+          if (!job || !dependencies.jobStore) {
+            return createRuntimeErrorResponse(
+              'NOT_FOUND',
+              `Job not found: ${request.payload.jobId}`,
+              request.requestId,
+            );
+          }
+
+          const outputKind =
+            request.payload.action === 'save_raw_ts' ? 'original' : 'mp4';
+          const updated = dependencies.jobStore.update(job.id, {
+            phase: 'queued',
+            failure: undefined,
+            progressPct: 0,
+            output: undefined,
+            selection: {
+              ...job.selection,
+              outputKind,
+            },
+          });
+          const queued = dependencies.downloadQueue?.retry(job.id) ?? true;
+          void dependencies.downloadQueue?.drain();
+
+          return createRuntimeResponse(
+            'RECOVER_HLS_EXPORT_RESULT',
+            { job: updated, queued },
+            request.requestId,
+          );
+        }
+
+        case 'REPLACE_HLS_MANIFEST_URL': {
+          const job = dependencies.jobStore?.get(request.payload.jobId);
+          const candidate = job
+            ? dependencies.candidateRegistry.findById(job.candidateId)
+            : undefined;
+
+          if (!job || !candidate || !dependencies.downloadQueue) {
+            return createRuntimeErrorResponse(
+              'NOT_FOUND',
+              `Job not found or cannot replace manifest URL: ${request.payload.jobId}`,
+              request.requestId,
+            );
+          }
+
+          const updatedCandidate: MediaCandidate = {
+            ...candidate,
+            manifestUrl: request.payload.manifestUrl,
+            sourceUrl:
+              candidate.protocol === 'hls' || candidate.protocol === 'dash'
+                ? undefined
+                : candidate.sourceUrl,
+            evidence: [
+              ...candidate.evidence,
+              {
+                source: 'user',
+                confidence: 0.9,
+                url: request.payload.manifestUrl,
+                initiatorUrl: candidate.pageUrl,
+                notes: ['recovery:manifest-url-replacement'],
+                createdAt: Date.now(),
+              },
+            ],
+            updatedAt: Date.now(),
+          };
+          dependencies.candidateRegistry.set(updatedCandidate.tabId, [
+            ...dependencies.candidateRegistry
+              .get(updatedCandidate.tabId)
+              .filter((entry) => entry.id !== updatedCandidate.id),
+            updatedCandidate,
+          ]);
+          const nextJob = dependencies.downloadQueue.enqueue(updatedCandidate, {
+            ...job.selection,
+          });
+          void dependencies.downloadQueue.drain();
+
+          return createRuntimeResponse(
+            'REPLACE_HLS_MANIFEST_URL_RESULT',
+            { job: nextJob, queued: true },
             request.requestId,
           );
         }

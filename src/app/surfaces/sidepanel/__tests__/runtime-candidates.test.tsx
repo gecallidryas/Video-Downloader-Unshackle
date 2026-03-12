@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { vi } from 'vitest';
 import { SidePanelApp } from '../SidePanelApp';
@@ -84,11 +84,24 @@ function buildRuntimeClient(candidates: MediaCandidate[]): RuntimeClient {
       mimeType: 'image/jpeg',
       generated: true,
     }),
+    getMediaAssetState: vi.fn().mockResolvedValue([]),
+    queueMediaAsset: vi.fn().mockImplementation((candidateId: string, kind: 'poster' | 'hoverClip') =>
+      Promise.resolve({
+        candidateId,
+        kind,
+        status: 'ready',
+        assetUrl: kind === 'poster' ? 'thumb.jpg' : 'preview.webm',
+        mimeType: kind === 'poster' ? 'image/jpeg' : 'video/webm',
+        updatedAt: 1,
+      }),
+    ),
     cancelDownload: vi.fn().mockResolvedValue({ cancelled: true }),
     retrySegment: vi.fn().mockResolvedValue(undefined),
     retryFailedSegments: vi.fn().mockResolvedValue(undefined),
     exportPartialHls: vi.fn().mockResolvedValue(undefined),
     updateHlsSegmentRange: vi.fn().mockResolvedValue(undefined),
+    recoverHlsExport: vi.fn().mockResolvedValue(undefined),
+    replaceHlsManifestUrl: vi.fn().mockResolvedValue(undefined),
     getAllCandidates: vi.fn().mockResolvedValue(candidates),
     getJobs: vi.fn().mockResolvedValue([]),
     retryDownload: vi.fn().mockResolvedValue(undefined),
@@ -150,14 +163,12 @@ test('submits manual HLS text ingest from the current tab view', async () => {
   render(<SidePanelApp activeTabId={7} runtimeClient={runtimeClient} />);
 
   await user.click(screen.getByRole('button', { name: /manual ingest tools/i }));
-  await user.type(
-    screen.getByRole('textbox', { name: /manual hls input/i }),
-    'seg-1.ts\nseg-2.ts',
-  );
-  await user.type(
-    screen.getByRole('textbox', { name: /base url/i }),
-    'https://cdn.example.com/master.m3u8',
-  );
+  fireEvent.change(screen.getByRole('textbox', { name: /manual hls input/i }), {
+    target: { value: 'seg-1.ts\nseg-2.ts' },
+  });
+  fireEvent.change(screen.getByRole('textbox', { name: /base url/i }), {
+    target: { value: 'https://cdn.example.com/master.m3u8' },
+  });
   await user.click(screen.getByRole('button', { name: /ingest hls/i }));
 
   expect(runtimeClient.ingestManualHls).toHaveBeenCalledWith({
@@ -261,7 +272,7 @@ test('starts HLS browser fallback download with current quality and track select
   expect(screen.getByText('Selectable HLS stream')).toBeInTheDocument();
 });
 
-test('opens preview modal and requests generated preview assets for preview-capable streamed media', async () => {
+test('opens preview modal for preview-capable streamed media', async () => {
   const user = userEvent.setup();
   const runtimeClient = buildRuntimeClient([
     buildCandidate({
@@ -279,9 +290,11 @@ test('opens preview modal and requests generated preview assets for preview-capa
   expect(await screen.findByText('Previewable HLS stream')).toBeInTheDocument();
   await user.click(screen.getByRole('button', { name: /preview/i }));
 
-  expect(runtimeClient.getPreviewAsset).toHaveBeenCalledWith('hls-preview', { format: 'webm' });
   expect(await screen.findByRole('dialog', { name: /preview previewable hls stream/i })).toBeInTheDocument();
-  expect(screen.getByLabelText(/preview video/i)).toHaveAttribute('src', 'preview.webm');
+  expect(screen.getByLabelText(/preview video/i)).toHaveAttribute(
+    'src',
+    'https://cdn.example.com/master.m3u8',
+  );
 });
 
 test('preview modal download with no trim sends null', async () => {
