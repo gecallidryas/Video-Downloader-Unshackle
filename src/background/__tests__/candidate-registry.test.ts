@@ -62,6 +62,16 @@ describe('candidate registry', () => {
     expect(registry.get(7)).toEqual([tabSevenCandidate]);
     expect(registry.get(8)).toEqual([tabEightCandidate]);
     expect(registry.get(99)).toEqual([]);
+    expect(registry.tabIds()).toEqual([7, 8]);
+  });
+
+  test('normalizes stored candidates to the tab bucket id', () => {
+    const registry = createCandidateRegistry();
+
+    registry.set(7, [buildCandidate({ id: 'moved', tabId: 99 })]);
+
+    expect(registry.get(7)[0]).toMatchObject({ id: 'moved', tabId: 7 });
+    expect(registry.get(99)).toEqual([]);
   });
 
   test('deduplicates candidates by candidate id', () => {

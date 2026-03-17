@@ -3,9 +3,12 @@ import { resolve } from 'node:path';
 import { describe, expect, test } from 'vitest';
 import {
   createMuxjsStreamingTransmuxSession,
+  type MuxjsSegmentTimingInfo,
   type MuxjsTransmuxer,
   transmuxTsToMp4,
 } from '../muxjs-transmuxer';
+
+type MuxjsDataCallback = (data: { initSegment?: Uint8Array; data?: Uint8Array }) => void;
 
 function fixtureBytes(name: string): Uint8Array {
   return new Uint8Array(
@@ -79,15 +82,116 @@ describe('mux.js TS transmuxer', () => {
     expect(countAscii('moov')).toBe(1);
   });
 
+  test('rebases each streamed HLS media segment onto a sequential decode timeline', async () => {
+    const chunks: Uint8Array[] = [];
+    const baseDecodeTimes: number[] = [];
+    const createTransmuxer = async (): Promise<MuxjsTransmuxer> => {
+      const dataCallbacks: MuxjsDataCallback[] = [];
+
+      return {
+        on(event, callback) {
+          if (event === 'data') {
+            dataCallbacks.push(callback as MuxjsDataCallback);
+          }
+        },
+        push() {
+          return undefined;
+        },
+        flush() {
+          dataCallbacks.forEach((callback) =>
+            callback({
+              initSegment: new Uint8Array([0x00, 0x00, 0x00, 0x08, 0x66, 0x74, 0x79, 0x70]),
+              data: new Uint8Array([0x01]),
+            }),
+          );
+        },
+        setBaseMediaDecodeTime(time) {
+          baseDecodeTimes.push(time);
+        },
+      };
+    };
+    const tsPacket = new Uint8Array(188);
+    tsPacket[0] = 0x47;
+    const session = await createMuxjsStreamingTransmuxSession(
+      async (chunk) => {
+        chunks.push(chunk);
+      },
+      { createTransmuxer },
+    );
+
+    await session.append(tsPacket, { durationSec: 10 });
+    await session.append(tsPacket, { durationSec: 10 });
+    await session.finalize();
+
+    expect(baseDecodeTimes).toEqual([0, 900_000]);
+    expect(chunks).toEqual([
+      new Uint8Array([0x00, 0x00, 0x00, 0x08, 0x66, 0x74, 0x79, 0x70]),
+      new Uint8Array([0x01]),
+      new Uint8Array([0x01]),
+    ]);
+  });
+
+  test('uses mux.js timing events for the next decode time when playlist duration is unavailable', async () => {
+    const baseDecodeTimes: number[] = [];
+    const createTransmuxer = async (): Promise<MuxjsTransmuxer> => {
+      const timingCallbacks: Array<(timing: MuxjsSegmentTimingInfo) => void> = [];
+      const dataCallbacks: MuxjsDataCallback[] = [];
+
+      return {
+        on(event, callback) {
+          if (event === 'data') {
+            dataCallbacks.push(callback as MuxjsDataCallback);
+          }
+          if (event === 'videoSegmentTimingInfo') {
+            timingCallbacks.push(callback as (timing: MuxjsSegmentTimingInfo) => void);
+          }
+        },
+        push() {
+          return undefined;
+        },
+        flush() {
+          timingCallbacks.forEach((callback) =>
+            callback({
+              start: { dts: 13 * 60 * 60 * 90_000, pts: 13 * 60 * 60 * 90_000 },
+              end: { dts: 13 * 60 * 60 * 90_000 + 450_000, pts: 13 * 60 * 60 * 90_000 + 450_000 },
+              baseMediaDecodeTime: 0,
+            }),
+          );
+          dataCallbacks.forEach((callback) =>
+            callback({
+              initSegment: new Uint8Array([0x00, 0x00, 0x00, 0x08, 0x66, 0x74, 0x79, 0x70]),
+              data: new Uint8Array([0x01]),
+            }),
+          );
+        },
+        setBaseMediaDecodeTime(time) {
+          baseDecodeTimes.push(time);
+        },
+      };
+    };
+    const tsPacket = new Uint8Array(188);
+    tsPacket[0] = 0x47;
+    const session = await createMuxjsStreamingTransmuxSession(
+      async () => undefined,
+      { createTransmuxer },
+    );
+
+    await session.append(tsPacket);
+    await session.append(tsPacket);
+    await session.finalize();
+
+    expect(baseDecodeTimes).toEqual([0, 450_000]);
+  });
+
 
   test('does not perform an empty final flush after each segment was already flushed', async () => {
     const chunks: Uint8Array[] = [];
-    const dataCallbacks: Array<(data: { initSegment?: Uint8Array; data?: Uint8Array }) => void> = [];
+    const dataCallbacks: MuxjsDataCallback[] = [];
     let flushCount = 0;
     const transmuxer: MuxjsTransmuxer = {
       on(event, callback) {
         if (event === 'data') {
-          dataCallbacks.push(callback);
+          dataCallbacks.push(callback as MuxjsDataCallback);
         }
       },
       push() {
@@ -126,12 +230,12 @@ describe('mux.js TS transmuxer', () => {
 
   test('dedupes repeated mux.js init segments in streaming output', async () => {
     const chunks: Uint8Array[] = [];
-    const dataCallbacks: Array<(data: { initSegment?: Uint8Array; data?: Uint8Array }) => void> = [];
+    const dataCallbacks: MuxjsDataCallback[] = [];
     const initSegment = new Uint8Array([0x00, 0x00, 0x00, 0x08, 0x66, 0x74, 0x79, 0x70]);
     const transmuxer: MuxjsTransmuxer = {
       on(event, callback) {
         if (event === 'data') {
-          dataCallbacks.push(callback);
+          dataCallbacks.push(callback as MuxjsDataCallback);
         }
       },
       push() {

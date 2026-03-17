@@ -29,6 +29,7 @@ export interface RequestJournal {
   add(tabId: number, evidence: NetworkRequestEvidence): NetworkRequestEvidence;
   addRequest(tabId: number, request: RequestLike): NetworkRequestEvidence | undefined;
   get(tabId: number): NetworkRequestEvidence[];
+  tabIds(): number[];
   clear(tabId: number): void;
   updateCaptureRules(options: CaptureRuleEngineOptions): void;
 }
@@ -246,18 +247,20 @@ export function createRequestJournal(
 
   return {
     add(tabId, evidence) {
-      if (isDuplicate(tabId, evidence)) {
-        return cloneNetworkEvidence(evidence);
+      const tabEvidence = { ...evidence, tabId };
+
+      if (isDuplicate(tabId, tabEvidence)) {
+        return cloneNetworkEvidence(tabEvidence);
       }
 
       const entries = evidenceByTabId.get(tabId) ?? [];
-      const nextEntries = [...entries, cloneNetworkEvidence(evidence)].slice(
+      const nextEntries = [...entries, cloneNetworkEvidence(tabEvidence)].slice(
         -maxEntriesPerTab,
       );
 
       evidenceByTabId.set(tabId, nextEntries);
 
-      return cloneNetworkEvidence(evidence);
+      return cloneNetworkEvidence(tabEvidence);
     },
 
     addRequest(tabId, request) {
@@ -273,6 +276,10 @@ export function createRequestJournal(
 
     get(tabId) {
       return (evidenceByTabId.get(tabId) ?? []).map(cloneNetworkEvidence);
+    },
+
+    tabIds() {
+      return Array.from(evidenceByTabId.keys());
     },
 
     clear(tabId) {

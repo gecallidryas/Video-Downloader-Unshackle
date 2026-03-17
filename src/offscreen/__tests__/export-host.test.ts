@@ -30,6 +30,19 @@ describe('browser HLS offscreen export host', () => {
         rawFallbackAllowed: true,
       }),
     );
+
+    await expect(
+      host.handleCommand(
+        createOffscreenCommand('PING_BROWSER_HLS_EXPORT', {
+          jobId: 'job-1',
+        }),
+      ),
+    ).resolves.toMatchObject({
+      ok: true,
+      command: 'PING_BROWSER_HLS_EXPORT',
+      bytesWritten: 0,
+    });
+
     await host.handleCommand(
       createOffscreenCommand('APPEND_BROWSER_HLS_SEGMENT', {
         jobId: 'job-1',

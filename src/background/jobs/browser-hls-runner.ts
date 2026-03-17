@@ -333,9 +333,88 @@ export async function runBrowserHlsExportJob(
         decision: BrowserHlsExportRouteDecision;
         outputName: string;
         started: boolean;
+        startPromise?: Promise<void>;
+        keepAliveTimer?: ReturnType<typeof setInterval>;
         diagnostics: BrowserHlsExportDiagnostic[];
       }
     | undefined;
+
+  function stopOffscreenKeepAlive(): void {
+    if (!activeOffscreenExport?.keepAliveTimer) {
+      return;
+    }
+
+    clearInterval(activeOffscreenExport.keepAliveTimer);
+    activeOffscreenExport.keepAliveTimer = undefined;
+  }
+
+  function startOffscreenKeepAlive(state: NonNullable<typeof activeOffscreenExport>): void {
+    if (state.keepAliveTimer || !input.offscreenExport) {
+      return;
+    }
+
+    state.keepAliveTimer = setInterval(() => {
+      void input.offscreenExport?.(
+        createOffscreenCommand('PING_BROWSER_HLS_EXPORT', {
+          jobId: input.job.id,
+        }),
+      ).catch(() => undefined);
+    }, 15_000);
+  }
+
+  async function ensureOffscreenExportStarted(): Promise<NonNullable<typeof activeOffscreenExport>> {
+    const state = activeOffscreenExport;
+
+    if (!state) {
+      throw new Error('Browser HLS export segment arrived before route resolution.');
+    }
+
+    if (state.started) {
+      return state;
+    }
+
+    if (state.startPromise) {
+      await state.startPromise;
+      return state;
+    }
+
+    state.startPromise = (async () => {
+      if (!input.offscreenExport) {
+        throw new Error('Browser HLS MP4 export requires an offscreen export host in MV3.');
+      }
+
+      const response = await input.offscreenExport(
+        createOffscreenCommand('START_BROWSER_HLS_EXPORT', {
+          jobId: input.job.id,
+          route: state.decision.route,
+          outputName: state.outputName,
+          mimeType: state.decision.mimeType,
+          sinkKind: state.decision.sinkKind,
+          saveAs: input.job.selection.saveAs,
+          memoryCeilingBytes: input.browserTransmuxMaxBytes ?? 150 * 1024 * 1024,
+          rawFallbackAllowed: state.decision.rawFallbackAllowed,
+        }),
+      );
+
+      if (!response.ok) {
+        throw new Error(response.error ?? 'Browser HLS offscreen export did not start.');
+      }
+
+      mergeDiagnostics(state.diagnostics, response);
+      state.started = true;
+      startOffscreenKeepAlive(state);
+    })();
+
+    try {
+      await state.startPromise;
+    } finally {
+      if (!state.started) {
+        state.startPromise = undefined;
+      }
+    }
+
+    return state;
+  }
 
   try {
     return await runHlsJob({
@@ -391,22 +470,7 @@ export async function runBrowserHlsExportJob(
           diagnostics: [],
         };
 
-        if (input.offscreenExport) {
-          const response = await input.offscreenExport(
-            createOffscreenCommand('START_BROWSER_HLS_EXPORT', {
-              jobId: input.job.id,
-              route: decision.route,
-              outputName: name,
-              mimeType: decision.mimeType,
-              sinkKind: decision.sinkKind,
-              saveAs: input.job.selection.saveAs,
-              memoryCeilingBytes: maxTransmuxBytes,
-              rawFallbackAllowed: decision.rawFallbackAllowed,
-            }),
-          );
-          mergeDiagnostics(activeOffscreenExport.diagnostics, response);
-          activeOffscreenExport.started = true;
-        } else if (decision.outputExtension === 'mp4' && !input.transmuxTsToMp4) {
+        if (!input.offscreenExport && decision.outputExtension === 'mp4' && !input.transmuxTsToMp4) {
           throw new Error(
             'Browser HLS MP4 export requires an offscreen export host in MV3.',
           );
@@ -415,11 +479,9 @@ export async function runBrowserHlsExportJob(
       onProgress: input.onProgress,
       onSegmentExport: input.offscreenExport
         ? async (event) => {
-            if (!activeOffscreenExport?.started) {
-              throw new Error('Browser HLS export segment arrived before the offscreen export session started.');
-            }
+            const exportState = await ensureOffscreenExportStarted();
 
-            if (activeOffscreenExport.decision.outputExtension === 'mp4') {
+            if (exportState.decision.outputExtension === 'mp4') {
               input.onExportPhase?.('transmuxing');
             } else {
               input.onExportPhase?.('exporting');
@@ -443,7 +505,7 @@ export async function runBrowserHlsExportJob(
             if (typeof response?.bytesWritten === 'number') {
               input.onOutputProgress?.(response.bytesWritten);
             }
-            mergeDiagnostics(activeOffscreenExport.diagnostics, response);
+            mergeDiagnostics(exportState.diagnostics, response);
           }
         : undefined,
       signal: input.signal,
@@ -459,6 +521,7 @@ export async function runBrowserHlsExportJob(
               jobId: input.job.id,
             }),
           );
+          stopOffscreenKeepAlive();
 
           if (!response.ok || !response.output) {
             throw new Error(response.error ?? 'Browser HLS offscreen export did not return output metadata.');
@@ -544,6 +607,7 @@ export async function runBrowserHlsExportJob(
       },
     });
   } catch (error) {
+    stopOffscreenKeepAlive();
     if (activeOffscreenExport?.started && input.offscreenExport) {
       await input.offscreenExport(
         createOffscreenCommand('ABORT_BROWSER_HLS_EXPORT', {

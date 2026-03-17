@@ -147,6 +147,7 @@ test('renders source-equivalent download settings in the sectioned settings surf
   expect(screen.getByRole('checkbox', { name: /remember output folder/i })).not.toBeChecked();
   expect(screen.getByRole('button', { name: /choose output folder/i })).toBeInTheDocument();
   expect(screen.getByRole('checkbox', { name: /auto-delete fragments after save/i })).not.toBeChecked();
+  expect(screen.getByRole('button', { name: /clean extension storage/i })).toBeInTheDocument();
   expect(screen.getByRole('button', { name: /check helper/i })).toBeInTheDocument();
 });
 
@@ -266,6 +267,27 @@ test('settings exposes streaming write and cleanup controls', async () => {
   expect(useSettingsStore.getState().useDirectToDisk).toBe(true);
   expect(useSettingsStore.getState().rememberOutputFolder).toBe(true);
   expect(useSettingsStore.getState().autoDeleteAfterSave).toBe(true);
+});
+
+test('settings cleanup button clears browser extension media storage', async () => {
+  const user = userEvent.setup();
+  const runtimeClient = {
+    clearExtensionStorage: vi.fn().mockResolvedValue({
+      orphanedFragmentBuckets: 2,
+      activeJobBuckets: 3,
+      removedStorageKeys: [
+        'unshackle:previousDetections',
+        'unshackle:media-asset-store:v1',
+      ],
+    }),
+  } as Partial<RuntimeClient> as RuntimeClient;
+
+  render(<PopupApp runtimeClient={runtimeClient} />);
+
+  await user.click(screen.getByRole('button', { name: /clean extension storage/i }));
+
+  expect(runtimeClient.clearExtensionStorage).toHaveBeenCalledTimes(1);
+  expect(await screen.findByText(/cleaned 2 orphaned fragment buckets and 2 cached detection records/i)).toBeInTheDocument();
 });
 
 test('popup onboarding lets the user choose theme', async () => {

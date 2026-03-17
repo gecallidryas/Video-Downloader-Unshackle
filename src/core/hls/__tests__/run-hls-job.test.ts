@@ -195,6 +195,52 @@ describe('HLS planning and execution', () => {
     expect(events).toEqual(['fetch-1', 'fetch-2', 'export-1', 'export-2', 'write-output']);
   });
 
+  test('serializes ordered segment export callbacks when concurrent workers finish while export is busy', async () => {
+    const manifest = parseHlsManifest({
+      manifestUrl: 'https://cdn.example.com/hls/video/prog.m3u8',
+      content: [
+        '#EXTM3U',
+        '#EXTINF:4,',
+        'segment-1.ts',
+        '#EXTINF:4,',
+        'segment-2.ts',
+        '#EXTINF:4,',
+        'segment-3.ts',
+        '#EXT-X-ENDLIST',
+      ].join('\n'),
+    });
+    const events: string[] = [];
+    const firstExport = deferred<void>();
+
+    const outputPromise = runHlsJob({
+      job: buildJob(),
+      manifest,
+      concurrency: 3,
+      fetchSegment: vi.fn(async (segment) => new Uint8Array([segment.index])),
+      onSegmentExport: async (event) => {
+        events.push(`start-${event.segment.index}`);
+
+        if (event.segment.index === 1) {
+          await firstExport.promise;
+        }
+
+        events.push(`end-${event.segment.index}`);
+      },
+      writeOutput: vi.fn().mockResolvedValue({
+        fileName: 'streamed.ts',
+        mimeType: 'video/mp2t',
+      }),
+    });
+
+    await vi.waitFor(() => expect(events).toEqual(['start-1']));
+    await Promise.resolve();
+    expect(events).toEqual(['start-1']);
+    firstExport.resolve();
+
+    await expect(outputPromise).resolves.toMatchObject({ fileName: 'streamed.ts' });
+    expect(events).toEqual(['start-1', 'end-1', 'start-2', 'end-2', 'start-3', 'end-3']);
+  });
+
 
   test('limits HLS output to the selected segment range while retaining init segments', async () => {
     const manifest = parseHlsManifest({

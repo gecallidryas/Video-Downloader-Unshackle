@@ -51,7 +51,7 @@ export function sourceFingerprint(candidate: MediaCandidate): string {
 }
 
 export function mediaAssetCacheKey(input: MediaAssetCacheKeyInput): string {
-  const format = input.format ?? (input.kind === 'poster' ? 'jpg' : 'webm');
+  const format = input.format ?? (input.kind === 'poster' ? 'webp' : 'webm');
   return [
     sourceFingerprint(input.candidate),
     input.kind,
@@ -94,7 +94,7 @@ export function createMemoryMediaAssetStore(): MediaAssetStore {
   };
 }
 
-const STORAGE_KEY = 'unshackle:media-asset-store:v1';
+export const MEDIA_ASSET_STORAGE_KEY = 'unshackle:media-asset-store:v1';
 
 export function createMediaAssetStore(): MediaAssetStore {
   const storageArea = globalThis.chrome?.storage?.local;
@@ -112,8 +112,8 @@ export function createMediaAssetStore(): MediaAssetStore {
     }
 
     loading = (async () => {
-      const result = await storageArea.get(STORAGE_KEY);
-      const stored = result[STORAGE_KEY];
+      const result = await storageArea.get(MEDIA_ASSET_STORAGE_KEY);
+      const stored = result[MEDIA_ASSET_STORAGE_KEY];
       if (!stored || typeof stored !== 'object') {
         assets = new Map<string, StoredMediaAsset>();
         return;
@@ -129,7 +129,7 @@ export function createMediaAssetStore(): MediaAssetStore {
 
   async function persist(): Promise<void> {
     await storageArea.set({
-      [STORAGE_KEY]: Object.fromEntries(assets),
+      [MEDIA_ASSET_STORAGE_KEY]: Object.fromEntries(assets),
     });
   }
 

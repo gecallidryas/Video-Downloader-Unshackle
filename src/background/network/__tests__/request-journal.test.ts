@@ -23,6 +23,28 @@ describe('createRequestJournal', () => {
 
     expect(journal.get(1)).toHaveLength(1);
     expect(journal.get(2)).toHaveLength(1);
+    expect(journal.tabIds()).toEqual([1, 2]);
+  });
+
+  test('normalizes manually added evidence to the journal tab bucket', () => {
+    const journal = createRequestJournal();
+
+    journal.add(7, {
+      url: 'https://cdn.example.com/video.mp4',
+      protocol: 'direct',
+      category: 'direct_media',
+      mediaKind: 'video',
+      tabId: 99,
+      detectedAt: 1,
+      evidence: {
+        source: 'network',
+        confidence: 0.8,
+        url: 'https://cdn.example.com/video.mp4',
+        createdAt: 1,
+      },
+    });
+
+    expect(journal.get(7)[0]).toMatchObject({ tabId: 7 });
   });
 
   test('keeps later duplicate requests after the debounce window', () => {

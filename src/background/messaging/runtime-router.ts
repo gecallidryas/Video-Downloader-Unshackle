@@ -6,6 +6,7 @@ import type {
   RuntimeRequest,
   RuntimeResponse,
   GeneratedAssetResult,
+  ExtensionStorageCleanupResult,
   MediaAssetKind,
   MediaAssetState,
 } from '@/video_downloader_types_skeleton';
@@ -47,6 +48,8 @@ export interface RuntimeRouterDependencies {
   historyStore?: HistoryStore;
   downloadQueue?: DownloadQueue;
   cancelDownload?: (jobId: string) => Promise<{ cancelled: boolean; downloadId?: number }>;
+  cleanupJobStorage?: (jobId: string) => Promise<void>;
+  cleanupExtensionStorage?: () => Promise<ExtensionStorageCleanupResult>;
   downloadFile?: DirectDownloadFile;
   requestJournal?: RequestJournal;
   fetchManifest?: (url: string) => Promise<string>;
@@ -99,6 +102,7 @@ type RoutedRuntimeRequest = Extract<
       | 'DRM_DETECTED'
       | 'GET_CANDIDATES'
       | 'GET_ALL_CANDIDATES'
+      | 'CLEAN_EXTENSION_STORAGE'
       | 'GET_QUEUE_STATS'
       | 'REQUEST_HOST_ACCESS'
       | 'GET_PREVIEW_ASSET'
@@ -132,6 +136,7 @@ const handledRequestTypes = new Set<RoutedRuntimeRequest['type']>([
   'DRM_DETECTED',
   'GET_CANDIDATES',
   'GET_ALL_CANDIDATES',
+  'CLEAN_EXTENSION_STORAGE',
   'GET_QUEUE_STATS',
   'REQUEST_HOST_ACCESS',
   'GET_PREVIEW_ASSET',
@@ -328,6 +333,22 @@ async function getCandidatesForTab(
   }
 
   return dependencies.candidateRegistry.get(tabId);
+}
+
+async function getCandidatesForAllTabs(
+  dependencies: RuntimeRouterDependencies,
+): Promise<MediaCandidate[]> {
+  const tabIds = new Set<number>(dependencies.candidateRegistry.tabIds());
+
+  for (const tabId of dependencies.requestJournal?.tabIds() ?? []) {
+    tabIds.add(tabId);
+  }
+
+  await Promise.all(
+    Array.from(tabIds).map((tabId) => getCandidatesForTab(tabId, dependencies)),
+  );
+
+  return dependencies.candidateRegistry.all();
 }
 
 function dedupeCandidates(candidates: MediaCandidate[]): MediaCandidate[] {
@@ -736,9 +757,27 @@ export function createRuntimeRouter(
         }
 
         case 'GET_ALL_CANDIDATES': {
+          const candidates = await getCandidatesForAllTabs(dependencies);
+
           return createRuntimeResponse(
             'GET_ALL_CANDIDATES_RESULT',
-            { candidates: dependencies.candidateRegistry.all() },
+            { candidates },
+            request.requestId,
+          );
+        }
+
+        case 'CLEAN_EXTENSION_STORAGE': {
+          const result = dependencies.cleanupExtensionStorage
+            ? await dependencies.cleanupExtensionStorage()
+            : {
+                orphanedFragmentBuckets: 0,
+                activeJobBuckets: 0,
+                removedStorageKeys: [],
+              };
+
+          return createRuntimeResponse(
+            'CLEAN_EXTENSION_STORAGE_RESULT',
+            result,
             request.requestId,
           );
         }
@@ -1026,6 +1065,9 @@ export function createRuntimeRouter(
           const result = dependencies.cancelDownload
             ? await dependencies.cancelDownload(request.payload.jobId)
             : { cancelled: Boolean(dependencies.downloadQueue?.cancel(request.payload.jobId)) };
+          if (result.cancelled) {
+            await dependencies.cleanupJobStorage?.(request.payload.jobId);
+          }
 
           return createRuntimeResponse(
             'CANCEL_DOWNLOAD_RESULT',
@@ -1087,6 +1129,9 @@ export function createRuntimeRouter(
 
         case 'REMOVE_DOWNLOAD': {
           const removed = Boolean(dependencies.jobStore?.delete(request.payload.jobId));
+          if (removed) {
+            await dependencies.cleanupJobStorage?.(request.payload.jobId);
+          }
 
           return createRuntimeResponse(
             'REMOVE_DOWNLOAD_RESULT',
@@ -1385,7 +1430,25 @@ export function registerRuntimeRouter(
 
     void runtimeRouter
       .handleMessage(message as RuntimeRequest, sender)
-      .then(sendResponse);
+      .then(sendResponse)
+      .catch((error) => {
+        const detail = error instanceof Error
+          ? {
+              name: error.name,
+              message: error.message,
+              stack: error.stack,
+            }
+          : error;
+
+        sendResponse(
+          createRuntimeErrorResponse(
+            'INTERNAL_ERROR',
+            error instanceof Error ? error.message : 'Runtime request failed.',
+            (message as RuntimeRequest).requestId,
+            detail,
+          ),
+        );
+      });
 
     return true;
   });

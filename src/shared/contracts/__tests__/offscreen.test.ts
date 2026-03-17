@@ -18,6 +18,7 @@ describe('offscreen command contract', () => {
       'START_BROWSER_HLS_EXPORT',
       'APPEND_BROWSER_HLS_SEGMENT',
       'FINALIZE_BROWSER_HLS_EXPORT',
+      'PING_BROWSER_HLS_EXPORT',
       'ABORT_BROWSER_HLS_EXPORT',
     ]);
   });

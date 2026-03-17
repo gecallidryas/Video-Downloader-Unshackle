@@ -5,7 +5,7 @@ import { createRequestJournal } from '@/src/background/network/request-journal';
 import { createTabSnapshotStore } from '@/src/background/state/tab-snapshots';
 import { createRuntimeRequest } from '@/src/shared/contracts/messages';
 import type { MediaCandidate } from '@/video_downloader_types_skeleton';
-import { createRuntimeRouter } from '../runtime-router';
+import { createRuntimeRouter, registerRuntimeRouter } from '../runtime-router';
 
 const hlsMaster = [
   '#EXTM3U',
@@ -235,6 +235,61 @@ test('GET_ALL_CANDIDATES aggregates candidates across registered tabs', async ()
   expect(response.payload.candidates.map((candidate) => candidate.id)).toEqual(['a', 'b']);
 });
 
+test('GET_ALL_CANDIDATES hydrates passive request evidence across journal tabs', async () => {
+  const { requestJournal, router } = buildRouter();
+
+  requestJournal.addRequest(7, {
+    url: 'http://127.0.0.1:4173/media/current.mp4',
+    initiator: 'http://127.0.0.1:4173/current.html',
+    responseHeaders: [{ name: 'content-type', value: 'video/mp4' }],
+    timeStamp: 1,
+  });
+  requestJournal.addRequest(8, {
+    url: 'http://127.0.0.1:4173/media/other.mp4',
+    initiator: 'http://127.0.0.1:4173/other.html',
+    responseHeaders: [{ name: 'content-type', value: 'video/mp4' }],
+    timeStamp: 2,
+  });
+
+  const response = await router.handleMessage(
+    createRuntimeRequest('GET_ALL_CANDIDATES', {}, 'req-all-journal'),
+  );
+
+  expect(response.type).toBe('GET_ALL_CANDIDATES_RESULT');
+  if (response.type !== 'GET_ALL_CANDIDATES_RESULT') return;
+  expect(response.payload.candidates).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ tabId: 7, sourceUrl: 'http://127.0.0.1:4173/media/current.mp4' }),
+      expect.objectContaining({ tabId: 8, sourceUrl: 'http://127.0.0.1:4173/media/other.mp4' }),
+    ]),
+  );
+});
+
+test('CLEAN_EXTENSION_STORAGE delegates to background storage cleanup', async () => {
+  const cleanupResult = {
+    orphanedFragmentBuckets: 2,
+    activeJobBuckets: 3,
+    removedStorageKeys: ['unshackle:previousDetections'],
+  };
+  const cleanupExtensionStorage = vi.fn(async () => cleanupResult);
+  const router = createRuntimeRouter({
+    candidateRegistry: createCandidateRegistry(),
+    tabSnapshots: createTabSnapshotStore(),
+    cleanupExtensionStorage,
+  });
+
+  const response = await router.handleMessage(
+    createRuntimeRequest('CLEAN_EXTENSION_STORAGE', {}, 'req-clean-storage'),
+  );
+
+  expect(cleanupExtensionStorage).toHaveBeenCalledTimes(1);
+  expect(response).toEqual({
+    type: 'CLEAN_EXTENSION_STORAGE_RESULT',
+    requestId: 'req-clean-storage',
+    payload: cleanupResult,
+  });
+});
+
 test('GET_JOBS and queue actions expose production download queue operations', async () => {
   const candidateRegistry = createCandidateRegistry();
   const jobStore = createJobStore(() => 1);
@@ -272,12 +327,14 @@ test('GET_JOBS and queue actions expose production download queue operations', a
   };
   const job = jobStore.create(candidate, { mode: 'best' });
   jobStore.update(job.id, { phase: 'failed' });
+  const cleanupJobStorage = vi.fn(async () => undefined);
   const router = createRuntimeRouter({
     candidateRegistry,
     tabSnapshots: createTabSnapshotStore(),
     jobStore,
     historyStore,
     downloadQueue,
+    cleanupJobStorage,
   });
 
   expect(await router.handleMessage(createRuntimeRequest('GET_JOBS', {}, 'req-jobs')))
@@ -288,6 +345,7 @@ test('GET_JOBS and queue actions expose production download queue operations', a
   expect(downloadQueue.enqueue).toHaveBeenCalledWith(candidate, job.selection);
   await router.handleMessage(createRuntimeRequest('REMOVE_DOWNLOAD', { jobId: job.id }, 'req-remove'));
   expect(jobStore.get(job.id)).toBeUndefined();
+  expect(cleanupJobStorage).toHaveBeenCalledWith(job.id);
 });
 
 test('INGEST_CONTENT_EVIDENCE stores DOM HLS manifests for the sender tab', async () => {
@@ -475,10 +533,12 @@ test('START_DOWNLOAD can find a candidate loaded for the side panel without send
 
 test('CANCEL_DOWNLOAD delegates to the configured runtime cancellation path', async () => {
   const cancelDownload = vi.fn(async () => ({ cancelled: true, downloadId: 77 }));
+  const cleanupJobStorage = vi.fn(async () => undefined);
   const router = createRuntimeRouter({
     candidateRegistry: createCandidateRegistry(),
     tabSnapshots: createTabSnapshotStore(),
     cancelDownload,
+    cleanupJobStorage,
   });
 
   const response = await router.handleMessage(
@@ -486,6 +546,7 @@ test('CANCEL_DOWNLOAD delegates to the configured runtime cancellation path', as
   );
 
   expect(cancelDownload).toHaveBeenCalledWith('job-1');
+  expect(cleanupJobStorage).toHaveBeenCalledWith('job-1');
   expect(response).toEqual({
     type: 'CANCEL_DOWNLOAD_RESULT',
     requestId: 'req-cancel',
@@ -729,4 +790,52 @@ test('DRM_DETECTED deduplicates repeated reports for the same DRM system', async
   );
 
   expect(drmDetections.get('https://video.example.com/watch')).toHaveLength(1);
+});
+
+test('registerRuntimeRouter returns an error response when an async handler throws', async () => {
+  const listeners: Array<(
+    message: unknown,
+    sender: chrome.runtime.MessageSender,
+    sendResponse: (response: unknown) => void,
+  ) => boolean | void> = [];
+  const runtime = {
+    onMessage: {
+      addListener: vi.fn((listener) => listeners.push(listener)),
+    },
+  };
+  const router = {
+    canHandleMessage: vi.fn(() => true),
+    handleMessage: vi.fn(async () => {
+      throw new Error('manifest unavailable');
+    }),
+  };
+  const sendResponse = vi.fn();
+
+  registerRuntimeRouter(router, runtime as unknown as typeof chrome.runtime);
+  const keepAlive = listeners[0]?.(
+    createRuntimeRequest(
+      'INGEST_MANUAL_HLS',
+      {
+        tabId: 7,
+        pageUrl: 'https://example.com/watch',
+        input: 'https://cdn.example.com/hls/master.m3u8',
+      },
+      'req-async-error',
+    ),
+    {},
+    sendResponse,
+  );
+
+  expect(keepAlive).toBe(true);
+  await vi.waitFor(() => expect(sendResponse).toHaveBeenCalled());
+  expect(sendResponse).toHaveBeenCalledWith(
+    expect.objectContaining({
+      type: 'ERROR',
+      requestId: 'req-async-error',
+      payload: expect.objectContaining({
+        code: 'INTERNAL_ERROR',
+        message: 'manifest unavailable',
+      }),
+    }),
+  );
 });

@@ -151,8 +151,10 @@ describe('captureVideoFrame', () => {
     expect(revokeObjectUrl).toHaveBeenCalledWith('blob:offscreen-video');
     expect(mockVideo.currentTime).toBe(DEFAULT_OPTIONS.atSec);
     expect(mockCanvas.getContext).toHaveBeenCalledWith('2d');
-    expect(mockCanvas._ctx.drawImage).toHaveBeenCalledWith(mockVideo, 0, 0);
-    expect((mockCanvas as any).toDataURL).toHaveBeenCalledWith('image/jpeg', 0.85);
+    expect(mockCanvas.width).toBe(320);
+    expect(mockCanvas.height).toBe(180);
+    expect(mockCanvas._ctx.drawImage).toHaveBeenCalledWith(mockVideo, 0, 0, 320, 180);
+    expect((mockCanvas as any).toDataURL).toHaveBeenCalledWith('image/jpeg', 0.72);
   });
 
   test('clamps seek time to video duration when atSec exceeds duration', async () => {
@@ -219,7 +221,37 @@ describe('captureVideoFrame', () => {
 
     await expect(promise).resolves.toBe(expectedDataUrl);
     expect(mockVideo.currentTime).toBe(0);
-    expect(mockCanvas._ctx.drawImage).toHaveBeenCalledWith(mockVideo, 0, 0);
+    expect(mockCanvas._ctx.drawImage).toHaveBeenCalledWith(mockVideo, 0, 0, 320, 180);
+  });
+
+  test('keeps smaller source frames at their original dimensions', async () => {
+    const expectedDataUrl = 'data:image/webp;base64,small';
+    const mockVideo = createMockVideo();
+    mockVideo.videoWidth = 160;
+    mockVideo.videoHeight = 90;
+    const mockCanvas = createMockCanvas(expectedDataUrl);
+    (mockCanvas as any).toDataURL = vi.fn().mockReturnValue(expectedDataUrl);
+
+    createElementSpy = vi.spyOn(document, 'createElement').mockImplementation((tag: string) => {
+      if (tag === 'video') return mockVideo as unknown as HTMLVideoElement;
+      if (tag === 'canvas') return mockCanvas as unknown as HTMLCanvasElement;
+      return document.createElement.call(document, tag);
+    });
+
+    const promise = captureVideoFrame({
+      ...DEFAULT_OPTIONS,
+      format: 'webp',
+    });
+
+    await Promise.resolve();
+    await Promise.resolve();
+    mockVideo.fireLoadedMetadata();
+    mockVideo.fireSeeked();
+
+    await expect(promise).resolves.toBe(expectedDataUrl);
+    expect(mockCanvas.width).toBe(160);
+    expect(mockCanvas.height).toBe(90);
+    expect((mockCanvas as any).toDataURL).toHaveBeenCalledWith('image/webp', 0.72);
   });
 
   test('rejects with timeout error when events never fire', async () => {

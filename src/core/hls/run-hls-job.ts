@@ -98,6 +98,7 @@ export async function runHlsJob(input: RunHlsJobInput): Promise<JobOutput> {
   );
   const orderedExportBuffer = new Map<number, HlsSegmentExportEvent>();
   let nextExportIndex = 0;
+  let exportFlushChain = Promise.resolve();
 
   async function flushOrderedExport(): Promise<void> {
     if (!input.onSegmentExport) {
@@ -145,7 +146,9 @@ export async function runHlsJob(input: RunHlsJobInput): Promise<JobOutput> {
           }
 
           orderedExportBuffer.set(order, event);
-          await flushOrderedExport();
+          const flush = exportFlushChain.then(() => flushOrderedExport());
+          exportFlushChain = flush.catch(() => undefined);
+          await flush;
         }
       : undefined,
     onProgress: input.onProgress

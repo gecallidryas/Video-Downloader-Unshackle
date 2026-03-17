@@ -53,7 +53,7 @@ function reasonForMessage(message: unknown): OffscreenReason {
     return 'trim';
   }
 
-  if (typeof typedMessage.type === 'string' && typedMessage.type.includes('BROWSER_HLS_EXPORT')) {
+  if (typeof typedMessage.type === 'string' && typedMessage.type.includes('BROWSER_HLS')) {
     return 'export';
   }
 

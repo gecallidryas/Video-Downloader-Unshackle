@@ -228,7 +228,9 @@ export function createBrowserHlsExportHost(options: BrowserHlsExportHostOptions 
       }
 
       try {
-        await session.muxSession.append(bytes);
+        await session.muxSession.append(bytes, {
+          durationSec: payload.segment.durationSec,
+        });
       } catch (error) {
         const diagnostic = createMuxDiagnostic({
           session,
@@ -327,6 +329,25 @@ export function createBrowserHlsExportHost(options: BrowserHlsExportHostOptions 
     }
   }
 
+  function ping(jobId: string): BrowserHlsExportResponse {
+    const session = sessions.get(jobId);
+
+    if (!session) {
+      return {
+        ok: false,
+        command: 'PING_BROWSER_HLS_EXPORT',
+        error: `Unknown browser HLS export session: ${jobId}`,
+      };
+    }
+
+    return {
+      ok: true,
+      command: 'PING_BROWSER_HLS_EXPORT',
+      bytesWritten: session.sink.bytesWritten,
+      diagnostics: session.diagnostics,
+    };
+  }
+
   async function abort(payload: { jobId: string; reason?: string }): Promise<BrowserHlsExportResponse> {
     const session = sessions.get(payload.jobId);
 
@@ -351,6 +372,8 @@ export function createBrowserHlsExportHost(options: BrowserHlsExportHostOptions 
           return append(command.payload);
         case 'FINALIZE_BROWSER_HLS_EXPORT':
           return finalize(command.payload.jobId);
+        case 'PING_BROWSER_HLS_EXPORT':
+          return ping(command.payload.jobId);
         case 'ABORT_BROWSER_HLS_EXPORT':
           return abort(command.payload);
         default:

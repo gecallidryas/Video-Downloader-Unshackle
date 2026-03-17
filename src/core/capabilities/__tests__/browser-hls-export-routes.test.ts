@@ -151,7 +151,20 @@ describe('browser HLS export route resolver', () => {
       resolve({
         content,
         candidate: candidate({ codecs: ['hvc1.1.6.L120.90'] }),
+        segmentProbe: compatibleTsProbe,
+      }),
+    ).toMatchObject({
+      route: 'unsupported-browser-only',
+      outputExtension: 'bin',
+      rawFallbackAllowed: false,
+    });
+
+    expect(
+      resolve({
+        content,
+        candidate: candidate({ codecs: ['hvc1.1.6.L120.90'] }),
         selection: { mode: 'best', outputKind: 'mp4' },
+        segmentProbe: compatibleTsProbe,
       }),
     ).toMatchObject({
       route: 'unsupported-browser-only',
@@ -159,7 +172,7 @@ describe('browser HLS export route resolver', () => {
     });
   });
 
-  test('refuses unknown TS codecs instead of saving raw TS', () => {
+  test('routes unknown codec hints when segment bytes prove mux.js-safe TS', () => {
     const content = ['#EXTM3U', '#EXTINF:4,', 'segment.ts', '#EXT-X-ENDLIST'].join('\n');
 
     expect(resolve({ content })).toMatchObject({
@@ -175,6 +188,17 @@ describe('browser HLS export route resolver', () => {
       }),
     ).toMatchObject({
       route: 'unsupported-browser-only',
+    });
+
+    expect(
+      resolve({
+        content,
+        segmentProbe: compatibleTsProbe,
+      }),
+    ).toMatchObject({
+      route: 'hls-ts-streaming-mp4',
+      outputExtension: 'mp4',
+      reason: 'MPEG-TS HLS with mux.js-compatible segment bytes is routed through offscreen MP4 transmux.',
     });
   });
 

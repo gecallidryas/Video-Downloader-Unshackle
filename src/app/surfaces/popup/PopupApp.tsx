@@ -105,7 +105,11 @@ function SettingsSection({ title, badge, description, defaultOpen = true, childr
   );
 }
 
-function SettingsContent() {
+interface SettingsContentProps {
+  runtimeClient?: RuntimeClient;
+}
+
+function SettingsContent({ runtimeClient }: SettingsContentProps) {
   const theme = useSettingsStore((s) => s.theme);
   const setTheme = useSettingsStore((s) => s.setTheme);
   const uiLanguage = useSettingsStore((s) => s.uiLanguage);
@@ -219,6 +223,8 @@ function SettingsContent() {
     JSON.stringify(externalPlayerProfiles, null, 2),
   );
   const [showSettingsOnboarding, setShowSettingsOnboarding] = useState(false);
+  const [storageCleanupBusy, setStorageCleanupBusy] = useState(false);
+  const [storageCleanupMessage, setStorageCleanupMessage] = useState<string | null>(null);
 
   async function refreshNativeHelperDiagnostic() {
     setNativeHelperBusy(true);
@@ -282,6 +288,43 @@ function SettingsContent() {
       userGesture: true,
       remember: rememberOutputFolder,
     });
+  }
+
+  async function cleanExtensionStorage() {
+    setStorageCleanupBusy(true);
+    setStorageCleanupMessage(null);
+
+    try {
+      const client = runtimeClient ?? createRuntimeClient();
+
+      if (!client.clearExtensionStorage) {
+        throw new Error('Storage cleanup is unavailable.');
+      }
+
+      const result = await client.clearExtensionStorage();
+
+      if (!mountedRef.current) {
+        return;
+      }
+
+      const bucketLabel = result.orphanedFragmentBuckets === 1 ? 'bucket' : 'buckets';
+      const cacheLabel = result.removedStorageKeys.length === 1 ? 'record' : 'records';
+      setStorageCleanupMessage(
+        `Cleaned ${result.orphanedFragmentBuckets} orphaned fragment ${bucketLabel} and ${result.removedStorageKeys.length} cached detection ${cacheLabel}.`,
+      );
+    } catch (error) {
+      if (!mountedRef.current) {
+        return;
+      }
+
+      setStorageCleanupMessage(
+        error instanceof Error ? error.message : 'Unable to clean extension storage.',
+      );
+    } finally {
+      if (mountedRef.current) {
+        setStorageCleanupBusy(false);
+      }
+    }
   }
 
   function dismissOnboarding() {
@@ -605,6 +648,18 @@ function SettingsContent() {
           </span>
           <input type="checkbox" role="checkbox" aria-label="Auto-delete fragments after save" checked={autoDeleteAfterSave} onChange={(event) => setAutoDeleteAfterSave(event.target.checked)} className="popup__toggle" />
         </label>
+        <div className="popup__maintenance">
+          <div>
+            <span className="popup__label">Extension storage cleanup</span>
+            <span className="popup__help">Removes orphaned browser fragment buckets and cached previous-session thumbnails.</span>
+          </div>
+          <button type="button" className="popup__button popup__button--danger" onClick={() => void cleanExtensionStorage()} disabled={storageCleanupBusy}>
+            {storageCleanupBusy ? 'Cleaning...' : 'Clean extension storage'}
+          </button>
+          {storageCleanupMessage ? (
+            <p className="popup__storage-cleanup-status" role="status">{storageCleanupMessage}</p>
+          ) : null}
+        </div>
       </SettingsSection>
 
       {/* â”€â”€ Advanced mode toggle (always visible) â”€â”€ */}
@@ -920,7 +975,7 @@ export function PopupApp({
           <span className="heading-caps">Settings</span>
         </div>
         <div className="popup__body">
-          <SettingsContent />
+          <SettingsContent runtimeClient={runtimeClient} />
         </div>
         <div className="popup__footer">
           <span className="popup__version">Video Downloader â€” Unshackle v0.1.0</span>
@@ -939,7 +994,7 @@ export function PopupApp({
         <h1 className="popup__title">Settings</h1>
       </header>
       <div className="popup__body">
-        <SettingsContent />
+        <SettingsContent runtimeClient={runtimeClient} />
       </div>
       <footer className="popup__footer">
         <span className="popup__version">Video Downloader â€” Unshackle v0.1.0</span>

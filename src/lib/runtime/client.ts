@@ -2,6 +2,7 @@ import type {
   DetectionEvidence,
   DownloadJob,
   DownloadSelection,
+  ExtensionStorageCleanupResult,
   GeneratedAssetResult,
   MediaAssetKind,
   MediaAssetPriority,
@@ -32,6 +33,7 @@ export interface RuntimeClient {
   getCandidates(tabId: number): Promise<MediaCandidate[]>;
   getAllCandidates(): Promise<MediaCandidate[]>;
   getJobs(): Promise<DownloadJob[]>;
+  clearExtensionStorage?: () => Promise<ExtensionStorageCleanupResult>;
   ingestManualHls(input: {
     tabId: number;
     pageUrl: string;
@@ -157,6 +159,20 @@ export function createRuntimeClient(
       }
 
       return response.payload.jobs;
+    },
+
+    async clearExtensionStorage() {
+      const response = await transport(createRuntimeRequest('CLEAN_EXTENSION_STORAGE', {}));
+
+      if (isRuntimeErrorResponse(response)) {
+        throw new RuntimeClientError(response.payload.message, response.payload.code, response.payload.detail);
+      }
+
+      if (response.type !== 'CLEAN_EXTENSION_STORAGE_RESULT') {
+        throw new RuntimeClientError(`Unexpected runtime response: ${response.type}`, 'UNEXPECTED_RESPONSE');
+      }
+
+      return response.payload;
     },
 
     async getQueueStats() {

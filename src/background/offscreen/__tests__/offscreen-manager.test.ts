@@ -57,6 +57,25 @@ describe('offscreen manager', () => {
     );
   });
 
+  test('uses export justification for browser HLS append messages', async () => {
+    const chromeOffscreen = offscreen(false);
+    const manager = createOffscreenManager({
+      offscreen: chromeOffscreen,
+      runtime: runtime(),
+    });
+
+    await manager.sendMessage({
+      type: 'APPEND_BROWSER_HLS_SEGMENT',
+      payload: { jobId: 'job-1' },
+    });
+
+    expect(chromeOffscreen.createDocument).toHaveBeenCalledWith(
+      expect.objectContaining({
+        justification: expect.stringMatching(/export/i),
+      }),
+    );
+  });
+
   test('reuses an existing offscreen document', async () => {
     const chromeOffscreen = offscreen(true);
     const manager = createOffscreenManager({

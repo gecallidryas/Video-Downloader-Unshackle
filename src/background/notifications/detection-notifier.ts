@@ -35,8 +35,8 @@ export function createDetectionNotifier(
 ): DetectionNotifier {
   const windowMs = options.windowMs ?? 2_000;
   const scheduler = options.scheduler ?? {
-    setTimeout: globalThis.setTimeout,
-    clearTimeout: globalThis.clearTimeout,
+    setTimeout: globalThis.setTimeout.bind(globalThis),
+    clearTimeout: globalThis.clearTimeout.bind(globalThis),
   };
 
   let mode: NotificationMode = 'batched';

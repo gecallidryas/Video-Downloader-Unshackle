@@ -48,6 +48,10 @@ describe('media asset service', () => {
     await expect(first).resolves.toMatchObject({ status: 'ready', assetUrl: 'thumb.jpg' });
     await expect(second).resolves.toMatchObject({ status: 'ready', assetUrl: 'thumb.jpg' });
     expect(ensureThumbnail).toHaveBeenCalledTimes(1);
+    expect(ensureThumbnail).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'candidate-1' }),
+      expect.objectContaining({ format: 'webp' }),
+    );
   });
 
   test('records failed assets with sanitized diagnostics and retryAfter', async () => {
@@ -121,7 +125,7 @@ describe('media asset service', () => {
   test('restores persisted states through getState without regenerating the asset', async () => {
     const store = createMemoryMediaAssetStore();
     const item = candidate();
-    const key = mediaAssetCacheKey({ candidate: item, kind: 'poster', format: 'jpg' });
+    const key = mediaAssetCacheKey({ candidate: item, kind: 'poster', format: 'webp' });
     await store.set({
       cacheKey: key,
       candidateId: 'candidate-1',
@@ -222,5 +226,23 @@ describe('media asset service', () => {
       },
       'hoverClip',
     );
+  });
+
+  test('does not persist hover preview clips in the asset store', async () => {
+    const store = createMemoryMediaAssetStore();
+    const service = createMediaAssetService({
+      store,
+      ensurePreviewClip: vi.fn().mockResolvedValue({
+        assetUrl: 'data:video/webm;base64,clip',
+        mimeType: 'video/webm',
+        generated: true,
+      }),
+    });
+
+    await expect(service.queueAsset(candidate(), 'hoverClip')).resolves.toMatchObject({
+      status: 'ready',
+      assetUrl: 'data:video/webm;base64,clip',
+    });
+    await expect(store.listByCandidateId('candidate-1')).resolves.toEqual([]);
   });
 });

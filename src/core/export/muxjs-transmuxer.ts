@@ -29,23 +29,47 @@ interface MuxjsDataEvent {
   data?: Uint8Array;
 }
 
+export interface MuxjsSegmentTimingInfo {
+  start: {
+    dts: number;
+    pts: number;
+  };
+  end: {
+    dts: number;
+    pts: number;
+  };
+  baseMediaDecodeTime: number;
+}
+
 export interface MuxjsTransmuxer {
   on(event: 'data', callback: (data: MuxjsDataEvent) => void): void;
   on(event: 'error', callback: (error: unknown) => void): void;
+  on(
+    event: 'videoSegmentTimingInfo' | 'audioSegmentTimingInfo',
+    callback: (timing: MuxjsSegmentTimingInfo) => void,
+  ): void;
   push(bytes: Uint8Array): void;
   flush(): void;
   setBaseMediaDecodeTime?(time: number): void;
 }
 
+interface MuxjsTransmuxerOptions {
+  keepOriginalTimestamps?: boolean;
+  remux?: boolean;
+  baseMediaDecodeTime?: number;
+  firstSequenceNumber?: number;
+}
+
 interface MuxjsModule {
   default?: {
     mp4?: {
-      Transmuxer?: new () => MuxjsTransmuxer;
+      Transmuxer?: new (options?: MuxjsTransmuxerOptions) => MuxjsTransmuxer;
     };
   };
 }
 
 const TS_PACKET_SIZE = 188;
+const VIDEO_CLOCK_HZ = 90_000;
 
 function looksLikeMpegTs(segment: Uint8Array): boolean {
   if (segment.byteLength < TS_PACKET_SIZE || segment[0] !== 0x47) {
@@ -53,6 +77,26 @@ function looksLikeMpegTs(segment: Uint8Array): boolean {
   }
 
   return segment.byteLength < TS_PACKET_SIZE * 2 || segment[TS_PACKET_SIZE] === 0x47;
+}
+
+function durationSecondsToTicks(durationSec: number | undefined): number | undefined {
+  if (durationSec === undefined || !Number.isFinite(durationSec) || durationSec <= 0) {
+    return undefined;
+  }
+
+  return Math.max(1, Math.round(durationSec * VIDEO_CLOCK_HZ));
+}
+
+function segmentDurationTicks(timing: MuxjsSegmentTimingInfo): number | undefined {
+  const dtsDuration = timing.end.dts - timing.start.dts;
+  const ptsDuration = timing.end.pts - timing.start.pts;
+  const duration = dtsDuration > 0 ? dtsDuration : ptsDuration;
+
+  if (!Number.isFinite(duration) || duration <= 0) {
+    return undefined;
+  }
+
+  return Math.round(duration);
 }
 
 function concatBytes(parts: Uint8Array[]): Uint8Array {
@@ -68,7 +112,7 @@ function concatBytes(parts: Uint8Array[]): Uint8Array {
   return output;
 }
 
-async function createTransmuxer(): Promise<MuxjsTransmuxer> {
+async function createTransmuxer(options: MuxjsTransmuxerOptions = {}): Promise<MuxjsTransmuxer> {
   const muxjs = (await import('mux.js')) as MuxjsModule;
   const Transmuxer = muxjs.default?.mp4?.Transmuxer;
 
@@ -76,60 +120,83 @@ async function createTransmuxer(): Promise<MuxjsTransmuxer> {
     throw new MuxjsTransmuxError('mux.js Transmuxer is unavailable.', 'MUX_WORKER_CRASHED');
   }
 
-  return new Transmuxer();
+  return new Transmuxer({
+    keepOriginalTimestamps: false,
+    remux: true,
+    baseMediaDecodeTime: 0,
+    ...options,
+  });
 }
 
 export interface MuxjsStreamingTransmuxSession {
-  append(segment: Uint8Array): Promise<void>;
+  append(segment: Uint8Array, timing?: { durationSec?: number }): Promise<void>;
   finalize(): Promise<void>;
   readonly bytesEmitted: number;
 }
 
 export interface MuxjsStreamingTransmuxOptions {
-  createTransmuxer?: () => Promise<MuxjsTransmuxer>;
+  createTransmuxer?: (options?: MuxjsTransmuxerOptions) => Promise<MuxjsTransmuxer>;
 }
 
 export async function createMuxjsStreamingTransmuxSession(
   onChunk: (chunk: Uint8Array) => Promise<void>,
   options: MuxjsStreamingTransmuxOptions = {},
 ): Promise<MuxjsStreamingTransmuxSession> {
-  const transmuxer = await (options.createTransmuxer ?? createTransmuxer)();
   let bytesEmitted = 0;
   let muxError: MuxjsTransmuxError | undefined;
   let chunkChain = Promise.resolve();
-  let hasInput = false;
   let emittedInitSegment = false;
+  let nextBaseMediaDecodeTime = 0;
+  let nextSequenceNumber = 0;
+  let pendingVideoDurationTicks: number | undefined;
+  let pendingAudioDurationTicks: number | undefined;
 
-  transmuxer.setBaseMediaDecodeTime?.(0);
-  transmuxer.on('error', (error) => {
-    muxError = new MuxjsTransmuxError(
-      error instanceof Error ? error.message : 'mux.js failed while transmuxing MPEG-TS.',
-      'MALFORMED_TS',
-    );
-  });
-  transmuxer.on('data', (data) => {
-    const chunks: Uint8Array[] = [];
+  async function createSegmentTransmuxer(): Promise<MuxjsTransmuxer> {
+    const transmuxer = await (options.createTransmuxer ?? createTransmuxer)({
+      baseMediaDecodeTime: nextBaseMediaDecodeTime,
+      firstSequenceNumber: nextSequenceNumber,
+      keepOriginalTimestamps: false,
+      remux: true,
+    });
 
-    if (data.initSegment && data.initSegment.byteLength > 0 && !emittedInitSegment) {
-      chunks.push(data.initSegment);
-      emittedInitSegment = true;
-    }
-    if (data.data && data.data.byteLength > 0) {
-      chunks.push(data.data);
-    }
+    transmuxer.on('error', (error) => {
+      muxError = new MuxjsTransmuxError(
+        error instanceof Error ? error.message : 'mux.js failed while transmuxing MPEG-TS.',
+        'MALFORMED_TS',
+      );
+    });
+    transmuxer.on('data', (data) => {
+      const chunks: Uint8Array[] = [];
 
-    for (const chunk of chunks) {
-      bytesEmitted += chunk.byteLength;
-      chunkChain = chunkChain.then(() => onChunk(chunk));
-    }
-  });
+      if (data.initSegment && data.initSegment.byteLength > 0 && !emittedInitSegment) {
+        chunks.push(data.initSegment);
+        emittedInitSegment = true;
+      }
+      if (data.data && data.data.byteLength > 0) {
+        chunks.push(data.data);
+      }
+
+      for (const chunk of chunks) {
+        bytesEmitted += chunk.byteLength;
+        chunkChain = chunkChain.then(() => onChunk(chunk));
+      }
+    });
+    transmuxer.on('videoSegmentTimingInfo', (timing) => {
+      pendingVideoDurationTicks = segmentDurationTicks(timing);
+    });
+    transmuxer.on('audioSegmentTimingInfo', (timing) => {
+      pendingAudioDurationTicks = segmentDurationTicks(timing);
+    });
+
+    return transmuxer;
+  }
 
   return {
     get bytesEmitted() {
       return bytesEmitted;
     },
 
-    async append(segment) {
+    async append(segment, timing) {
       if (!looksLikeMpegTs(segment)) {
         throw new MuxjsTransmuxError(
           'mux.js browser transmux requires MPEG-TS segments.',
@@ -138,8 +205,13 @@ export async function createMuxjsStreamingTransmuxSession(
       }
 
       try {
+        pendingVideoDurationTicks = undefined;
+        pendingAudioDurationTicks = undefined;
+        const transmuxer = await createSegmentTransmuxer();
+        transmuxer.setBaseMediaDecodeTime?.(nextBaseMediaDecodeTime);
         transmuxer.push(segment);
-        hasInput = true;
+        transmuxer.flush();
+        nextSequenceNumber += 1;
       } catch (error) {
         throw new MuxjsTransmuxError(
           error instanceof Error ? error.message : 'mux.js failed while reading MPEG-TS.',
@@ -151,20 +223,18 @@ export async function createMuxjsStreamingTransmuxSession(
       if (muxError) {
         throw muxError;
       }
+
+      const durationTicks =
+        durationSecondsToTicks(timing?.durationSec) ??
+        pendingVideoDurationTicks ??
+        pendingAudioDurationTicks;
+
+      if (durationTicks !== undefined) {
+        nextBaseMediaDecodeTime += durationTicks;
+      }
     },
 
     async finalize() {
-      if (hasInput) {
-        try {
-          transmuxer.flush();
-          hasInput = false;
-        } catch (error) {
-          throw new MuxjsTransmuxError(
-            error instanceof Error ? error.message : 'mux.js failed while finalizing MPEG-TS.',
-            'MUX_WORKER_CRASHED',
-          );
-        }
-      }
       await chunkChain;
 
       if (muxError) {

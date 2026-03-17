@@ -102,6 +102,32 @@ describe('RuntimeClient', () => {
     );
   });
 
+  test('requests extension storage cleanup', async () => {
+    const cleanupResult = {
+      orphanedFragmentBuckets: 3,
+      activeJobBuckets: 2,
+      removedStorageKeys: ['unshackle:previousDetections'],
+    };
+    const transport = vi.fn().mockResolvedValue({
+      type: 'CLEAN_EXTENSION_STORAGE_RESULT',
+      requestId: 'response-clean-storage',
+      payload: cleanupResult,
+    });
+    const client = createRuntimeClient(transport);
+
+    if (!client.clearExtensionStorage) {
+      throw new Error('Expected runtime client cleanup method');
+    }
+
+    await expect(client.clearExtensionStorage()).resolves.toEqual(cleanupResult);
+    expect(transport).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'CLEAN_EXTENSION_STORAGE',
+        payload: {},
+      }),
+    );
+  });
+
   test('fetches debug evidence for a candidate', async () => {
     const evidence = [
       {

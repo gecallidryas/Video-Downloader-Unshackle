@@ -365,6 +365,12 @@ export interface QueueStats {
   completed: number;
 }
 
+export interface ExtensionStorageCleanupResult {
+  orphanedFragmentBuckets: number;
+  activeJobBuckets: number;
+  removedStorageKeys: string[];
+}
+
 export type PanelSurfaceState =
   | 'detecting'
   | 'results'
@@ -459,6 +465,7 @@ export type RuntimeRequest =
   | MessageEnvelope<'DRM_DETECTED', { drmName: string; trigger: string; url: string }>
   | MessageEnvelope<'GET_CANDIDATES', { tabId: number }>
   | MessageEnvelope<'GET_ALL_CANDIDATES', Record<string, never>>
+  | MessageEnvelope<'CLEAN_EXTENSION_STORAGE', Record<string, never>>
   | MessageEnvelope<'REQUEST_HOST_ACCESS', { origin: string }>
   | MessageEnvelope<'START_PREVIEW', { candidateId: string }>
   | MessageEnvelope<'STOP_PREVIEW', { candidateId: string }>
@@ -495,6 +502,7 @@ export type RuntimeResponse =
   | MessageEnvelope<'DRM_DETECTED_RESULT', { ok: boolean }>
   | MessageEnvelope<'GET_CANDIDATES_RESULT', { candidates: MediaCandidate[] }>
   | MessageEnvelope<'GET_ALL_CANDIDATES_RESULT', { candidates: MediaCandidate[] }>
+  | MessageEnvelope<'CLEAN_EXTENSION_STORAGE_RESULT', ExtensionStorageCleanupResult>
   | MessageEnvelope<'REQUEST_HOST_ACCESS_RESULT', { granted: boolean; origin: string }>
   | MessageEnvelope<'START_PREVIEW_RESULT', { ok: boolean }>
   | MessageEnvelope<'STOP_PREVIEW_RESULT', { ok: boolean }>

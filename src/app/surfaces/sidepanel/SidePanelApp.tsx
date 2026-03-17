@@ -1490,15 +1490,32 @@ export function SidePanelApp({
     }
 
     let cancelled = false;
-
-    void resolveActiveTabIdFromChrome().then((tabId) => {
+    const updateResolvedTabId = (tabId: number | undefined) => {
       if (!cancelled) {
         setResolvedActiveTabId(tabId);
       }
-    });
+    };
+
+    void resolveActiveTabIdFromChrome().then(updateResolvedTabId);
+
+    const handleActivated = (activeInfo: { tabId: number }) => {
+      updateResolvedTabId(
+        typeof activeInfo.tabId === 'number' && activeInfo.tabId > 0
+          ? activeInfo.tabId
+          : undefined,
+      );
+    };
+    const handleWindowFocusChanged = () => {
+      void resolveActiveTabIdFromChrome().then(updateResolvedTabId);
+    };
+
+    globalThis.chrome?.tabs?.onActivated?.addListener?.(handleActivated);
+    globalThis.chrome?.windows?.onFocusChanged?.addListener?.(handleWindowFocusChanged);
 
     return () => {
       cancelled = true;
+      globalThis.chrome?.tabs?.onActivated?.removeListener?.(handleActivated);
+      globalThis.chrome?.windows?.onFocusChanged?.removeListener?.(handleWindowFocusChanged);
     };
   }, [activeTabId]);
 

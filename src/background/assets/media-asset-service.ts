@@ -136,7 +136,7 @@ export function createMediaAssetService(
     return mediaAssetCacheKey({
       candidate,
       kind,
-      format: kind === 'poster' ? 'jpg' : 'webm',
+      format: kind === 'poster' ? 'webp' : 'webm',
       startSec: kind === 'hoverClip' ? 0 : undefined,
       durationSec: kind === 'hoverClip' ? 10 : undefined,
     });
@@ -225,6 +225,10 @@ export function createMediaAssetService(
     state: MediaAssetState,
     generated?: GeneratedAssetResult,
   ): Promise<void> {
+    if (state.kind === 'hoverClip') {
+      return;
+    }
+
     const cacheKey = keyFor(candidate, state.kind);
     const existing = await store.get(cacheKey);
     await store.set({
@@ -266,6 +270,7 @@ export function createMediaAssetService(
     let result: GeneratedAssetResult;
     if (kind === 'poster') {
       result = await runThumbnail(candidate, {
+        format: 'webp',
         ...(options.nativeThumbnailOptions ?? {}),
         ...(strategy === 'offscreen-hls' || strategy === 'offscreen-direct' || canUseOffscreenDirect(candidate)
           ? {}

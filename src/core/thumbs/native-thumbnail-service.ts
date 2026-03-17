@@ -90,7 +90,7 @@ export async function ensureNativeThumbnail(
     };
   }
 
-  const format = options.format ?? 'jpg';
+  const format = options.format ?? 'webp';
   let nativeUnavailable = false;
 
   if (options.nativeClient) {

@@ -32,6 +32,33 @@ function normalizeMaxEntries(value: unknown): number {
     : DEFAULT_SETTINGS.previousSessionLimit;
 }
 
+function compactThumbnailUrl(url: string | undefined): string | undefined {
+  if (!url?.startsWith('data:')) {
+    return url;
+  }
+
+  return url.startsWith('data:image/webp;') ? url : undefined;
+}
+
+function compactCandidateForPreviousSession(candidate: MediaCandidate): MediaCandidate {
+  const heroUrl = compactThumbnailUrl(candidate.thumbnails?.heroUrl);
+  const rest = { ...candidate };
+  delete rest.thumbnails;
+  const thumbnails = heroUrl
+    ? {
+        heroUrl,
+        ...(candidate.thumbnails?.width ? { width: candidate.thumbnails.width } : {}),
+        ...(candidate.thumbnails?.height ? { height: candidate.thumbnails.height } : {}),
+        ...(candidate.thumbnails?.generatedAt ? { generatedAt: candidate.thumbnails.generatedAt } : {}),
+      }
+    : undefined;
+
+  return {
+    ...rest,
+    ...(thumbnails ? { thumbnails } : {}),
+  };
+}
+
 async function readPreviousSessionLimit(
   storage: PreviousDetectionsStorage,
   maxEntries?: number,
@@ -71,7 +98,7 @@ export async function saveDetectionsOnTabClose({
 
   const timestamp = now();
   const enriched = candidates.map((candidate) => ({
-    ...candidate,
+    ...compactCandidateForPreviousSession(candidate),
     tabId,
     updatedAt: candidate.updatedAt || timestamp,
   }));

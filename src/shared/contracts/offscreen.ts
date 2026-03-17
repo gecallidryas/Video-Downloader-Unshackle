@@ -11,6 +11,7 @@ export const OFFSCREEN_COMMAND_TYPES = [
   'START_BROWSER_HLS_EXPORT',
   'APPEND_BROWSER_HLS_SEGMENT',
   'FINALIZE_BROWSER_HLS_EXPORT',
+  'PING_BROWSER_HLS_EXPORT',
   'ABORT_BROWSER_HLS_EXPORT',
 ] as const;
 
@@ -116,6 +117,10 @@ export interface FinalizeBrowserHlsExportPayload {
   jobId: string;
 }
 
+export interface PingBrowserHlsExportPayload {
+  jobId: string;
+}
+
 export interface AbortBrowserHlsExportPayload {
   jobId: string;
   reason?: string;
@@ -141,6 +146,7 @@ export type OffscreenCommand =
   | MessageEnvelope<'START_BROWSER_HLS_EXPORT', StartBrowserHlsExportPayload>
   | MessageEnvelope<'APPEND_BROWSER_HLS_SEGMENT', AppendBrowserHlsSegmentPayload>
   | MessageEnvelope<'FINALIZE_BROWSER_HLS_EXPORT', FinalizeBrowserHlsExportPayload>
+  | MessageEnvelope<'PING_BROWSER_HLS_EXPORT', PingBrowserHlsExportPayload>
   | MessageEnvelope<'ABORT_BROWSER_HLS_EXPORT', AbortBrowserHlsExportPayload>;
 
 type OffscreenPayloadMap = {

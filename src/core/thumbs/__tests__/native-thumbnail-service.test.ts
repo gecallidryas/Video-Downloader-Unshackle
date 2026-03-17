@@ -39,9 +39,9 @@ function nativeClient(): NativeFfmpegClient {
     exportMedia: vi.fn(),
     extractThumbnail: vi.fn().mockResolvedValue({
       candidateId: 'candidate-1',
-      outputPath: 'C:\\Users\\tester\\AppData\\Local\\VideoDownloaderUnshackle\\thumbs\\candidate-1.jpg',
-      mimeType: 'image/jpeg',
-      dataUrl: 'data:image/jpeg;base64,anBnLWJ5dGVz',
+      outputPath: 'C:\\Users\\tester\\AppData\\Local\\VideoDownloaderUnshackle\\thumbs\\candidate-1.webp',
+      mimeType: 'image/webp',
+      dataUrl: 'data:image/webp;base64,anBnLWJ5dGVz',
     }),
     extractPreviewClip: vi.fn(),
     cancelJob: vi.fn(),
@@ -69,15 +69,15 @@ describe('native thumbnail service', () => {
     const client = nativeClient();
 
     await expect(ensureNativeThumbnail(candidate(), { nativeClient: client })).resolves.toEqual({
-      assetUrl: 'data:image/jpeg;base64,anBnLWJ5dGVz',
-      mimeType: 'image/jpeg',
+      assetUrl: 'data:image/webp;base64,anBnLWJ5dGVz',
+      mimeType: 'image/webp',
       generated: true,
     });
     expect(client.extractThumbnail).toHaveBeenCalledWith({
       candidateId: 'candidate-1',
       inputUrl: 'https://cdn.example.com/video.mp4',
       atSec: 10,
-      format: 'jpg',
+      format: 'webp',
     });
   });
 
@@ -96,7 +96,7 @@ describe('native thumbnail service', () => {
       candidateId: 'candidate-1',
       inputUrl: 'https://cdn.example.com/video.mp4',
       atSec: 10,
-      format: 'jpg',
+      format: 'webp',
       headers: {
         referer: 'https://example.com/watch',
         origin: 'https://example.com',
@@ -122,8 +122,8 @@ describe('native thumbnail service', () => {
     const client = nativeClient();
     vi.mocked(client.extractThumbnail).mockResolvedValueOnce({
       candidateId: 'candidate-1',
-      outputPath: 'C:\\Users\\tester\\AppData\\Local\\VideoDownloaderUnshackle\\thumbs\\candidate-1.jpg',
-      mimeType: 'image/jpeg',
+      outputPath: 'C:\\Users\\tester\\AppData\\Local\\VideoDownloaderUnshackle\\thumbs\\candidate-1.webp',
+      mimeType: 'image/webp',
     } as Awaited<ReturnType<NativeFfmpegClient['extractThumbnail']>>);
 
     await expect(ensureNativeThumbnail(candidate(), { nativeClient: client })).rejects.toThrow(
@@ -141,22 +141,22 @@ describe('native thumbnail service', () => {
     );
     const offscreenCapture = vi.fn().mockResolvedValue({
       ok: true,
-      assetUrl: 'data:image/jpeg;base64,b2Zmc2NyZWVu',
-      mimeType: 'image/jpeg',
+      assetUrl: 'data:image/webp;base64,b2Zmc2NyZWVu',
+      mimeType: 'image/webp',
     });
 
     await expect(
       ensureNativeThumbnail(candidate(), { nativeClient: client, offscreenCapture }),
     ).resolves.toEqual({
-      assetUrl: 'data:image/jpeg;base64,b2Zmc2NyZWVu',
-      mimeType: 'image/jpeg',
+      assetUrl: 'data:image/webp;base64,b2Zmc2NyZWVu',
+      mimeType: 'image/webp',
       generated: true,
     });
     expect(offscreenCapture).toHaveBeenCalledWith({
       type: 'EXTRACT_THUMBNAIL',
       url: 'https://cdn.example.com/video.mp4',
       atSec: 10,
-      format: 'jpeg',
+      format: 'webp',
     });
   });
 
@@ -170,8 +170,8 @@ describe('native thumbnail service', () => {
     );
     const offscreenCapture = vi.fn().mockResolvedValue({
       ok: true,
-      assetUrl: 'data:image/jpeg;base64,aGxz',
-      mimeType: 'image/jpeg',
+      assetUrl: 'data:image/webp;base64,aGxz',
+      mimeType: 'image/webp',
     });
 
     await expect(
@@ -184,8 +184,8 @@ describe('native thumbnail service', () => {
         { nativeClient: client, offscreenCapture },
       ),
     ).resolves.toEqual({
-      assetUrl: 'data:image/jpeg;base64,aGxz',
-      mimeType: 'image/jpeg',
+      assetUrl: 'data:image/webp;base64,aGxz',
+      mimeType: 'image/webp',
       generated: true,
     });
     expect(offscreenCapture).toHaveBeenCalledWith({
@@ -193,7 +193,7 @@ describe('native thumbnail service', () => {
       url: 'https://cdn.example.com/master.m3u8',
       protocol: 'hls',
       atSec: 10,
-      format: 'jpeg',
+      format: 'webp',
     });
   });
 

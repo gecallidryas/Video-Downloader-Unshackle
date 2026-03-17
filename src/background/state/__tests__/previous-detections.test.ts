@@ -55,4 +55,47 @@ describe('previous detections', () => {
       { id: 'new-2' },
     ]);
   });
+
+  test('persists compact webp thumbnails but drops bulky frame data URLs', async () => {
+    const values: Record<string, unknown> = {
+      [SETTINGS_STORAGE_KEY]: { previousSessionLimit: 50 },
+      [PREVIOUS_DETECTIONS_KEY]: [],
+    };
+    const storage = {
+      get: vi.fn(async (key: string) => ({ [key]: values[key] })),
+      set: vi.fn(async (patch: Record<string, unknown>) => {
+        Object.assign(values, patch);
+      }),
+    };
+
+    await saveDetectionsOnTabClose({
+      tabId: 9,
+      candidates: [
+        candidate('png-frame'),
+        candidate('webp-frame'),
+      ].map((item, index) => ({
+        ...item,
+        thumbnails: {
+          heroUrl: index === 0
+            ? 'data:image/png;base64,large-frame'
+            : 'data:image/webp;base64,small-frame',
+          width: 320,
+          height: 180,
+        },
+      })),
+      storage,
+    });
+
+    const saved = values[PREVIOUS_DETECTIONS_KEY] as MediaCandidate[];
+    expect(saved[0]?.id).toBe('png-frame');
+    expect(saved[0]?.thumbnails).toBeUndefined();
+    expect(saved[1]).toMatchObject({
+      id: 'webp-frame',
+      thumbnails: {
+        heroUrl: 'data:image/webp;base64,small-frame',
+        width: 320,
+        height: 180,
+      },
+    });
+  });
 });

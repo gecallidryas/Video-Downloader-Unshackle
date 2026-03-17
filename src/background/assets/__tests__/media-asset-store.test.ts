@@ -92,5 +92,6 @@ describe('media asset store', () => {
       status: 'failed',
       retryAfter: 123,
     });
+    expect(cacheKey).toContain('poster::webp::');
   });
 });

@@ -84,12 +84,16 @@ function detectContainer(input: BrowserHlsExportRouteInput): 'ts' | 'fmp4' | 'mi
   return 'unknown';
 }
 
-function hasMuxFriendlyCodecs(candidate: MediaCandidate, manifest: ParsedHlsManifest): boolean {
-  const codecs = [
+function codecHints(candidate: MediaCandidate, manifest: ParsedHlsManifest): string[] {
+  return [
     ...(candidate.codecs ?? []),
     ...candidate.variants.flatMap((variant) => variant.codecs ?? []),
     ...manifest.variants.flatMap((variant) => variant.codecs ?? []),
   ].map((codec) => codec.toLowerCase());
+}
+
+function hasMuxFriendlyCodecs(candidate: MediaCandidate, manifest: ParsedHlsManifest): boolean {
+  const codecs = codecHints(candidate, manifest);
 
   if (codecs.length === 0) {
     return false;
@@ -101,15 +105,24 @@ function hasMuxFriendlyCodecs(candidate: MediaCandidate, manifest: ParsedHlsMani
   const audioCodec = codecs.find((codec) =>
     codec.startsWith('mp4a') || codec.startsWith('aac'),
   );
-  const hasKnownUnsupported = codecs.some((codec) =>
+
+  return Boolean(videoCodec || audioCodec) && !hasUnsafeCodecHints(candidate, manifest);
+}
+
+function hasUnsafeCodecHints(candidate: MediaCandidate, manifest: ParsedHlsManifest): boolean {
+  const codecs = codecHints(candidate, manifest);
+
+  if (codecs.length === 0) {
+    return false;
+  }
+
+  return codecs.some((codec) =>
     codec.startsWith('hev1') ||
     codec.startsWith('hvc1') ||
     codec.startsWith('vp9') ||
     codec.startsWith('av01') ||
     codec.startsWith('opus'),
   );
-
-  return Boolean(videoCodec || audioCodec) && !hasKnownUnsupported;
 }
 
 function hasMuxSafeSegmentProbe(input: BrowserHlsExportRouteInput): boolean {
@@ -190,15 +203,17 @@ export function resolveBrowserHlsExportRoute(
   if (
     !rawRequested &&
     input.muxJsEnabled &&
-    hasMuxFriendlyCodecs(input.candidate, input.manifest) &&
-    hasMuxSafeSegmentProbe(input)
+    hasMuxSafeSegmentProbe(input) &&
+    !hasUnsafeCodecHints(input.candidate, input.manifest)
   ) {
     return {
       route: sinkKind === 'opfs' ? 'hls-ts-opfs-mp4' : 'hls-ts-streaming-mp4',
       sinkKind,
       outputExtension: 'mp4',
       mimeType: 'video/mp4',
-      reason: 'MPEG-TS HLS with mux.js-compatible codec hints is routed through offscreen MP4 transmux.',
+      reason: hasMuxFriendlyCodecs(input.candidate, input.manifest)
+        ? 'MPEG-TS HLS with mux.js-compatible codec hints is routed through offscreen MP4 transmux.'
+        : 'MPEG-TS HLS with mux.js-compatible segment bytes is routed through offscreen MP4 transmux.',
       rawFallbackAllowed: false,
     };
   }

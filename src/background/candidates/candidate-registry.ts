@@ -8,6 +8,7 @@ export interface CandidateRegistry {
   set(tabId: number, candidates: MediaCandidate[]): MediaCandidate[];
   setFromEvidence(input: MergeCandidateEvidenceInput): MediaCandidate[];
   get(tabId: number): MediaCandidate[];
+  tabIds(): number[];
   all(): MediaCandidate[];
   findById(candidateId: string): MediaCandidate | undefined;
   clear(tabId: number): void;
@@ -26,7 +27,9 @@ export function createCandidateRegistry(): CandidateRegistry {
 
   return {
     set(tabId, candidates) {
-      const snapshot = dedupeCandidatesById(candidates);
+      const snapshot = dedupeCandidatesById(
+        candidates.map((candidate) => ({ ...candidate, tabId })),
+      );
       candidatesByTabId.set(tabId, snapshot);
 
       return [...snapshot];
@@ -38,6 +41,10 @@ export function createCandidateRegistry(): CandidateRegistry {
 
     get(tabId) {
       return [...(candidatesByTabId.get(tabId) ?? [])];
+    },
+
+    tabIds() {
+      return Array.from(candidatesByTabId.keys());
     },
 
     all() {

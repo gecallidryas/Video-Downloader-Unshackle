@@ -9,6 +9,29 @@ export interface CaptureFrameOptions {
   format: 'jpeg' | 'png' | 'webp';
   timeoutMs: number;
   directMode?: DirectLoadMode;
+  maxWidth?: number;
+  maxHeight?: number;
+  quality?: number;
+}
+
+const DEFAULT_MAX_THUMBNAIL_WIDTH = 320;
+const DEFAULT_MAX_THUMBNAIL_HEIGHT = 180;
+const DEFAULT_THUMBNAIL_QUALITY = 0.72;
+
+function fitWithinBounds(
+  width: number,
+  height: number,
+  maxWidth: number,
+  maxHeight: number,
+): { width: number; height: number } {
+  const safeWidth = Number.isFinite(width) && width > 0 ? width : maxWidth;
+  const safeHeight = Number.isFinite(height) && height > 0 ? height : maxHeight;
+  const scale = Math.min(1, maxWidth / safeWidth, maxHeight / safeHeight);
+
+  return {
+    width: Math.max(1, Math.round(safeWidth * scale)),
+    height: Math.max(1, Math.round(safeHeight * scale)),
+  };
 }
 
 export function captureVideoFrame(options: CaptureFrameOptions): Promise<string> {
@@ -89,8 +112,14 @@ export function captureVideoFrame(options: CaptureFrameOptions): Promise<string>
       }
       try {
         const canvas = document.createElement('canvas');
-        canvas.width = video.videoWidth;
-        canvas.height = video.videoHeight;
+        const size = fitWithinBounds(
+          video.videoWidth,
+          video.videoHeight,
+          options.maxWidth ?? DEFAULT_MAX_THUMBNAIL_WIDTH,
+          options.maxHeight ?? DEFAULT_MAX_THUMBNAIL_HEIGHT,
+        );
+        canvas.width = size.width;
+        canvas.height = size.height;
         const ctx = canvas.getContext('2d');
 
         if (!ctx) {
@@ -98,8 +127,11 @@ export function captureVideoFrame(options: CaptureFrameOptions): Promise<string>
           return;
         }
 
-        ctx.drawImage(video, 0, 0);
-        const dataUrl = canvas.toDataURL(mimeType, 0.85);
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+        const dataUrl = canvas.toDataURL(
+          mimeType,
+          options.quality ?? DEFAULT_THUMBNAIL_QUALITY,
+        );
         succeed(dataUrl);
       } catch (error) {
         fail(error);

@@ -158,6 +158,7 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.useRealTimers();
+  vi.unstubAllGlobals();
 });
 
 test('renders the panel header with title', () => {
@@ -349,6 +350,48 @@ test('refreshes current tab candidates while the side panel stays open', async (
   });
 
   expect(screen.getByText('Later stream')).toBeInTheDocument();
+});
+
+test('reloads current-tab detections when the browser active tab changes', async () => {
+  const tabActivatedListeners: Array<(activeInfo: { tabId: number; windowId: number }) => void> = [];
+  const runtimeClient = buildRuntimeClient([]);
+  vi.mocked(runtimeClient.getCandidates).mockImplementation(async (tabId) => [
+    buildCandidate({
+      id: `tab-${tabId}`,
+      tabId,
+      displayName: tabId === 7 ? 'Tab seven media' : 'Tab eight media',
+    }),
+  ]);
+  vi.stubGlobal('chrome', {
+    tabs: {
+      query: vi.fn().mockResolvedValue([{ id: 7 }]),
+      onActivated: {
+        addListener: vi.fn((listener: (activeInfo: { tabId: number; windowId: number }) => void) => {
+          tabActivatedListeners.push(listener);
+        }),
+        removeListener: vi.fn(),
+      },
+    },
+    windows: {
+      onFocusChanged: {
+        addListener: vi.fn(),
+        removeListener: vi.fn(),
+      },
+    },
+  });
+
+  render(<SidePanelApp runtimeClient={runtimeClient} />);
+
+  expect(await screen.findByText('Tab seven media')).toBeInTheDocument();
+
+  act(() => {
+    tabActivatedListeners.forEach((listener) => listener({ tabId: 8, windowId: 1 }));
+  });
+
+  expect(await screen.findByText('Tab eight media')).toBeInTheDocument();
+  expect(screen.queryByText('Tab seven media')).not.toBeInTheDocument();
+  expect(runtimeClient.getCandidates).toHaveBeenCalledWith(7);
+  expect(runtimeClient.getCandidates).toHaveBeenCalledWith(8);
 });
 
 test('labels DASH browser fallback primary action as Download', async () => {

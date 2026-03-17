@@ -14,7 +14,10 @@ import { createJobStore } from '@/src/background/jobs/job-store';
 import { createOffscreenManager } from '@/src/background/offscreen/offscreen-manager';
 import { createNotificationManager } from '@/src/background/notifications/notification-manager';
 import { createDetectionNotifier } from '@/src/background/notifications/detection-notifier';
-import { saveDetectionsOnTabClose } from '@/src/background/state/previous-detections';
+import {
+  PREVIOUS_DETECTIONS_KEY,
+  saveDetectionsOnTabClose,
+} from '@/src/background/state/previous-detections';
 import {
   SETTINGS_STORAGE_KEY,
   createSettingsStore,
@@ -37,6 +40,7 @@ import { registerBackgroundCommandHandlers } from '@/src/background/commands/bac
 import { createAutoScanController } from '@/src/background/scanning/auto-scan';
 import { createTabSnapshotStore } from '@/src/background/state/tab-snapshots';
 import { createTabVideoStatusStore } from '@/src/background/state/tab-video-status';
+import { MEDIA_ASSET_STORAGE_KEY } from '@/src/background/assets/media-asset-store';
 import { createMediaAssetService } from '@/src/background/assets/media-asset-service';
 import { createNativeAssetServer } from '@/src/background/assets/native-asset-server';
 import { getSidePanelBehavior } from '@/src/lib/chrome/sidePanel';
@@ -234,6 +238,37 @@ export function initializeBackgroundShell() {
     detectionNotifier.configure(settings);
   }
 
+  const cleanupStoredJobData = (jobId: string) =>
+    cleanupJobStorage(jobId, {
+      indexedDb: fragmentStore,
+      metadata: bucketMetadataStore,
+      subtitles: subtitleStore,
+    }).then((result) => {
+      if (!result.ok) {
+        throw new Error(result.errors.join('; '));
+      }
+    });
+
+  const cleanupExtensionStorage = async () => {
+    const activeBucketIds = new Set<string>();
+
+    for (const job of jobStore.list()) {
+      activeBucketIds.add(job.id);
+      activeBucketIds.add(`${job.id}_audio`);
+      activeBucketIds.add(`${job.id}_subs`);
+    }
+
+    const orphanedFragmentBuckets = await fragmentStore.cleanupOrphanedBuckets(activeBucketIds);
+    const removedStorageKeys = [PREVIOUS_DETECTIONS_KEY, MEDIA_ASSET_STORAGE_KEY];
+    await chrome.storage.local.remove(removedStorageKeys);
+
+    return {
+      orphanedFragmentBuckets,
+      activeJobBuckets: activeBucketIds.size,
+      removedStorageKeys,
+    };
+  };
+
   const downloadController = createDownloadController({
     downloadFile: async (candidate, job) => {
       const probe = probeDirectMedia(candidate);
@@ -364,16 +399,7 @@ export function initializeBackgroundShell() {
             : undefined,
       }),
     enableNativeFeatures: false,
-    cleanupAfterSave: (jobId) =>
-      cleanupJobStorage(jobId, {
-        indexedDb: fragmentStore,
-        metadata: bucketMetadataStore,
-        subtitles: subtitleStore,
-      }).then((result) => {
-        if (!result.ok) {
-          throw new Error(result.errors.join('; '));
-        }
-      }),
+    cleanupAfterSave: cleanupStoredJobData,
   });
   const downloadQueue = createDownloadQueue({
     jobStore,
@@ -401,19 +427,20 @@ export function initializeBackgroundShell() {
   const notificationManager = createNotificationManager(chrome.runtime);
   const detectionNotifier = createDetectionNotifier({
     emit: ({ count, hostname }) => {
-      void chrome.runtime
-        .sendMessage({
-          type: 'SHOW_WARNING',
-          payload: {
-            text: `${count} new ${count === 1 ? 'stream' : 'streams'} detected on ${hostname}`,
-            warningType: 'info',
-            autoHideMs: 4500,
-          },
-        })
+      const sendMessage = chrome.runtime.sendMessage.bind(chrome.runtime);
+      void sendMessage({
+        type: 'SHOW_WARNING',
+        payload: {
+          text: `${count} new ${count === 1 ? 'stream' : 'streams'} detected on ${hostname}`,
+          warningType: 'info',
+          autoHideMs: 4500,
+        },
+      })
         .catch(() => undefined);
     },
     setBadge: (text) => {
-      chrome.action?.setBadgeText?.({ text }).catch?.(() => undefined);
+      const setBadgeText = chrome.action?.setBadgeText?.bind(chrome.action);
+      setBadgeText?.({ text }).catch?.(() => undefined);
     },
   });
   const runtimeRouter = createRuntimeRouter({
@@ -479,6 +506,8 @@ export function initializeBackgroundShell() {
         }),
     }),
     cancelDownload: (jobId) => downloadController.abort(jobId, { jobStore }),
+    cleanupJobStorage: cleanupStoredJobData,
+    cleanupExtensionStorage,
     recordDetection: (hostname, count) => detectionNotifier.recordDetection(hostname, count),
   });
   const autoScan = createAutoScanController({
