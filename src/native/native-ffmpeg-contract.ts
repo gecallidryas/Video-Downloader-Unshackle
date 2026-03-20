@@ -48,6 +48,7 @@ export interface NativeFfmpegJobPayload {
 export interface NativeFfmpegReadAssetBytesPayload {
   outputPath: string;
   maxBytes: number;
+  offset?: number;
 }
 
 export type NativeFfmpegInstallKind = 'dev' | 'per-user' | 'system';
@@ -144,7 +145,7 @@ export type NativeFfmpegResponse =
   | {
       type: 'ASSET_BYTES_RESULT';
       requestId: string;
-      payload: { outputPath: string; mimeType?: string; sizeBytes: number; base64: string };
+      payload: { outputPath: string; mimeType?: string; sizeBytes: number; base64: string; eof?: boolean };
     }
   | { type: 'CANCELLED'; requestId: string; payload: NativeFfmpegJobPayload }
   | { type: 'CLEANED_UP'; requestId: string; payload: NativeFfmpegJobPayload }
@@ -357,9 +358,10 @@ function isJobPayload(value: unknown): value is NativeFfmpegJobPayload {
 function isReadAssetBytesPayload(value: unknown): value is NativeFfmpegReadAssetBytesPayload {
   return (
     isRecord(value) &&
-    hasOnlyKeys(value, ['outputPath', 'maxBytes']) &&
+    hasOnlyKeys(value, ['outputPath', 'maxBytes', 'offset']) &&
     isString(value.outputPath) &&
-    isPositiveNumber(value.maxBytes)
+    isPositiveNumber(value.maxBytes) &&
+    (value.offset === undefined || isNumberInRange(value.offset, 0, Number.POSITIVE_INFINITY))
   );
 }
 
@@ -423,11 +425,12 @@ function isPreviewAssetResultPayload(value: unknown): boolean {
 function isAssetBytesPayload(value: unknown): boolean {
   return (
     isRecord(value) &&
-    hasOnlyKeys(value, ['outputPath', 'mimeType', 'sizeBytes', 'base64']) &&
+    hasOnlyKeys(value, ['outputPath', 'mimeType', 'sizeBytes', 'base64', 'eof']) &&
     isString(value.outputPath) &&
     isOptionalString(value.mimeType) &&
     isNumberInRange(value.sizeBytes, 0, Number.POSITIVE_INFINITY) &&
-    isString(value.base64)
+    isString(value.base64) &&
+    (value.eof === undefined || typeof value.eof === 'boolean')
   );
 }
 

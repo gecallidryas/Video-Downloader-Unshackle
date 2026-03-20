@@ -114,6 +114,69 @@ describe('native ffmpeg helper dispatcher', () => {
     });
   });
 
+  it('emits framed PROGRESS messages then resolves COMPLETED for EXPORT_MEDIA', async () => {
+    const runProcessJob = vi.fn(async (options: { jobId: string; onProgress?: (event: unknown) => void }) => {
+      options.onProgress?.({
+        type: 'PROGRESS',
+        payload: { jobId: options.jobId, progressPct: 40, phase: 'exporting', timeSec: 4 },
+      });
+      options.onProgress?.({
+        type: 'PROGRESS',
+        payload: { jobId: options.jobId, progressPct: 100, phase: 'completed' },
+      });
+      return {
+        jobId: options.jobId,
+        outputPath: `${dirs.outputsDir}\\clip.mp4`,
+        mimeType: 'video/mp4',
+        sizeBytes: 2048,
+      };
+    });
+    const emitted: unknown[] = [];
+
+    const response = await dispatchNativeRequest(
+      {
+        type: 'EXPORT_MEDIA',
+        requestId: 'req-progress',
+        payload: {
+          jobId: 'job-progress',
+          inputUrl: 'https://media.example.test/video.mp4',
+          protocol: 'direct',
+          outputName: 'clip.mp4',
+          outputKind: 'mp4',
+        },
+      },
+      {
+        checkExecutable: vi.fn().mockResolvedValue(true),
+        ensureOutputDirs: vi.fn().mockResolvedValue(dirs),
+        runProcessJob,
+      },
+      (message) => emitted.push(message),
+    );
+
+    expect(emitted).toEqual([
+      {
+        type: 'PROGRESS',
+        requestId: 'req-progress',
+        payload: { jobId: 'job-progress', progressPct: 40, phase: 'exporting', timeSec: 4 },
+      },
+      {
+        type: 'PROGRESS',
+        requestId: 'req-progress',
+        payload: { jobId: 'job-progress', progressPct: 100, phase: 'completed' },
+      },
+    ]);
+    expect(response).toEqual({
+      type: 'COMPLETED',
+      requestId: 'req-progress',
+      payload: {
+        jobId: 'job-progress',
+        outputPath: `${dirs.outputsDir}\\clip.mp4`,
+        mimeType: 'video/mp4',
+        sizeBytes: 2048,
+      },
+    });
+  });
+
   it('dispatches EXTRACT_THUMBNAIL to the thumbs directory', async () => {
     const runProcessJob = vi.fn().mockResolvedValue({
       jobId: 'thumb-candidate-1',
@@ -214,6 +277,31 @@ describe('native ffmpeg helper dispatcher', () => {
         sizeBytes: 10,
         base64: 'd2VibS1ieXRlcw==',
       },
+    });
+  });
+
+  it('dispatches a ranged READ_ASSET_BYTES slice with an eof flag past the cap', async () => {
+    const readAsset = vi.fn().mockResolvedValue(Buffer.from('0123456789'));
+    const outputPath = `${dirs.previewsDir}\\big-output.mp4`;
+
+    const first = await dispatchNativeRequest(
+      { type: 'READ_ASSET_BYTES', requestId: 'r1', payload: { outputPath, maxBytes: 4, offset: 0 } },
+      { readAsset },
+    );
+    const second = await dispatchNativeRequest(
+      { type: 'READ_ASSET_BYTES', requestId: 'r2', payload: { outputPath, maxBytes: 4, offset: 8 } },
+      { readAsset },
+    );
+
+    expect(first).toEqual({
+      type: 'ASSET_BYTES_RESULT',
+      requestId: 'r1',
+      payload: { outputPath, sizeBytes: 4, base64: Buffer.from('0123').toString('base64'), eof: false },
+    });
+    expect(second).toEqual({
+      type: 'ASSET_BYTES_RESULT',
+      requestId: 'r2',
+      payload: { outputPath, sizeBytes: 2, base64: Buffer.from('89').toString('base64'), eof: true },
     });
   });
 

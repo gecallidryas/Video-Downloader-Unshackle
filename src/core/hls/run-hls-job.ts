@@ -7,7 +7,9 @@ import type {
 import {
   scheduleSegments,
   type FetchScheduledSegment,
+  type SegmentSchedulerStorage,
 } from '@/src/core/download/segment-scheduler';
+import { createIndexedDbFragmentStore } from '@/src/core/storage/indexeddb-fragment-store';
 import type { SegmentProgressCallback } from '@/src/core/download/progress-events';
 import type { DefaultQualityPolicy } from '@/src/background/settings/settings-store';
 import { createLiveHlsTelemetry } from './live-hls-telemetry';
@@ -50,6 +52,7 @@ export interface RunHlsJobInput {
   maxConcurrentPerHost?: number;
   segmentTimeoutMs?: number;
   qualityPolicy?: DefaultQualityPolicy;
+  fragmentStore?: SegmentSchedulerStorage;
   onPlan?: (plan: SegmentPlan) => void | Promise<void>;
   onProgress?: SegmentProgressCallback;
   onSegmentExport?: HlsSegmentExportCallback;
@@ -129,9 +132,11 @@ export async function runHlsJob(input: RunHlsJobInput): Promise<JobOutput> {
     });
   }
 
+  const fragmentStore = input.fragmentStore ?? createIndexedDbFragmentStore();
   const parts = await scheduleSegments({
     jobId: input.job.id,
     segments: plan.segments,
+    storage: fragmentStore,
     concurrency: input.concurrency ?? 1,
     maxConcurrentPerHost: input.maxConcurrentPerHost,
     segmentTimeoutMs: input.segmentTimeoutMs,

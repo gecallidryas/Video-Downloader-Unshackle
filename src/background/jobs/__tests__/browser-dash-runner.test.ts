@@ -1,6 +1,11 @@
 import { describe, expect, test, vi } from 'vitest';
-import type { DownloadJob, MediaCandidate } from '@/video_downloader_types_skeleton';
+import type {
+  DownloadJob,
+  MediaCandidate,
+  SegmentPlan,
+} from '@/video_downloader_types_skeleton';
 import * as segmentScheduler from '@/src/core/download/segment-scheduler';
+import * as runDashJobModule from '@/src/core/dash/run-dash-job';
 import { parseMpd } from '@/src/core/dash/parse-mpd';
 import { runBrowserDashExportJob } from '../browser-dash-runner';
 
@@ -203,6 +208,99 @@ describe('browser DASH export runner', () => {
       }),
     );
     schedulerSpy.mockRestore();
+  });
+
+  test('refuses multi-track DASH plans instead of emitting an undemuxable bin', async () => {
+    const manifest = parseMpd({
+      manifestUrl: 'https://cdn.example.com/dash/manifest.mpd',
+      content: [
+        '<MPD mediaPresentationDuration="PT4S">',
+        '<Period><AdaptationSet contentType="video"><Representation id="v1">',
+        '<BaseURL>video.mp4</BaseURL>',
+        '</Representation></AdaptationSet></Period>',
+        '</MPD>',
+      ].join(''),
+    });
+    const multiTrackPlan: SegmentPlan = {
+      jobId: 'job-dash-1',
+      candidateId: 'candidate-dash-1',
+      protocol: 'dash',
+      variantId: 'v1',
+      selectedAudioTrackIds: [],
+      selectedSubtitleTrackIds: [],
+      segments: [
+        { id: 'v-init', index: 0, url: 'https://cdn.example.com/v/init.mp4', initSegment: true, trackType: 'video' },
+        { id: 'v-1', index: 1, url: 'https://cdn.example.com/v/1.m4s', trackType: 'video' },
+        { id: 'a-init', index: 2, url: 'https://cdn.example.com/a/init.mp4', initSegment: true, trackType: 'audio' },
+        { id: 'a-1', index: 3, url: 'https://cdn.example.com/a/1.m4s', trackType: 'audio' },
+      ],
+    };
+    const runDashJobSpy = vi
+      .spyOn(runDashJobModule, 'runDashJob')
+      .mockImplementation(async (jobInput) =>
+        jobInput.writeOutput(multiTrackPlan, [new Uint8Array([1]), new Uint8Array([2])]),
+      );
+    const download = vi.fn();
+
+    await expect(
+      runBrowserDashExportJob({
+        candidate: candidate(),
+        job: job(),
+        manifest,
+        fetchBytes: vi.fn().mockResolvedValue(new Uint8Array([9])),
+        download,
+      }),
+    ).rejects.toThrow(/cannot mux separate audio and video tracks/i);
+
+    expect(download).not.toHaveBeenCalled();
+    runDashJobSpy.mockRestore();
+  });
+
+  test('emits a single-track plan through the normal raw export path', async () => {
+    const manifest = parseMpd({
+      manifestUrl: 'https://cdn.example.com/dash/manifest.mpd',
+      content: [
+        '<MPD mediaPresentationDuration="PT4S">',
+        '<Period><AdaptationSet contentType="video"><Representation id="v1">',
+        '<BaseURL>video.mp4</BaseURL>',
+        '</Representation></AdaptationSet></Period>',
+        '</MPD>',
+      ].join(''),
+    });
+    const singleTrackPlan: SegmentPlan = {
+      jobId: 'job-dash-1',
+      candidateId: 'candidate-dash-1',
+      protocol: 'dash',
+      variantId: 'v1',
+      selectedAudioTrackIds: [],
+      selectedSubtitleTrackIds: [],
+      segments: [
+        { id: 'v-init', index: 0, url: 'https://cdn.example.com/v/init.mp4', initSegment: true, trackType: 'video' },
+        { id: 'v-1', index: 1, url: 'https://cdn.example.com/v/seg-1.m4s', trackType: 'video' },
+      ],
+    };
+    const runDashJobSpy = vi
+      .spyOn(runDashJobModule, 'runDashJob')
+      .mockImplementation(async (jobInput) =>
+        jobInput.writeOutput(singleTrackPlan, [new Uint8Array([1]), new Uint8Array([2])]),
+      );
+
+    await expect(
+      runBrowserDashExportJob({
+        candidate: candidate(),
+        job: job(),
+        manifest,
+        fetchBytes: vi.fn().mockResolvedValue(new Uint8Array([9])),
+        createObjectUrl: vi.fn().mockReturnValue('blob:single-track'),
+        revokeObjectUrl: vi.fn(),
+        download: vi.fn().mockResolvedValue(94),
+      }),
+    ).resolves.toMatchObject({
+      fileName: 'dash-movie.m4s',
+      mimeType: 'video/iso.segment',
+    });
+
+    runDashJobSpy.mockRestore();
   });
 
   test('rejects protected DASH before fetching unless explicitly allowed', async () => {

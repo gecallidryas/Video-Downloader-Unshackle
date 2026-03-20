@@ -2,18 +2,8 @@ import { describe, expect, test, vi } from 'vitest';
 import { createOffscreenCommand } from '@/src/shared/contracts/offscreen';
 import { createBrowserHlsExportHost } from '../export-host';
 
-function toBase64(bytes: Uint8Array): string {
-  let binary = '';
-
-  for (const byte of bytes) {
-    binary += String.fromCharCode(byte);
-  }
-
-  return btoa(binary);
-}
-
 describe('browser HLS offscreen export host', () => {
-  test('fails failed MP4 transmux instead of returning raw TS as a download', async () => {
+  test('fails failed MP4 transmux with structured diagnostics instead of delivering a file', async () => {
     const download = vi.fn().mockResolvedValue(42);
     const host = createBrowserHlsExportHost({
       createObjectUrl: vi.fn().mockReturnValue('blob:raw-ts'),
@@ -51,7 +41,7 @@ describe('browser HLS offscreen export host', () => {
           index: 1,
           url: 'https://cdn.example.com/seg-1.ts',
         },
-        bytesBase64: toBase64(new TextEncoder().encode('not transport stream')),
+        bytes: new TextEncoder().encode('not transport stream'),
         isInitSegment: false,
       }),
     );
@@ -78,11 +68,13 @@ describe('browser HLS offscreen export host', () => {
           hasTsSyncByteAt0: false,
         },
       ],
-      error: expect.stringContaining('downloads are restricted to playable MP4 output'),
+      error: expect.stringContaining('restricted to playable MP4 output'),
     });
+
+    expect(download).not.toHaveBeenCalled();
   });
 
-  test('keeps explicit MP4 jobs failed while preserving raw recovery when fallback is disabled', async () => {
+  test('records a mux failure on append and fails finalize without writing a download', async () => {
     const host = createBrowserHlsExportHost({
       createObjectUrl: vi.fn().mockReturnValue('blob:raw-ts'),
       download: vi.fn().mockResolvedValue(42),
@@ -108,7 +100,7 @@ describe('browser HLS offscreen export host', () => {
             index: 1,
             url: 'https://cdn.example.com/seg-1.ts',
           },
-          bytesBase64: toBase64(new TextEncoder().encode('not transport stream')),
+          bytes: new TextEncoder().encode('not transport stream'),
           isInitSegment: false,
         }),
       ),
@@ -131,7 +123,58 @@ describe('browser HLS offscreen export host', () => {
       ),
     ).resolves.toMatchObject({
       ok: false,
-      error: expect.stringContaining('downloads are restricted to playable MP4 output'),
+      error: expect.stringContaining('restricted to playable MP4 output'),
+    });
+  });
+
+  test('transmuxes real MPEG-TS into a structurally valid MP4 download', async () => {
+    const { readFileSync } = await import('node:fs');
+    const { resolve } = await import('node:path');
+    const segment = new Uint8Array(
+      readFileSync(
+        resolve(__dirname, '../../../node_modules/mux.js/test/segments/test-segment.ts'),
+      ),
+    );
+    const download = vi.fn().mockResolvedValue(7);
+    const host = createBrowserHlsExportHost({
+      createObjectUrl: vi.fn().mockReturnValue('blob:mp4'),
+      revokeObjectUrl: vi.fn(),
+      download,
+    });
+
+    await host.handleCommand(
+      createOffscreenCommand('START_BROWSER_HLS_EXPORT', {
+        jobId: 'job-ok',
+        route: 'hls-ts-streaming-mp4',
+        outputName: 'video.mp4',
+        mimeType: 'video/mp4',
+        sinkKind: 'blob-memory',
+        rawFallbackAllowed: false,
+      }),
+    );
+
+    await host.handleCommand(
+      createOffscreenCommand('APPEND_BROWSER_HLS_SEGMENT', {
+        jobId: 'job-ok',
+        segment: { id: 'seg-1', index: 0, url: 'https://cdn.example.com/seg-1.ts' },
+        bytes: segment,
+        isInitSegment: false,
+      }),
+    );
+
+    await expect(
+      host.handleCommand(
+        createOffscreenCommand('FINALIZE_BROWSER_HLS_EXPORT', {
+          jobId: 'job-ok',
+        }),
+      ),
+    ).resolves.toMatchObject({
+      ok: true,
+      command: 'FINALIZE_BROWSER_HLS_EXPORT',
+      output: {
+        fileName: 'video.mp4',
+        mimeType: 'video/mp4',
+      },
     });
   });
 });

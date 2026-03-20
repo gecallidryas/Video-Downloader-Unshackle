@@ -15,6 +15,13 @@ import {
   type SubtitleFormat,
 } from '@/src/core/naming/subtitle-filename';
 import type { SubtitleStore } from '@/src/core/storage/subtitle-store';
+import type { ReadFullNativeOutputInput } from '@/src/background/assets/native-asset-server';
+
+export type DeliverNativeOutput = (input: {
+  blob: Blob;
+  fileName: string;
+  mimeType: string;
+}) => Promise<number | undefined>;
 
 export interface NativeExportRunnerInput {
   candidate: MediaCandidate;
@@ -23,7 +30,19 @@ export interface NativeExportRunnerInput {
   jobStore?: JobStore;
   subtitleStore?: SubtitleStore;
   fetchText?: (url: string, init?: RequestInit) => Promise<string>;
+  readFullOutput?: (input: ReadFullNativeOutputInput) => Promise<Blob>;
+  deliverOutput?: DeliverNativeOutput;
 }
+
+const PROGRESS_PHASE_MAP: Record<string, DownloadJob['phase']> = {
+  preparing: 'preparing',
+  probing: 'preparing',
+  fetching: 'fetching',
+  transmuxing: 'transmuxing',
+  exporting: 'exporting',
+  extracting: 'exporting',
+  completed: 'exporting',
+};
 
 function isProtected(candidate: MediaCandidate): boolean {
   return (
@@ -197,6 +216,38 @@ async function preStoreSubtitles(input: {
   return sidecarOutputs;
 }
 
+async function defaultDeliverOutput(input: {
+  blob: Blob;
+  fileName: string;
+  mimeType: string;
+}): Promise<number | undefined> {
+  const createObjectUrl =
+    typeof URL !== 'undefined' && typeof URL.createObjectURL === 'function'
+      ? URL.createObjectURL.bind(URL)
+      : undefined;
+  const revokeObjectUrl =
+    typeof URL !== 'undefined' && typeof URL.revokeObjectURL === 'function'
+      ? URL.revokeObjectURL.bind(URL)
+      : undefined;
+
+  if (!createObjectUrl || typeof chrome === 'undefined' || !chrome.downloads?.download) {
+    return undefined;
+  }
+
+  const url = createObjectUrl(input.blob);
+  try {
+    return await chrome.downloads.download({
+      url,
+      filename: input.fileName,
+      saveAs: false,
+    });
+  } finally {
+    if (revokeObjectUrl) {
+      setTimeout(() => revokeObjectUrl(url), 60_000);
+    }
+  }
+}
+
 export async function runNativeExportJob({
   candidate,
   job,
@@ -204,6 +255,8 @@ export async function runNativeExportJob({
   jobStore,
   subtitleStore,
   fetchText,
+  readFullOutput,
+  deliverOutput,
 }: NativeExportRunnerInput): Promise<JobOutput> {
   if (isProtected(candidate)) {
     throw new Error('Protected media cannot be exported by the native helper.');
@@ -220,22 +273,74 @@ export async function runNativeExportJob({
     subtitleStore,
     fetchText,
   });
-  const result = await nativeClient.exportMedia({
-    jobId: job.id,
-    inputUrl: inputUrlFor(candidate),
-    protocol: nativeProtocol(candidate),
-    outputName,
-    outputKind,
-    ...(job.selection.trim ? { trim: job.selection.trim } : {}),
+  const result = await nativeClient.exportMedia(
+    {
+      jobId: job.id,
+      inputUrl: inputUrlFor(candidate),
+      protocol: nativeProtocol(candidate),
+      outputName,
+      outputKind,
+      ...(job.selection.trim ? { trim: job.selection.trim } : {}),
+    },
+    {
+      onProgress: (progress) => {
+        jobStore?.update(job.id, {
+          phase: PROGRESS_PHASE_MAP[progress.phase] ?? 'exporting',
+          progressPct: progress.progressPct,
+        });
+      },
+    },
+  );
+
+  jobStore?.update(job.id, { phase: 'exporting', progressPct: 90 });
+
+  const fileName = fileNameFromPath(result.outputPath);
+  const mimeType = result.mimeType ?? candidate.mimeType ?? 'application/octet-stream';
+
+  const deliveredId = await deliverNativeOutput({
+    outputPath: result.outputPath,
+    fileName,
+    mimeType,
+    ...(result.sizeBytes !== undefined ? { totalBytes: result.sizeBytes } : {}),
+    readFullOutput,
+    deliverOutput: deliverOutput ?? defaultDeliverOutput,
   });
 
-  jobStore?.update(job.id, { phase: 'exporting', progressPct: 15 });
-
   return {
-    fileName: fileNameFromPath(result.outputPath),
-    mimeType: result.mimeType ?? candidate.mimeType ?? 'application/octet-stream',
+    fileName,
+    mimeType,
     outputUrl: result.outputPath,
+    ...(deliveredId !== undefined ? { downloadId: deliveredId } : {}),
     ...(result.sizeBytes !== undefined ? { sizeBytes: result.sizeBytes } : {}),
     ...(sidecarOutputs.length > 0 ? { sidecarOutputs } : {}),
   };
+}
+
+async function deliverNativeOutput(input: {
+  outputPath: string;
+  fileName: string;
+  mimeType: string;
+  totalBytes?: number;
+  readFullOutput?: (input: ReadFullNativeOutputInput) => Promise<Blob>;
+  deliverOutput: DeliverNativeOutput;
+}): Promise<number | undefined> {
+  if (!input.readFullOutput) {
+    // Chunked read of the host-owned output is not wired in this runtime; the
+    // file stays in the helper's private outputs dir and cannot reach the user.
+    throw new Error(
+      'Native output delivery is unavailable: chunked output reads are not configured.',
+    );
+  }
+
+  const blob = await input.readFullOutput({
+    outputPath: input.outputPath,
+    mimeType: input.mimeType,
+    ...(input.totalBytes !== undefined ? { totalBytes: input.totalBytes } : {}),
+  });
+
+  return input.deliverOutput({
+    blob,
+    fileName: input.fileName,
+    mimeType: input.mimeType,
+  });
 }

@@ -202,6 +202,71 @@ describe('browser HLS export route resolver', () => {
     });
   });
 
+  test('refuses encrypted TS that has neither a probe nor mux-friendly codec hints', () => {
+    const content = [
+      '#EXTM3U',
+      '#EXT-X-KEY:METHOD=AES-128,URI="https://cdn.example.com/key.bin"',
+      '#EXTINF:4,',
+      'segment.ts',
+      '#EXT-X-ENDLIST',
+    ].join('\n');
+
+    expect(
+      resolve({
+        content,
+        candidate: candidate({ codecs: [] }),
+      }),
+    ).toMatchObject({
+      route: 'unsupported-browser-only',
+      outputExtension: 'bin',
+      rawFallbackAllowed: false,
+    });
+  });
+
+  test('routes AES-128 TS with mux-friendly codec hints even without a probe', () => {
+    const content = [
+      '#EXTM3U',
+      '#EXT-X-KEY:METHOD=AES-128,URI="https://cdn.example.com/key.bin"',
+      '#EXTINF:4,',
+      'segment.ts',
+      '#EXT-X-ENDLIST',
+    ].join('\n');
+
+    expect(
+      resolve({
+        content,
+        candidate: candidate({
+          codecs: ['avc1.640028', 'mp4a.40.2'],
+          protection: { kind: 'aes-128' },
+        }),
+      }),
+    ).toMatchObject({
+      route: 'hls-ts-streaming-mp4',
+      outputExtension: 'mp4',
+    });
+  });
+
+  test('routes encrypted TS only after a successful mux-safe probe', () => {
+    const content = [
+      '#EXTM3U',
+      '#EXT-X-KEY:METHOD=AES-128,URI="https://cdn.example.com/key.bin"',
+      '#EXTINF:4,',
+      'segment.ts',
+      '#EXT-X-ENDLIST',
+    ].join('\n');
+
+    expect(
+      resolve({
+        content,
+        candidate: candidate({ codecs: ['avc1.640028', 'mp4a.40.2'] }),
+        segmentProbe: compatibleTsProbe,
+      }),
+    ).toMatchObject({
+      route: 'hls-ts-streaming-mp4',
+      outputExtension: 'mp4',
+    });
+  });
+
   test('keeps fMP4 HLS out of the MPEG-TS mux.js path', () => {
     expect(
       resolve({

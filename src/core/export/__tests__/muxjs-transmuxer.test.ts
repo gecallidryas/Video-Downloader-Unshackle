@@ -3,9 +3,10 @@ import { resolve } from 'node:path';
 import { describe, expect, test } from 'vitest';
 import {
   createMuxjsStreamingTransmuxSession,
-  type MuxjsSegmentTimingInfo,
   type MuxjsTransmuxer,
+  type MuxjsTransmuxerOptions,
   transmuxTsToMp4,
+  validateMp4Structure,
 } from '../muxjs-transmuxer';
 
 type MuxjsDataCallback = (data: { initSegment?: Uint8Array; data?: Uint8Array }) => void;
@@ -82,10 +83,16 @@ describe('mux.js TS transmuxer', () => {
     expect(countAscii('moov')).toBe(1);
   });
 
-  test('rebases each streamed HLS media segment onto a sequential decode timeline', async () => {
+  test('reuses a single transmuxer across segments and lets mux.js own decode-time continuity', async () => {
     const chunks: Uint8Array[] = [];
     const baseDecodeTimes: number[] = [];
-    const createTransmuxer = async (): Promise<MuxjsTransmuxer> => {
+    let constructionCount = 0;
+    let constructedWith: MuxjsTransmuxerOptions | undefined;
+    const createTransmuxer = async (
+      options?: MuxjsTransmuxerOptions,
+    ): Promise<MuxjsTransmuxer> => {
+      constructionCount += 1;
+      constructedWith = options;
       const dataCallbacks: MuxjsDataCallback[] = [];
 
       return {
@@ -123,7 +130,14 @@ describe('mux.js TS transmuxer', () => {
     await session.append(tsPacket, { durationSec: 10 });
     await session.finalize();
 
-    expect(baseDecodeTimes).toEqual([0, 900_000]);
+    expect(constructionCount).toBe(1);
+    expect(constructedWith).toMatchObject({
+      keepOriginalTimestamps: false,
+      remux: true,
+      baseMediaDecodeTime: 0,
+    });
+    // The session must not hand-manage the decode timeline; mux.js owns it.
+    expect(baseDecodeTimes).toEqual([]);
     expect(chunks).toEqual([
       new Uint8Array([0x00, 0x00, 0x00, 0x08, 0x66, 0x74, 0x79, 0x70]),
       new Uint8Array([0x01]),
@@ -131,10 +145,9 @@ describe('mux.js TS transmuxer', () => {
     ]);
   });
 
-  test('uses mux.js timing events for the next decode time when playlist duration is unavailable', async () => {
-    const baseDecodeTimes: number[] = [];
-    const createTransmuxer = async (): Promise<MuxjsTransmuxer> => {
-      const timingCallbacks: Array<(timing: MuxjsSegmentTimingInfo) => void> = [];
+  test('exposes the produced init segment for downstream MP4 validation', async () => {
+    const initBytes = new Uint8Array([0x00, 0x00, 0x00, 0x08, 0x66, 0x74, 0x79, 0x70, 0x99]);
+    const transmuxer: MuxjsTransmuxer = (() => {
       const dataCallbacks: MuxjsDataCallback[] = [];
 
       return {
@@ -142,45 +155,27 @@ describe('mux.js TS transmuxer', () => {
           if (event === 'data') {
             dataCallbacks.push(callback as MuxjsDataCallback);
           }
-          if (event === 'videoSegmentTimingInfo') {
-            timingCallbacks.push(callback as (timing: MuxjsSegmentTimingInfo) => void);
-          }
         },
         push() {
           return undefined;
         },
         flush() {
-          timingCallbacks.forEach((callback) =>
-            callback({
-              start: { dts: 13 * 60 * 60 * 90_000, pts: 13 * 60 * 60 * 90_000 },
-              end: { dts: 13 * 60 * 60 * 90_000 + 450_000, pts: 13 * 60 * 60 * 90_000 + 450_000 },
-              baseMediaDecodeTime: 0,
-            }),
-          );
           dataCallbacks.forEach((callback) =>
-            callback({
-              initSegment: new Uint8Array([0x00, 0x00, 0x00, 0x08, 0x66, 0x74, 0x79, 0x70]),
-              data: new Uint8Array([0x01]),
-            }),
+            callback({ initSegment: initBytes, data: new Uint8Array([0x01]) }),
           );
-        },
-        setBaseMediaDecodeTime(time) {
-          baseDecodeTimes.push(time);
         },
       };
-    };
+    })();
     const tsPacket = new Uint8Array(188);
     tsPacket[0] = 0x47;
-    const session = await createMuxjsStreamingTransmuxSession(
-      async () => undefined,
-      { createTransmuxer },
-    );
+    const session = await createMuxjsStreamingTransmuxSession(async () => undefined, {
+      createTransmuxer: async () => transmuxer,
+    });
 
-    await session.append(tsPacket);
     await session.append(tsPacket);
     await session.finalize();
 
-    expect(baseDecodeTimes).toEqual([0, 450_000]);
+    expect(session.initSegment).toEqual(initBytes);
   });
 
 
@@ -281,5 +276,100 @@ describe('mux.js TS transmuxer', () => {
     await expect(
       transmuxTsToMp4({ segments: [emptyPacket] }),
     ).rejects.toThrow('mux.js produced no MP4 output.');
+  });
+});
+
+describe('validateMp4Structure', () => {
+  function be32(value: number): number[] {
+    return [
+      (value >>> 24) & 0xff,
+      (value >>> 16) & 0xff,
+      (value >>> 8) & 0xff,
+      value & 0xff,
+    ];
+  }
+
+  function box(type: string, payload: number[]): number[] {
+    const size = 8 + payload.length;
+
+    return [
+      ...be32(size),
+      type.charCodeAt(0),
+      type.charCodeAt(1),
+      type.charCodeAt(2),
+      type.charCodeAt(3),
+      ...payload,
+    ];
+  }
+
+  function initSegment(): Uint8Array {
+    // mux.js always writes the fragmented-MP4 mvhd duration sentinel 0xffffffff,
+    // so the init segment itself must never be flagged on duration alone.
+    const mvhd = box('mvhd', [
+      0x00, 0x00, 0x00, 0x00, // version + flags
+      ...be32(0), // creation
+      ...be32(0), // modification
+      ...be32(90_000), // timescale
+      ...be32(0xffff_ffff), // duration sentinel
+    ]);
+
+    return new Uint8Array([
+      ...box('ftyp', [0x69, 0x73, 0x6f, 0x6d]),
+      ...box('moov', mvhd),
+    ]);
+  }
+
+  function fragmentWithTfdt(version: 0 | 1, decodeTimeTicks: number): Uint8Array {
+    const tfdtPayload =
+      version === 1
+        ? [
+            0x01, 0x00, 0x00, 0x00,
+            ...be32(Math.floor(decodeTimeTicks / 0x1_0000_0000)),
+            ...be32(decodeTimeTicks % 0x1_0000_0000),
+          ]
+        : [0x00, 0x00, 0x00, 0x00, ...be32(decodeTimeTicks)];
+    const traf = box('traf', box('tfdt', tfdtPayload));
+    const moof = box('moof', traf);
+
+    return new Uint8Array([...moof, ...box('mdat', [0x00])]);
+  }
+
+  test('flags MP4 output missing ftyp or moov as invalid', () => {
+    const onlyFtyp = new Uint8Array(box('ftyp', [0x00, 0x00, 0x00, 0x00]));
+
+    expect(validateMp4Structure(onlyFtyp)).toMatchObject({
+      valid: false,
+      hasFtyp: true,
+      hasMoov: false,
+    });
+  });
+
+  test('accepts a fragmented MP4 with a sane first decode time', () => {
+    expect(
+      validateMp4Structure(initSegment(), fragmentWithTfdt(0, 0)),
+    ).toMatchObject({
+      valid: true,
+      hasFtyp: true,
+      hasMoov: true,
+      firstDecodeTimeTicks: 0,
+    });
+  });
+
+  test('accepts the init segment alone (mvhd sentinel duration is not flagged)', () => {
+    expect(validateMp4Structure(initSegment())).toMatchObject({
+      valid: true,
+      hasFtyp: true,
+      hasMoov: true,
+    });
+  });
+
+  test('rejects a fragment whose first tfdt decode time is at the 32-bit wrap boundary', () => {
+    expect(
+      validateMp4Structure(initSegment(), fragmentWithTfdt(0, 0xffff_ffff)),
+    ).toMatchObject({
+      valid: false,
+      hasFtyp: true,
+      hasMoov: true,
+    });
   });
 });

@@ -199,6 +199,7 @@ describe('media asset service', () => {
     const nativeAssetServer = {
       serve: vi.fn().mockResolvedValue('blob:hover'),
       revoke: vi.fn(),
+      readFullOutput: vi.fn(),
     };
     const service = createMediaAssetService({
       store: createMemoryMediaAssetStore(),

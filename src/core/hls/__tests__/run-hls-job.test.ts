@@ -3,6 +3,7 @@ import mediaPlaylist from '@/src/fixtures/hls/media.m3u8?raw';
 import protectedPlaylist from '@/src/fixtures/hls/protected.m3u8?raw';
 import type { DownloadJob } from '@/video_downloader_types_skeleton';
 import * as segmentScheduler from '@/src/core/download/segment-scheduler';
+import { createIndexedDbFragmentStore } from '@/src/core/storage/indexeddb-fragment-store';
 import { parseHlsManifest } from '../parse-hls-manifest';
 import { planHlsSegments } from '../plan-hls-segments';
 import { runHlsJob } from '../run-hls-job';
@@ -427,6 +428,72 @@ describe('HLS planning and execution', () => {
       }),
     );
     spy.mockRestore();
+  });
+
+  test('wires a fragment storage backend into scheduleSegments on a normal run', async () => {
+    const manifest = parseHlsManifest({
+      manifestUrl: 'https://cdn.example.com/hls/video/720p/prog.m3u8',
+      content: mediaPlaylist,
+    });
+    const spy = vi.spyOn(segmentScheduler, 'scheduleSegments').mockResolvedValue([
+      new Uint8Array([0]),
+      new Uint8Array([1]),
+      new Uint8Array([2]),
+      new Uint8Array([3]),
+    ]);
+
+    await runHlsJob({
+      job: buildJob(),
+      manifest,
+      fetchSegment: vi.fn(),
+      writeOutput: vi.fn().mockResolvedValue({
+        fileName: 'assembled-hls.mp4',
+        mimeType: 'video/mp4',
+      }),
+    });
+
+    const passedStorage = spy.mock.calls[0]?.[0]?.storage;
+    expect(passedStorage).toBeDefined();
+    expect(typeof passedStorage?.createBucket).toBe('function');
+    expect(typeof passedStorage?.listFragmentIndices).toBe('function');
+    expect(typeof passedStorage?.writeFragment).toBe('function');
+    spy.mockRestore();
+  });
+
+  test('persists fragments and skips already-stored fragments on restart', async () => {
+    const manifest = parseHlsManifest({
+      manifestUrl: 'https://cdn.example.com/hls/video/720p/prog.m3u8',
+      content: mediaPlaylist,
+    });
+    const fragmentStore = createIndexedDbFragmentStore({ mode: 'memory' });
+    const writeOutput = vi.fn(async (_plan, parts: Uint8Array[]) => ({
+      fileName: 'assembled-hls.mp4',
+      mimeType: 'video/mp4',
+      sizeBytes: parts.length,
+    }));
+
+    const firstFetch = vi.fn(async (segment) => new Uint8Array([segment.index]));
+    await runHlsJob({
+      job: buildJob(),
+      manifest,
+      fragmentStore,
+      fetchSegment: firstFetch,
+      writeOutput,
+    });
+
+    expect(firstFetch).toHaveBeenCalledTimes(4);
+    expect(await fragmentStore.listFragmentIndices('job-hls-1')).toEqual([0, 1, 2, 3]);
+
+    const secondFetch = vi.fn(async (segment) => new Uint8Array([segment.index]));
+    await runHlsJob({
+      job: buildJob(),
+      manifest,
+      fragmentStore,
+      fetchSegment: secondFetch,
+      writeOutput,
+    });
+
+    expect(secondFetch).not.toHaveBeenCalled();
   });
 
   test('rejects protected HLS manifests before segment fetching', async () => {

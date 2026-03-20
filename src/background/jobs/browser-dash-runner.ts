@@ -82,21 +82,28 @@ function urlPathExtension(url: string): string | undefined {
   }
 }
 
-function isConfidentSingleTrackM4s(plan: SegmentPlan): boolean {
-  const trackTypes = new Set(
+function presentTrackTypes(plan: SegmentPlan): Set<NonNullable<SegmentDescriptor['trackType']>> {
+  return new Set(
     plan.segments
       .map((segment: SegmentDescriptor) => segment.trackType)
       .filter((trackType): trackType is NonNullable<SegmentDescriptor['trackType']> =>
         Boolean(trackType),
       ),
   );
+}
+
+function isMultiTrackPlan(plan: SegmentPlan): boolean {
+  return presentTrackTypes(plan).size > 1;
+}
+
+function isConfidentSingleTrackM4s(plan: SegmentPlan): boolean {
   const hasInit = plan.segments.some((segment) => segment.initSegment);
   const mediaSegments = plan.segments.filter((segment) => !segment.initSegment);
 
   return (
     hasInit &&
     mediaSegments.length > 0 &&
-    trackTypes.size <= 1 &&
+    !isMultiTrackPlan(plan) &&
     mediaSegments.every((segment) => urlPathExtension(segment.url) === 'm4s')
   );
 }
@@ -135,6 +142,12 @@ export async function runBrowserDashExportJob(
     fetchSegment: (segment, _plan, request) =>
       fetchBytes(segment.url, requestInitFromScheduler(request)),
     writeOutput: async (plan, parts) => {
+      if (isMultiTrackPlan(plan)) {
+        throw new Error(
+          'Browser-only DASH export cannot mux separate audio and video tracks into a playable file; enable native FFmpeg export for this multi-track stream.',
+        );
+      }
+
       const outputKind = dashRawOutputKind(plan);
       const blob = joinSegmentsToBlob(parts, outputKind.mimeType);
 

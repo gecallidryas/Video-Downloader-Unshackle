@@ -25,7 +25,7 @@ export type NativeHelperRequest =
   | { type: 'EXPORT_MEDIA'; requestId: string; payload: FfmpegExportPayload }
   | { type: 'EXTRACT_THUMBNAIL'; requestId: string; payload: FfmpegThumbnailPayload }
   | { type: 'EXTRACT_PREVIEW_CLIP'; requestId: string; payload: FfmpegPreviewClipPayload }
-  | { type: 'READ_ASSET_BYTES'; requestId: string; payload: { outputPath: string; maxBytes: number } }
+  | { type: 'READ_ASSET_BYTES'; requestId: string; payload: { outputPath: string; maxBytes: number; offset?: number } }
   | { type: 'CANCEL_JOB'; requestId: string; payload: { jobId: string } }
   | { type: 'CLEANUP_JOB'; requestId: string; payload: { jobId: string } };
 
@@ -42,6 +42,16 @@ export type NativeHelperResponse =
       };
     }
   | { type: 'PROBE_RESULT'; requestId: string; payload: ProbeResult }
+  | {
+      type: 'PROGRESS';
+      requestId: string;
+      payload: {
+        jobId: string;
+        progressPct: number;
+        phase: 'exporting' | 'completed';
+        timeSec?: number;
+      };
+    }
   | { type: 'COMPLETED'; requestId: string; payload: ProcessJobResult }
   | { type: 'THUMBNAIL_RESULT'; requestId: string; payload: AssetResultPayload }
   | { type: 'PREVIEW_CLIP_RESULT'; requestId: string; payload: PreviewAssetResultPayload }
@@ -76,6 +86,7 @@ type AssetBytesPayload = {
   outputPath: string;
   sizeBytes: number;
   base64: string;
+  eof?: boolean;
 };
 
 export type DispatcherDeps = {
@@ -87,9 +98,12 @@ export type DispatcherDeps = {
   registry?: JobRegistry;
 };
 
+export type ProgressEmitter = (message: NativeHelperResponse) => void;
+
 export async function dispatchNativeRequest(
   request: unknown,
   deps: DispatcherDeps = {},
+  emit?: ProgressEmitter,
 ): Promise<NativeHelperResponse> {
   const requestId = requestIdFrom(request);
 
@@ -126,7 +140,7 @@ export async function dispatchNativeRequest(
         if (!(await checkExecutable('ffmpeg', deps))) {
           return errorResponse(request.requestId, 'FFMPEG_NOT_FOUND', 'ffmpeg was not found on PATH.');
         }
-        return dispatchExport(request, deps);
+        return dispatchExport(request, deps, emit);
 
       case 'EXTRACT_THUMBNAIL':
         if (!(await checkExecutable('ffmpeg', deps))) {
@@ -168,6 +182,7 @@ function nativeInstallKind(): 'dev' | 'per-user' | 'system' | undefined {
 async function dispatchExport(
   request: Extract<NativeHelperRequest, { type: 'EXPORT_MEDIA' }>,
   deps: DispatcherDeps,
+  emit?: ProgressEmitter,
 ): Promise<NativeHelperResponse> {
   const dirs = await ensureDirs(deps);
   const outputPath = helperOwnedPath(dirs, 'outputs', request.payload.outputName, extensionForOutput(request.payload));
@@ -177,6 +192,16 @@ async function dispatchExport(
     outputPath,
     mimeType: mimeForOutput(request.payload),
     registry: deps.registry,
+    ...(emit
+      ? {
+          onProgress: (event) =>
+            emit({
+              type: 'PROGRESS',
+              requestId: request.requestId,
+              payload: { ...event.payload },
+            }),
+        }
+      : {}),
   });
 
   return { type: 'COMPLETED', requestId: request.requestId, payload: result };
@@ -243,13 +268,32 @@ async function dispatchReadAssetBytes(
   request: Extract<NativeHelperRequest, { type: 'READ_ASSET_BYTES' }>,
   deps: DispatcherDeps,
 ): Promise<NativeHelperResponse> {
-  const bytes = Buffer.from(await (deps.readAsset ?? readFile)(request.payload.outputPath));
+  const { outputPath, maxBytes, offset } = request.payload;
+  const bytes = Buffer.from(await (deps.readAsset ?? readFile)(outputPath));
 
-  if (bytes.byteLength > request.payload.maxBytes) {
+  // Ranged read: callers paginate large exports past the whole-file cap.
+  if (offset !== undefined) {
+    const start = Math.min(offset, bytes.byteLength);
+    const end = Math.min(start + maxBytes, bytes.byteLength);
+    const slice = bytes.subarray(start, end);
+
+    return {
+      type: 'ASSET_BYTES_RESULT',
+      requestId: request.requestId,
+      payload: {
+        outputPath,
+        sizeBytes: slice.byteLength,
+        base64: slice.toString('base64'),
+        eof: end >= bytes.byteLength,
+      },
+    };
+  }
+
+  if (bytes.byteLength > maxBytes) {
     return errorResponse(
       request.requestId,
       'ASSET_TOO_LARGE',
-      `Native asset exceeds the ${String(request.payload.maxBytes)} byte read cap.`,
+      `Native asset exceeds the ${String(maxBytes)} byte read cap.`,
     );
   }
 
@@ -257,7 +301,7 @@ async function dispatchReadAssetBytes(
     type: 'ASSET_BYTES_RESULT',
     requestId: request.requestId,
     payload: {
-      outputPath: request.payload.outputPath,
+      outputPath,
       sizeBytes: bytes.byteLength,
       base64: bytes.toString('base64'),
     },
@@ -370,7 +414,9 @@ function isNativeHelperRequest(value: unknown): value is NativeHelperRequest {
         isRecord(value.payload) &&
         isString(value.payload.outputPath) &&
         typeof value.payload.maxBytes === 'number' &&
-        value.payload.maxBytes > 0
+        value.payload.maxBytes > 0 &&
+        (value.payload.offset === undefined ||
+          (typeof value.payload.offset === 'number' && value.payload.offset >= 0))
       );
     case 'CANCEL_JOB':
     case 'CLEANUP_JOB':

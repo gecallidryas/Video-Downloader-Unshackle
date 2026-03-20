@@ -5,6 +5,23 @@ import { runNativeExportJob } from '../native-export-runner';
 import type { NativeFfmpegClient } from '@/src/native/native-ffmpeg-client';
 import { createInMemorySubtitleStore } from '@/src/core/storage/subtitle-store';
 
+async function blobBytes(blob: Blob): Promise<Uint8Array> {
+  return await new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(new Uint8Array(reader.result as ArrayBuffer));
+    reader.onerror = () => reject(reader.error);
+    reader.readAsArrayBuffer(blob);
+  });
+}
+
+function stubReadFullOutput(bytes: Uint8Array): (input: { outputPath: string; mimeType: string }) => Promise<Blob> {
+  return async ({ mimeType }) => {
+    const buffer = new ArrayBuffer(bytes.byteLength);
+    new Uint8Array(buffer).set(bytes);
+    return new Blob([buffer], { type: mimeType });
+  };
+}
+
 function candidate(overrides: Partial<MediaCandidate> = {}): MediaCandidate {
   return {
     id: 'candidate-1',
@@ -62,47 +79,91 @@ function nativeClient(): NativeFfmpegClient {
 }
 
 describe('runNativeExportJob', () => {
-  test('maps direct trimmed media to native export payload and updates progress', async () => {
+  test('maps direct trimmed media to native export payload, reads bytes back, and delivers via downloads', async () => {
     const client = nativeClient();
     const jobStore = createJobStore(() => 100);
     const queued = jobStore.create(candidate(), { mode: 'best', trim: { startSec: 1, endSec: 3 }, outputKind: 'mp4' });
+    const bytes = new Uint8Array([1, 2, 3, 4]);
+    const deliverOutput = vi.fn().mockResolvedValue(42);
 
     const output = await runNativeExportJob({
       candidate: candidate(),
       job: queued,
       nativeClient: client,
       jobStore,
+      readFullOutput: stubReadFullOutput(bytes),
+      deliverOutput,
     });
 
-    expect(client.exportMedia).toHaveBeenCalledWith({
-      jobId: queued.id,
-      inputUrl: 'https://cdn.example.com/video.mp4',
-      protocol: 'direct',
-      outputName: 'Clear video.mp4',
-      outputKind: 'mp4',
-      trim: { startSec: 1, endSec: 3 },
-    });
+    expect(client.exportMedia).toHaveBeenCalledWith(
+      {
+        jobId: queued.id,
+        inputUrl: 'https://cdn.example.com/video.mp4',
+        protocol: 'direct',
+        outputName: 'Clear video.mp4',
+        outputKind: 'mp4',
+        trim: { startSec: 1, endSec: 3 },
+      },
+      expect.objectContaining({ onProgress: expect.any(Function) }),
+    );
+    expect(deliverOutput).toHaveBeenCalledWith(
+      expect.objectContaining({ fileName: 'clip.mp4', mimeType: 'video/mp4' }),
+    );
+    const deliveredBlob: Blob = deliverOutput.mock.calls[0][0].blob;
+    expect(await blobBytes(deliveredBlob)).toEqual(bytes);
     expect(output).toEqual({
       fileName: 'clip.mp4',
       mimeType: 'video/mp4',
       outputUrl: 'C:\\Users\\tester\\AppData\\Local\\VideoDownloaderUnshackle\\outputs\\clip.mp4',
+      downloadId: 42,
       sizeBytes: 1200,
     });
-    expect(jobStore.get(queued.id)).toMatchObject({ phase: 'exporting', progressPct: 15 });
+  });
+
+  test('forwards native progress events to the job store', async () => {
+    const client = nativeClient();
+    vi.mocked(client.exportMedia).mockImplementationOnce(async (_payload, options) => {
+      options?.onProgress?.({ jobId: 'job-1', progressPct: 40, phase: 'transmuxing' });
+      return {
+        jobId: 'job-1',
+        outputPath: 'C:\\outputs\\clip.mp4',
+        sizeBytes: 10,
+        mimeType: 'video/mp4',
+      };
+    });
+    const jobStore = createJobStore(() => 100);
+    const queued = jobStore.create(candidate(), { mode: 'best', outputKind: 'mp4' });
+
+    await runNativeExportJob({
+      candidate: candidate(),
+      job: queued,
+      nativeClient: client,
+      jobStore,
+      readFullOutput: stubReadFullOutput(new Uint8Array([1])),
+      deliverOutput: vi.fn().mockResolvedValue(1),
+    });
+
+    expect(jobStore.get(queued.id)).toMatchObject({ phase: 'exporting', progressPct: 90 });
   });
 
   test('maps HLS and DASH candidates to manifest URL native exports', async () => {
     const client = nativeClient();
 
+    const readFullOutput = stubReadFullOutput(new Uint8Array([1]));
+    const deliverOutput = vi.fn().mockResolvedValue(1);
     await runNativeExportJob({
       candidate: candidate({ protocol: 'hls', sourceUrl: undefined, manifestUrl: 'https://cdn.example.com/master.m3u8' }),
       job: job({ id: 'job-hls', selection: { mode: 'best', outputKind: 'webm' } }),
       nativeClient: client,
+      readFullOutput,
+      deliverOutput,
     });
     await runNativeExportJob({
       candidate: candidate({ protocol: 'dash', sourceUrl: undefined, manifestUrl: 'https://cdn.example.com/manifest.mpd' }),
       job: job({ id: 'job-dash', selection: { mode: 'best', outputKind: 'audio-only' } }),
       nativeClient: client,
+      readFullOutput,
+      deliverOutput,
     });
 
     expect(client.exportMedia).toHaveBeenNthCalledWith(1, expect.objectContaining({
@@ -110,13 +171,13 @@ describe('runNativeExportJob', () => {
       inputUrl: 'https://cdn.example.com/master.m3u8',
       protocol: 'hls',
       outputKind: 'webm',
-    }));
+    }), expect.anything());
     expect(client.exportMedia).toHaveBeenNthCalledWith(2, expect.objectContaining({
       jobId: 'job-dash',
       inputUrl: 'https://cdn.example.com/manifest.mpd',
       protocol: 'dash',
       outputKind: 'audio-only',
-    }));
+    }), expect.anything());
   });
 
   test('chooses MKV output when selected subtitles are present', async () => {
@@ -143,6 +204,8 @@ describe('runNativeExportJob', () => {
         selection: { mode: 'best', subtitleTrackIds: ['sub-en'] },
       }),
       nativeClient: client,
+      readFullOutput: stubReadFullOutput(new Uint8Array([1])),
+      deliverOutput: vi.fn().mockResolvedValue(1),
     });
 
     expect(client.exportMedia).toHaveBeenCalledWith(
@@ -150,6 +213,7 @@ describe('runNativeExportJob', () => {
         outputKind: 'mkv',
         outputName: 'Clear video.mkv',
       }),
+      expect.anything(),
     );
   });
 
@@ -228,6 +292,8 @@ describe('runNativeExportJob', () => {
       nativeClient: client,
       subtitleStore: store,
       fetchText: vi.fn().mockResolvedValue('WEBVTT\n\n00:00.000 --> 00:01.000\nhello'),
+      readFullOutput: stubReadFullOutput(new Uint8Array([1])),
+      deliverOutput: vi.fn().mockResolvedValue(1),
     });
 
     expect(client.exportMedia).toHaveBeenCalledWith(
@@ -235,6 +301,7 @@ describe('runNativeExportJob', () => {
         outputKind: 'mp4',
         outputName: 'Clear video.mp4',
       }),
+      expect.anything(),
     );
     expect(output.sidecarOutputs).toEqual([
       {
@@ -257,5 +324,31 @@ describe('runNativeExportJob', () => {
     ).rejects.toThrow(/Protected media/);
 
     expect(client.exportMedia).not.toHaveBeenCalled();
+  });
+
+  test('does not claim success when output delivery is not configured', async () => {
+    const client = nativeClient();
+
+    await expect(
+      runNativeExportJob({
+        candidate: candidate(),
+        job: job({ selection: { mode: 'best', outputKind: 'mp4' } }),
+        nativeClient: client,
+      }),
+    ).rejects.toThrow(/delivery is unavailable/i);
+  });
+
+  test('propagates delivery failure instead of returning a phantom output', async () => {
+    const client = nativeClient();
+
+    await expect(
+      runNativeExportJob({
+        candidate: candidate(),
+        job: job({ selection: { mode: 'best', outputKind: 'mp4' } }),
+        nativeClient: client,
+        readFullOutput: stubReadFullOutput(new Uint8Array([1, 2])),
+        deliverOutput: vi.fn().mockRejectedValue(new Error('downloads API failed')),
+      }),
+    ).rejects.toThrow('downloads API failed');
   });
 });

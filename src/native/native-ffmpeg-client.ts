@@ -58,15 +58,43 @@ export type NativeSendNativeMessage = (
   callback: (response: unknown) => void,
 ) => void;
 
+export interface NativePort {
+  postMessage(message: NativeFfmpegRequest): void;
+  disconnect(): void;
+  onMessage: {
+    addListener(listener: (message: unknown) => void): void;
+    removeListener(listener: (message: unknown) => void): void;
+  };
+  onDisconnect: {
+    addListener(listener: () => void): void;
+    removeListener(listener: () => void): void;
+  };
+}
+
+export type NativeConnectNative = (hostName: string) => NativePort;
+
+export type NativeFfmpegProgressPayload = Extract<
+  NativeFfmpegResponse,
+  { type: 'PROGRESS' }
+>['payload'];
+
 export interface NativeFfmpegClientOptions {
   hostName?: string;
   sendNativeMessage?: NativeSendNativeMessage;
+  connectNative?: NativeConnectNative;
   timeoutMs?: number;
+}
+
+export interface NativeExportMediaOptions {
+  onProgress?: (progress: NativeFfmpegProgressPayload) => void;
 }
 
 export interface NativeFfmpegClient {
   ping(): Promise<NativePongPayload>;
-  exportMedia(payload: NativeFfmpegExportPayload): Promise<NativeCompletedPayload>;
+  exportMedia(
+    payload: NativeFfmpegExportPayload,
+    options?: NativeExportMediaOptions,
+  ): Promise<NativeCompletedPayload>;
   extractThumbnail(payload: NativeFfmpegThumbnailPayload): Promise<NativeThumbnailPayload>;
   extractPreviewClip(payload: NativeFfmpegPreviewClipPayload): Promise<NativePreviewClipPayload>;
   readAssetBytes(payload: NativeFfmpegReadAssetBytesPayload): Promise<NativeAssetBytesPayload>;
@@ -94,13 +122,14 @@ export function createNativeFfmpegClient(
         )
       )
         .payload as NativePongPayload,
-    exportMedia: async (payload) =>
+    exportMedia: async (payload, exportOptions) =>
       (
-        await sendAndExpect(
+        await streamAndExpect(
           hostName,
           createNativeRequest('EXPORT_MEDIA', payload),
           'COMPLETED',
           withDefaultTimeout(options, DEFAULT_NATIVE_EXPORT_RESPONSE_TIMEOUT_MS),
+          exportOptions?.onProgress,
         )
       ).payload as NativeCompletedPayload,
     extractThumbnail: async (payload) =>
@@ -275,6 +304,176 @@ function sendNativeRequest(
       ));
     }
   });
+}
+
+async function streamAndExpect(
+  hostName: string,
+  request: NativeFfmpegRequest,
+  expectedType: NativeSuccessResponse['type'],
+  options: NativeFfmpegClientOptions,
+  onProgress?: (progress: NativeFfmpegProgressPayload) => void,
+): Promise<NativeSuccessResponse> {
+  const connectNative = options.connectNative ?? getChromeConnectNative();
+
+  if (!connectNative) {
+    return sendAndExpect(hostName, request, expectedType, options);
+  }
+
+  const response = await streamNativeRequest(
+    hostName,
+    request,
+    options,
+    connectNative,
+    onProgress,
+  );
+
+  return validateResponse(request, expectedType, response);
+}
+
+function validateResponse(
+  request: NativeFfmpegRequest,
+  expectedType: NativeSuccessResponse['type'],
+  response: unknown,
+): NativeSuccessResponse {
+  if (!isNativeFfmpegResponse(response)) {
+    throw new NativeFfmpegClientError(
+      'NATIVE_INVALID_RESPONSE',
+      'Native helper returned an invalid response.',
+      response,
+    );
+  }
+
+  if (response.requestId !== request.requestId) {
+    throw new NativeFfmpegClientError(
+      'NATIVE_INVALID_RESPONSE',
+      'Native helper returned an unexpected response.',
+      response,
+    );
+  }
+
+  if (response.type === 'ERROR') {
+    throw new NativeFfmpegClientError(
+      response.payload.code,
+      response.payload.message,
+      response.payload.detail,
+    );
+  }
+
+  if (response.type !== expectedType) {
+    throw new NativeFfmpegClientError(
+      'NATIVE_INVALID_RESPONSE',
+      'Native helper returned an unexpected response.',
+      response,
+    );
+  }
+
+  return response;
+}
+
+function streamNativeRequest(
+  hostName: string,
+  request: NativeFfmpegRequest,
+  options: NativeFfmpegClientOptions,
+  connectNative: NativeConnectNative,
+  onProgress?: (progress: NativeFfmpegProgressPayload) => void,
+): Promise<unknown> {
+  const timeoutMs = options.timeoutMs ?? DEFAULT_NATIVE_EXPORT_RESPONSE_TIMEOUT_MS;
+
+  return new Promise((resolve, reject) => {
+    let port: NativePort;
+
+    try {
+      port = connectNative(hostName);
+    } catch (error) {
+      reject(
+        new NativeFfmpegClientError(
+          'NATIVE_UNAVAILABLE',
+          error instanceof Error ? error.message : 'Native messaging API is unavailable.',
+          error,
+        ),
+      );
+      return;
+    }
+
+    let settled = false;
+    const timeoutId = setTimeout(() => {
+      settle(() =>
+        reject(
+          new NativeFfmpegClientError(
+            'NATIVE_TIMEOUT',
+            `Native helper did not respond within ${String(timeoutMs)}ms.`,
+          ),
+        ),
+      );
+    }, timeoutMs);
+
+    const handleMessage = (message: unknown): void => {
+      if (
+        isNativeFfmpegResponse(message) &&
+        message.type === 'PROGRESS' &&
+        message.requestId === request.requestId
+      ) {
+        onProgress?.(message.payload);
+        return;
+      }
+
+      settle(() => resolve(message));
+    };
+
+    const handleDisconnect = (): void => {
+      const runtimeError = getChromeRuntimeError();
+      settle(() =>
+        reject(
+          new NativeFfmpegClientError(
+            'NATIVE_UNAVAILABLE',
+            runtimeError?.message || 'Native messaging port disconnected before completion.',
+            runtimeError,
+          ),
+        ),
+      );
+    };
+
+    function settle(callback: () => void): void {
+      if (settled) {
+        return;
+      }
+
+      settled = true;
+      clearTimeout(timeoutId);
+      port.onMessage.removeListener(handleMessage);
+      port.onDisconnect.removeListener(handleDisconnect);
+      try {
+        port.disconnect();
+      } catch {
+        // Ignore disconnect errors during teardown.
+      }
+      callback();
+    }
+
+    port.onMessage.addListener(handleMessage);
+    port.onDisconnect.addListener(handleDisconnect);
+
+    try {
+      port.postMessage(request);
+    } catch (error) {
+      settle(() =>
+        reject(
+          new NativeFfmpegClientError(
+            'NATIVE_UNAVAILABLE',
+            error instanceof Error ? error.message : 'Native messaging API is unavailable.',
+            error,
+          ),
+        ),
+      );
+    }
+  });
+}
+
+function getChromeConnectNative(): NativeConnectNative | undefined {
+  const runtime = getChromeRuntime();
+  return typeof runtime?.connectNative === 'function'
+    ? (runtime.connectNative.bind(runtime) as NativeConnectNative)
+    : undefined;
 }
 
 function getChromeSendNativeMessage(): NativeSendNativeMessage | undefined {

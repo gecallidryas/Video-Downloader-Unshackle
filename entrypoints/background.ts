@@ -50,6 +50,8 @@ import {
   createNativeFfmpegClient,
   type NativeFfmpegClient,
 } from '@/src/native/native-ffmpeg-client';
+import { hasNativeMessagingPermission } from '@/src/native/native-permissions';
+import { resolveEffectiveNativeFeatures } from '@/src/native/native-feature-gate';
 import { ensurePreviewClip } from '@/src/core/preview/native-preview-service';
 import { ensureNativeThumbnail } from '@/src/core/thumbs/native-thumbnail-service';
 import { createBucketMetadataStore } from '@/src/core/storage/bucket-metadata-store';
@@ -90,6 +92,14 @@ export function initializeBackgroundShell() {
           nativeClient: getNativeClient(),
           createObjectUrl: URL.createObjectURL.bind(URL),
           revokeObjectUrl: URL.revokeObjectURL?.bind(URL),
+          readOutputChunk: async ({ outputPath, offset, length }) => {
+            const chunk = await getNativeClient().readAssetBytes({
+              outputPath,
+              offset,
+              maxBytes: length,
+            });
+            return { base64: chunk.base64, sizeBytes: chunk.sizeBytes, eof: chunk.eof };
+          },
         })
       : undefined;
 
@@ -228,7 +238,6 @@ export function initializeBackgroundShell() {
       maxConcurrentSegments: settings.maxConcurrentSegments,
       maxConcurrentSegmentsPerHost: settings.maxConcurrentSegmentsPerHost,
       segmentTimeoutMs: settings.segmentTimeoutMs,
-      enableNativeFeatures: settings.enableNativeFeatures,
       enableBrowserFallbacks: settings.enableBrowserFallbacks,
       browserTransmuxWithMuxJs: settings.browserTransmuxWithMuxJs,
       browserTransmuxMaxBytes: settings.browserTransmuxMaxBytes,
@@ -236,6 +245,33 @@ export function initializeBackgroundShell() {
     });
     notificationManager.applySettings(settings);
     detectionNotifier.configure(settings);
+  }
+
+  async function resolveNativeAvailability(settingEnabled: boolean): Promise<void> {
+    if (!settingEnabled) {
+      downloadController.updateSettings({ enableNativeFeatures: false });
+      return;
+    }
+
+    const hasPermission = await hasNativeMessagingPermission();
+    let hostAvailable = false;
+
+    if (hasPermission) {
+      try {
+        const pong = await getNativeClient().ping();
+        hostAvailable = pong.ffmpegAvailable;
+      } catch {
+        hostAvailable = false;
+      }
+    }
+
+    downloadController.updateSettings({
+      enableNativeFeatures: resolveEffectiveNativeFeatures({
+        settingEnabled,
+        hasPermission,
+        hostAvailable,
+      }),
+    });
   }
 
   const cleanupStoredJobData = (jobId: string) =>
@@ -382,6 +418,7 @@ export function initializeBackgroundShell() {
         nativeClient: getNativeClient(),
         jobStore,
         subtitleStore,
+        readFullOutput: nativeAssetServer?.readFullOutput,
       }),
     browserDirectTrim: ({ candidate, job }) =>
       runBrowserDirectTrimJob({
@@ -401,6 +438,10 @@ export function initializeBackgroundShell() {
     enableNativeFeatures: false,
     cleanupAfterSave: cleanupStoredJobData,
   });
+  const applyLoadedSettingsWithNative = (settings: UnifiedSettings): void => {
+    applyLoadedSettings(settings);
+    void resolveNativeAvailability(settings.enableNativeFeatures);
+  };
   const downloadQueue = createDownloadQueue({
     jobStore,
     executeJob: async (job) => {
@@ -451,7 +492,11 @@ export function initializeBackgroundShell() {
     downloadQueue,
     requestJournal,
     fetchManifest: async (url) => {
-      const response = await fetch(url, { credentials: 'include' });
+      const allowCredentials =
+        settingsStore.get('advancedMode') && settingsStore.get('captureCredentialHeaders');
+      const response = await fetch(url, {
+        credentials: allowCredentials ? 'include' : 'omit',
+      });
 
       if (!response.ok) {
         throw new Error(`Manifest request failed: ${response.status}`);
@@ -535,7 +580,7 @@ export function initializeBackgroundShell() {
   chrome.sidePanel.setPanelBehavior(getSidePanelBehavior());
   void settingsStore.load().then((settings) => {
     // Apply settings that require the store to be fully loaded first.
-    applyLoadedSettings(settings);
+    applyLoadedSettingsWithNative(settings);
     return contextMenuManager.register();
   });
   chrome.storage?.onChanged?.addListener((changes, areaName) => {
@@ -543,7 +588,7 @@ export function initializeBackgroundShell() {
       return;
     }
 
-    void settingsStore.load().then(applyLoadedSettings);
+    void settingsStore.load().then(applyLoadedSettingsWithNative);
   });
   registerPassiveRequestJournal(requestJournal, undefined, headerContext);
   registerBackgroundCommandHandlers({

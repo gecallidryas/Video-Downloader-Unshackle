@@ -138,18 +138,6 @@ function totalBytes(parts: Uint8Array[]): number {
   return parts.reduce((sum, part) => sum + part.byteLength, 0);
 }
 
-function bytesToBase64(bytes: Uint8Array): string {
-  let binary = '';
-  const chunkSize = 0x8000;
-
-  for (let offset = 0; offset < bytes.byteLength; offset += chunkSize) {
-    const chunk = bytes.slice(offset, offset + chunkSize);
-    binary += String.fromCharCode(...chunk);
-  }
-
-  return btoa(binary);
-}
-
 function estimatePlanBytes(plan: SegmentPlan, candidate: MediaCandidate): number | undefined {
   const rangedSizes = plan.segments.map((segment) =>
     segment.byteRange ? segment.byteRange.end - segment.byteRange.start + 1 : undefined,
@@ -497,7 +485,7 @@ export async function runBrowserHlsExportJob(
                   initSegment: event.segment.initSegment,
                   durationSec: event.segment.durationSec,
                 },
-                bytesBase64: bytesToBase64(event.bytes),
+                bytes: event.bytes,
                 isInitSegment: event.isInitSegment,
               }),
             );

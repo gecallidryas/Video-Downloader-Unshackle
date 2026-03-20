@@ -90,7 +90,14 @@ export interface AppendBrowserHlsSegmentPayload {
     initSegment?: boolean;
     durationSec?: number;
   };
-  bytesBase64: string;
+  // Raw segment bytes. chrome.runtime.sendMessage serializes payloads with the
+  // structured clone algorithm, which copies typed arrays directly. We carry
+  // the Uint8Array as-is instead of base64 to avoid the +33% size inflation and
+  // the full String.fromCharCode/btoa/atob string copy per segment. True
+  // zero-copy transfer (transferables) is NOT possible here because
+  // chrome.runtime.sendMessage does not accept a transfer list — only
+  // Worker/MessagePort/window postMessage do.
+  bytes: Uint8Array;
   isInitSegment: boolean;
 }
 
@@ -213,7 +220,7 @@ export function isOffscreenCommand(value: unknown): value is OffscreenCommand {
     case 'APPEND_BROWSER_HLS_SEGMENT': {
       const payload = command.payload as AppendBrowserHlsSegmentPayload;
       return (
-        typeof payload.bytesBase64 === 'string' &&
+        payload.bytes instanceof Uint8Array &&
         typeof payload.segment === 'object' &&
         payload.segment !== null &&
         typeof payload.segment.id === 'string' &&

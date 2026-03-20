@@ -8,11 +8,60 @@ import {
   createNativeFfmpegClient,
   DEFAULT_NATIVE_FFMPEG_HOST,
   NativeFfmpegClientError,
+  type NativeConnectNative,
+  type NativeFfmpegProgressPayload,
+  type NativePort,
   type NativeSendNativeMessage,
 } from '../native-ffmpeg-client';
+import type { NativeFfmpegRequest } from '../native-ffmpeg-contract';
 
 type NativeRequest = Parameters<NativeSendNativeMessage>[1];
 type NativeCallback = Parameters<NativeSendNativeMessage>[2];
+
+function createFakePort(
+  onPost: (request: NativeFfmpegRequest, port: FakePort) => void,
+): FakePort {
+  return new FakePort(onPost);
+}
+
+class FakePort implements NativePort {
+  private readonly messageListeners = new Set<(message: unknown) => void>();
+  private readonly disconnectListeners = new Set<() => void>();
+  disconnected = false;
+
+  constructor(private readonly onPost: (request: NativeFfmpegRequest, port: FakePort) => void) {}
+
+  postMessage(request: NativeFfmpegRequest): void {
+    this.onPost(request, this);
+  }
+
+  emit(message: unknown): void {
+    for (const listener of this.messageListeners) {
+      listener(message);
+    }
+  }
+
+  fail(): void {
+    for (const listener of this.disconnectListeners) {
+      listener();
+    }
+  }
+
+  disconnect(): void {
+    this.disconnected = true;
+  }
+
+  onMessage = {
+    addListener: (listener: (message: unknown) => void) => this.messageListeners.add(listener),
+    removeListener: (listener: (message: unknown) => void) =>
+      this.messageListeners.delete(listener),
+  };
+
+  onDisconnect = {
+    addListener: (listener: () => void) => this.disconnectListeners.add(listener),
+    removeListener: (listener: () => void) => this.disconnectListeners.delete(listener),
+  };
+}
 
 describe('native ffmpeg client', () => {
   afterEach(() => {
@@ -245,6 +294,73 @@ describe('native ffmpeg client', () => {
       expect.objectContaining({ type: 'CANCEL_JOB', payload: { jobId: 'job-1' } }),
       expect.objectContaining({ type: 'CLEANUP_JOB', payload: { jobId: 'job-1' } }),
     ]);
+  });
+
+  test('exportMedia streams PROGRESS over a persistent port before resolving COMPLETED', async () => {
+    const progress: NativeFfmpegProgressPayload[] = [];
+    let exportPort: FakePort | undefined;
+    const connectNative: NativeConnectNative = (_hostName) =>
+      createFakePort((request, port) => {
+        exportPort = port;
+        port.emit({
+          type: 'PROGRESS',
+          requestId: request.requestId,
+          payload: { jobId: 'job-1', progressPct: 25, phase: 'exporting', timeSec: 2 },
+        });
+        port.emit({
+          type: 'PROGRESS',
+          requestId: request.requestId,
+          payload: { jobId: 'job-1', progressPct: 75, phase: 'exporting', timeSec: 6 },
+        });
+        port.emit({
+          type: 'COMPLETED',
+          requestId: request.requestId,
+          payload: { jobId: 'job-1', outputPath: 'C:\\Temp\\clip.mp4', mimeType: 'video/mp4' },
+        });
+      });
+
+    const client = createNativeFfmpegClient({ connectNative });
+
+    await expect(
+      client.exportMedia(exportPayload, { onProgress: (event) => progress.push(event) }),
+    ).resolves.toMatchObject({ jobId: 'job-1', outputPath: 'C:\\Temp\\clip.mp4' });
+
+    expect(progress).toEqual([
+      { jobId: 'job-1', progressPct: 25, phase: 'exporting', timeSec: 2 },
+      { jobId: 'job-1', progressPct: 75, phase: 'exporting', timeSec: 6 },
+    ]);
+    expect(exportPort?.disconnected).toBe(true);
+  });
+
+  test('exportMedia surfaces helper ERROR delivered over the port', async () => {
+    const connectNative: NativeConnectNative = () =>
+      createFakePort((request, port) => {
+        port.emit({
+          type: 'ERROR',
+          requestId: request.requestId,
+          payload: { code: 'FFMPEG_NOT_FOUND', message: 'Install ffmpeg and try again.' },
+        });
+      });
+
+    const client = createNativeFfmpegClient({ connectNative });
+
+    await expect(client.exportMedia(exportPayload)).rejects.toMatchObject({
+      code: 'FFMPEG_NOT_FOUND',
+      message: 'Install ffmpeg and try again.',
+    });
+  });
+
+  test('exportMedia rejects when the port disconnects before completion', async () => {
+    const connectNative: NativeConnectNative = () =>
+      createFakePort((_request, port) => {
+        port.fail();
+      });
+
+    const client = createNativeFfmpegClient({ connectNative });
+
+    await expect(client.exportMedia(exportPayload)).rejects.toMatchObject({
+      code: 'NATIVE_UNAVAILABLE',
+    });
   });
 
   test('export, thumbnail, preview, cancel, and cleanup commands use createNativeRequest', async () => {

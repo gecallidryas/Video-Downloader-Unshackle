@@ -36,7 +36,7 @@ describe('offscreen command contract', () => {
     expect(isOffscreenCommand({ type: 'UNKNOWN', payload: {} })).toBe(false);
   });
 
-  test('validates browser HLS append messages with JSON-safe bytes', () => {
+  test('validates browser HLS append messages carrying raw segment bytes', () => {
     expect(
       isOffscreenCommand(
         createOffscreenCommand('APPEND_BROWSER_HLS_SEGMENT', {
@@ -46,12 +46,13 @@ describe('offscreen command contract', () => {
             index: 1,
             url: 'https://cdn.example.com/segment.ts',
           },
-          bytesBase64: 'Rw==',
+          bytes: new Uint8Array([0x47]),
           isInitSegment: false,
         }),
       ),
     ).toBe(true);
 
+    // A non-typed-array byte payload (e.g. a leftover base64 string) is rejected.
     expect(
       isOffscreenCommand({
         type: 'APPEND_BROWSER_HLS_SEGMENT',
@@ -59,7 +60,7 @@ describe('offscreen command contract', () => {
         payload: {
           jobId: 'job-1',
           segment: { id: 'segment-1', index: 1 },
-          bytes: new ArrayBuffer(1),
+          bytes: 'Rw==',
           isInitSegment: false,
         },
       }),

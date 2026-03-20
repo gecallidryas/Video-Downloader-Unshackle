@@ -4,14 +4,56 @@ export class SegmentFetchError extends Error {
   constructor(
     public readonly status: number,
     message: string,
+    public readonly retryAfterMs?: number,
+    public readonly nonRetryable?: boolean,
   ) {
     super(`Segment fetch failed: ${status} ${message}`);
     this.name = 'SegmentFetchError';
   }
 }
 
+export function parseRetryAfter(
+  headerValue: string | null | undefined,
+  now: number = Date.now(),
+): number | undefined {
+  if (headerValue === null || headerValue === undefined) {
+    return undefined;
+  }
+
+  const trimmed = headerValue.trim();
+
+  if (trimmed === '') {
+    return undefined;
+  }
+
+  if (/^\d+$/.test(trimmed)) {
+    const seconds = Number(trimmed);
+
+    return Number.isFinite(seconds) ? Math.max(0, seconds * 1000) : undefined;
+  }
+
+  const dateMs = Date.parse(trimmed);
+
+  if (Number.isNaN(dateMs)) {
+    return undefined;
+  }
+
+  return Math.max(0, dateMs - now);
+}
+
+export function retryAfterFromError(error: unknown): number | undefined {
+  if (error instanceof SegmentFetchError && typeof error.retryAfterMs === 'number') {
+    return error.retryAfterMs;
+  }
+
+  return undefined;
+}
+
 export function isNonRetryableError(error: unknown): boolean {
-  return error instanceof SegmentFetchError && NON_RETRYABLE_STATUS.has(error.status);
+  return (
+    error instanceof SegmentFetchError &&
+    (error.nonRetryable === true || NON_RETRYABLE_STATUS.has(error.status))
+  );
 }
 
 export interface PartialContentError {

@@ -126,11 +126,29 @@ function hasUnsafeCodecHints(candidate: MediaCandidate, manifest: ParsedHlsManif
 }
 
 function hasMuxSafeSegmentProbe(input: BrowserHlsExportRouteInput): boolean {
-  if (input.segmentProbe) {
-    return input.segmentProbe.container === 'ts' && input.segmentProbe.muxJsCompatible;
+  if (!input.segmentProbe) {
+    return false;
   }
 
-  return input.plan.segments.some((segment) => !segment.initSegment && Boolean(segment.encryption?.keyUri));
+  return input.segmentProbe.container === 'ts' && input.segmentProbe.muxJsCompatible;
+}
+
+function isAes128(protection: ProtectionInfo): boolean {
+  return protection.kind === 'aes-128';
+}
+
+function isMuxEligibleTs(input: BrowserHlsExportRouteInput): boolean {
+  if (hasMuxSafeSegmentProbe(input)) {
+    return true;
+  }
+
+  // AES-128 first segments cannot be probed before the scheduler decrypts them
+  // upstream, so an encrypted-TS source is mux-eligible only when its declared
+  // codecs prove it is plain H.264/AAC once decrypted.
+  return (
+    (isAes128(input.candidate.protection) || isAes128(input.manifest.protection)) &&
+    hasMuxFriendlyCodecs(input.candidate, input.manifest)
+  );
 }
 
 function chooseSink(input: BrowserHlsExportRouteInput): BrowserExportSinkKind {
@@ -203,7 +221,7 @@ export function resolveBrowserHlsExportRoute(
   if (
     !rawRequested &&
     input.muxJsEnabled &&
-    hasMuxSafeSegmentProbe(input) &&
+    isMuxEligibleTs(input) &&
     !hasUnsafeCodecHints(input.candidate, input.manifest)
   ) {
     return {

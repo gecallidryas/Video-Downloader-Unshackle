@@ -3,7 +3,9 @@ import { decryptAes128Segment } from '@/src/core/hls/decrypt-aes128-segment';
 import { createBandwidthLimiter } from './bandwidth-limiter';
 import {
   isNonRetryableError,
+  parseRetryAfter,
   partialContentFromError,
+  retryAfterFromError,
   SegmentFetchError,
 } from './error-classification';
 import {
@@ -111,7 +113,11 @@ async function defaultFetchSegment(
   });
 
   if (!response.ok) {
-    throw new SegmentFetchError(response.status, response.statusText);
+    throw new SegmentFetchError(
+      response.status,
+      response.statusText,
+      parseRetryAfter(response.headers.get('Retry-After')),
+    );
   }
 
   if (request.headers.Range && response.status !== 206) {
@@ -148,7 +154,7 @@ async function retryWithBackoff<T>(
 
       lastError = error;
       if (attempt < attempts - 1) {
-        const delay = computeBackoffDelay(attempt);
+        const delay = computeBackoffDelay(attempt, retryAfterFromError(error));
         await new Promise<void>((resolve, reject) => {
           const timer = setTimeout(resolve, delay);
           signal?.addEventListener(

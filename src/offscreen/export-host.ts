@@ -1,4 +1,3 @@
-import type { JobOutput } from '@/video_downloader_types_skeleton';
 import {
   createBrowserExportSink,
   type BrowserExportSink,
@@ -6,6 +5,7 @@ import {
 import {
   createMuxjsStreamingTransmuxSession,
   MuxjsTransmuxError,
+  validateMp4Structure,
   type MuxjsStreamingTransmuxSession,
 } from '@/src/core/export/muxjs-transmuxer';
 import type {
@@ -19,7 +19,6 @@ import type {
 interface BrowserHlsExportSession {
   payload: StartBrowserHlsExportPayload;
   sink: BrowserExportSink;
-  rawSink?: BrowserExportSink;
   muxSession?: MuxjsStreamingTransmuxSession;
   muxFailureDiagnostic?: BrowserHlsExportDiagnostic;
   diagnostics: BrowserHlsExportDiagnostic[];
@@ -36,27 +35,8 @@ export interface BrowserHlsExportHostOptions {
   revokeObjectUrl?: (url: string) => void;
 }
 
-function bytesFromBase64(value: string): Uint8Array {
-  const binary = atob(value);
-  const bytes = new Uint8Array(binary.length);
-
-  for (let index = 0; index < binary.length; index += 1) {
-    bytes[index] = binary.charCodeAt(index);
-  }
-
-  return bytes;
-}
-
 function shouldTransmux(route: StartBrowserHlsExportPayload['route']): boolean {
   return route === 'hls-ts-streaming-mp4' || route === 'hls-ts-opfs-mp4';
-}
-
-function shouldKeepRawRecovery(route: StartBrowserHlsExportPayload['route']): boolean {
-  return shouldTransmux(route);
-}
-
-function rawRecoveryName(outputName: string): string {
-  return outputName.replace(/\.[^./\\]+$/, '') + '.ts';
 }
 
 function firstBytesHex(bytes: Uint8Array): string | undefined {
@@ -171,20 +151,6 @@ export function createBrowserHlsExportHost(options: BrowserHlsExportHostOptions 
       inputBytes: 0,
     };
 
-    if (shouldKeepRawRecovery(payload.route)) {
-      session.rawSink = await createBrowserExportSink(payload.sinkKind, {
-        jobId: `${payload.jobId}-raw-recovery`,
-        fileName: rawRecoveryName(payload.outputName),
-        mimeType: 'video/mp2t',
-        saveAs: payload.saveAs,
-        memoryCeilingBytes: payload.memoryCeilingBytes,
-        download: options.download,
-        createObjectUrl: options.createObjectUrl,
-        revokeObjectUrl: options.revokeObjectUrl,
-        deferDownload: true,
-      });
-    }
-
     if (shouldTransmux(payload.route)) {
       session.muxSession = await createMuxjsStreamingTransmuxSession((chunk) =>
         session.sink.write(chunk),
@@ -207,7 +173,7 @@ export function createBrowserHlsExportHost(options: BrowserHlsExportHostOptions 
       throw new Error(`Unknown browser HLS export session: ${payload.jobId}`);
     }
 
-    const bytes = bytesFromBase64(payload.bytesBase64);
+    const bytes = payload.bytes;
     session.inputBytes += bytes.byteLength;
     if (!payload.isInitSegment && !session.firstMediaSegmentProbe) {
       session.firstMediaSegmentProbe = {
@@ -215,7 +181,6 @@ export function createBrowserHlsExportHost(options: BrowserHlsExportHostOptions 
         bytes: new Uint8Array(bytes),
       };
     }
-    await session.rawSink?.write(bytes);
 
     if (session.muxSession) {
       if (session.muxFailureDiagnostic || payload.isInitSegment) {
@@ -240,10 +205,6 @@ export function createBrowserHlsExportHost(options: BrowserHlsExportHostOptions 
           bytes,
         });
 
-        if (!session.rawSink) {
-          throw new Error(formatDiagnostic(diagnostic));
-        }
-
         session.muxFailureDiagnostic = diagnostic;
         session.diagnostics.push(diagnostic);
       }
@@ -266,17 +227,30 @@ export function createBrowserHlsExportHost(options: BrowserHlsExportHostOptions 
       throw new Error(`Unknown browser HLS export session: ${jobId}`);
     }
 
+    const hadRecordedFailure = session.muxFailureDiagnostic !== undefined;
+
     try {
       if (session.muxFailureDiagnostic) {
         throw new Error(session.muxFailureDiagnostic.message);
       }
 
       await session.muxSession?.finalize();
-      const output = await session.sink.close();
 
-      if (session.rawSink) {
-        await session.rawSink.abort('MP4 export completed.');
+      if (session.muxSession) {
+        const initSegment = session.muxSession.initSegment;
+        const validation = initSegment
+          ? validateMp4Structure(initSegment, session.muxSession.firstFragment)
+          : { valid: false, reason: 'No MP4 initialization segment was produced.' };
+
+        if (!validation.valid) {
+          throw new MuxjsTransmuxError(
+            `Produced MP4 failed structural validation: ${validation.reason ?? 'unknown reason'}`,
+            'EMPTY_MUX_OUTPUT',
+          );
+        }
       }
+
+      const output = await session.sink.close();
 
       sessions.delete(jobId);
 
@@ -304,28 +278,24 @@ export function createBrowserHlsExportHost(options: BrowserHlsExportHostOptions 
       if (!session.muxFailureDiagnostic) {
         session.diagnostics.push(diagnostic);
       }
-      let rawOutput: JobOutput | undefined;
-
-      if (session.rawSink && session.rawSink.bytesWritten > 0) {
-        rawOutput = await session.rawSink.close();
-      }
 
       await session.sink.abort(error);
       sessions.delete(jobId);
 
-      if (rawOutput) {
+      // A failure recorded during append/finalize means we produced no playable
+      // MP4. Surface it as a structured failure (not a throw) so the runner can
+      // attach the diagnostics; downloads are restricted to playable MP4 output.
+      if (hadRecordedFailure || diagnostic.phase === 'finalize') {
         return {
           ok: false,
           command: 'FINALIZE_BROWSER_HLS_EXPORT',
-          bytesWritten: rawOutput.sizeBytes ?? session.rawSink?.bytesWritten ?? 0,
+          bytesWritten: 0,
           diagnostics: session.diagnostics,
-          error: `${formatDiagnostic(diagnostic)} Raw MPEG-TS recovery data was captured for diagnostics, but downloads are restricted to playable MP4 output.`,
+          error: `${formatDiagnostic(diagnostic)} Browser HLS downloads are restricted to playable MP4 output.`,
         };
       }
 
-      throw new Error(
-        formatDiagnostic(diagnostic),
-      );
+      throw new Error(formatDiagnostic(diagnostic));
     }
   }
 
@@ -353,7 +323,6 @@ export function createBrowserHlsExportHost(options: BrowserHlsExportHostOptions 
 
     if (session) {
       await session.sink.abort(payload.reason);
-      await session.rawSink?.abort(payload.reason);
       sessions.delete(payload.jobId);
     }
 

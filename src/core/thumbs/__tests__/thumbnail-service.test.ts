@@ -64,7 +64,7 @@ describe('thumbnail service browser fallback', () => {
       type: 'EXTRACT_THUMBNAIL',
       url: 'https://cdn.example.com/video.mp4',
       atSec: 10,
-      format: 'jpeg',
+      format: 'webp',
     });
   });
 
@@ -112,7 +112,7 @@ describe('thumbnail service browser fallback', () => {
       url: 'https://cdn.example.com/master.m3u8',
       protocol: 'hls',
       atSec: 10,
-      format: 'jpeg',
+      format: 'webp',
     });
   });
 

@@ -100,7 +100,9 @@ export async function downloadDirectWithRanges(
       });
 
       if (response.status !== 206) {
-        throw new SegmentFetchError(response.status, response.statusText);
+        // A 2xx that is not 206 means the server ignored the Range request;
+        // retrying will not make it honor ranges, so fail fast.
+        throw new SegmentFetchError(response.status, response.statusText, undefined, response.ok);
       }
 
       return responseBytes(response);
