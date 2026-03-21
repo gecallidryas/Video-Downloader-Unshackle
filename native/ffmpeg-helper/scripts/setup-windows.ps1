@@ -1,8 +1,7 @@
 [CmdletBinding()]
 param(
-  [Parameter(Mandatory = $true)]
   [ValidatePattern('^[a-p]{32}$')]
-  [string] $ExtensionId,
+  [string] $ExtensionId = 'gljdakohnaibpophgamklloippklkdol',
 
   [string] $InstallDir = (Join-Path $env:LOCALAPPDATA 'VideoDownloaderUnshackle\native-host'),
 

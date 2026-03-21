@@ -3,6 +3,9 @@ import { defineConfig } from 'wxt';
 export default defineConfig({
   modules: ['@wxt-dev/module-react'],
   manifest: {
+    // Pins a deterministic extension ID (gljdakohnaibpophgamklloippklkdol) so the
+    // native messaging host manifest's allowed_origins stays valid across installs.
+    key: 'MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAqavQuZ6CyD2gHgAImc79yLUVMErhDK2Mi1/EtjYcVqitps1ptBOpjdNLgRNG36kgMJAV9E0wtXf+u/G8cK9PC6Rd4++D9TY9KKQZx+EZvOWNMgtEJ3IwvhRvGqSg6ZXcN2m9Uk7xbOkLDd3OXFoHCnAT6CZ8aKNkquXTlSuMPZcAYtK9mzJ9KUqCLS2o/xfWcsakeV00LrLrTjBAukmELNMf+RXidv7J3q/gAYaLEiDzMKuopuJ7eVQVWo4Bin6IwbGpti8Qm8uuRI6TNGPzEgEmZRul+L7RrZAcfvtrxCD5NLKrpnT4b3ph7VgHMwweTHNwhJBiJMdk0cw/MlpzqwIDAQAB',
     name: 'Video Downloader - Unshackle',
     description: 'Detect and download HLS, DASH, and direct video/audio streams with a side-panel UI, queue management, and native FFmpeg export.',
     version: '0.1.0',

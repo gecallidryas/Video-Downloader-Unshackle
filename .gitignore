@@ -8,3 +8,7 @@ coverage/
 playwright-report/
 test-results/
 .playwright-mcp/
+
+# Extension signing private key (do not commit)
+extension-signing-key.pem
+extension-key.txt
