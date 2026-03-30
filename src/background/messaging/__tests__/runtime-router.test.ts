@@ -324,6 +324,8 @@ test('GET_JOBS and queue actions expose production download queue operations', a
     resume: vi.fn(),
     removeQueued: vi.fn(),
     clearCompleted: vi.fn(() => ['job-1']),
+    rehydrate: vi.fn(async () => undefined),
+    flush: vi.fn(async () => undefined),
   };
   const job = jobStore.create(candidate, { mode: 'best' });
   jobStore.update(job.id, { phase: 'failed' });

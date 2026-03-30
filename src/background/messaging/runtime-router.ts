@@ -1422,14 +1422,15 @@ export function createRuntimeRouter(
 export function registerRuntimeRouter(
   runtimeRouter: RuntimeRouter,
   runtime: RuntimeMessageHost = chrome.runtime,
+  ready: Promise<void> = Promise.resolve(),
 ): void {
   runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (!runtimeRouter.canHandleMessage(message as RuntimeRequest)) {
       return undefined;
     }
 
-    void runtimeRouter
-      .handleMessage(message as RuntimeRequest, sender)
+    void ready
+      .then(() => runtimeRouter.handleMessage(message as RuntimeRequest, sender))
       .then(sendResponse)
       .catch((error) => {
         const detail = error instanceof Error

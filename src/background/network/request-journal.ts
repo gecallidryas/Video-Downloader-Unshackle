@@ -16,6 +16,10 @@ import {
   type RequestLike,
 } from './classify-request';
 import type { HeaderContextStore } from './header-context';
+import {
+  createDebouncedWriter,
+  type StatePersistence,
+} from '@/src/background/state/state-persistence';
 
 export interface NetworkRequestEvidence extends RequestClassification {
   tabId: number;
@@ -32,13 +36,20 @@ export interface RequestJournal {
   tabIds(): number[];
   clear(tabId: number): void;
   updateCaptureRules(options: CaptureRuleEngineOptions): void;
+  rehydrate(): Promise<void>;
+  flush(): Promise<void>;
 }
 
 export interface RequestJournalOptions {
   duplicateWindowMs?: number;
   now?: () => number;
   captureRules?: CaptureRuleEngineOptions;
+  persistence?: StatePersistence;
+  persistKey?: string;
+  debounceMs?: number;
 }
+
+type JournalSnapshot = Array<[number, NetworkRequestEvidence[]]>;
 
 export interface WebRequestEventLike {
   addListener(
@@ -227,6 +238,18 @@ export function createRequestJournal(
   let regexClassifier = createOptionalRegexClassifier(options.captureRules);
   let captureRuleEngine = createOptionalCaptureRuleEngine(options.captureRules);
 
+  const persistKey = options.persistKey ?? 'request-journal';
+  const writer = options.persistence
+    ? createDebouncedWriter(async () => {
+        const snapshot: JournalSnapshot = Array.from(evidenceByTabId.entries());
+        await options.persistence?.write(persistKey, snapshot);
+      }, options.debounceMs ?? 500)
+    : undefined;
+
+  function persist(): void {
+    writer?.schedule();
+  }
+
   function getEvidenceTime(evidence: NetworkRequestEvidence): number {
     return evidence.detectedAt ?? options.now?.() ?? Date.now();
   }
@@ -259,6 +282,7 @@ export function createRequestJournal(
       );
 
       evidenceByTabId.set(tabId, nextEntries);
+      persist();
 
       return cloneNetworkEvidence(tabEvidence);
     },
@@ -283,12 +307,30 @@ export function createRequestJournal(
     },
 
     clear(tabId) {
-      evidenceByTabId.delete(tabId);
+      if (evidenceByTabId.delete(tabId)) {
+        persist();
+      }
     },
 
     updateCaptureRules(nextOptions) {
       regexClassifier = createOptionalRegexClassifier(nextOptions);
       captureRuleEngine = createOptionalCaptureRuleEngine(nextOptions);
+    },
+
+    async rehydrate() {
+      const snapshot = await options.persistence?.read<JournalSnapshot>(persistKey);
+      if (!snapshot) {
+        return;
+      }
+
+      evidenceByTabId.clear();
+      for (const [tabId, entries] of snapshot) {
+        evidenceByTabId.set(tabId, entries);
+      }
+    },
+
+    async flush() {
+      await writer?.flushNow();
     },
   };
 }

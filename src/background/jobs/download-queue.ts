@@ -7,6 +7,10 @@ import type {
   QueueStats,
 } from '@/video_downloader_types_skeleton';
 import type { JobStore } from './job-store';
+import {
+  createDebouncedWriter,
+  type StatePersistence,
+} from '@/src/background/state/state-persistence';
 
 export type DownloadQueueExecutor = (
   job: DownloadJob,
@@ -17,6 +21,9 @@ export interface DownloadQueueOptions {
   jobStore: JobStore;
   executeJob: DownloadQueueExecutor;
   maxConcurrent?: number;
+  persistence?: StatePersistence;
+  persistKey?: string;
+  debounceMs?: number;
 }
 
 export interface DownloadQueue {
@@ -29,7 +36,21 @@ export interface DownloadQueue {
   resume(jobId: string): boolean;
   removeQueued(jobId: string): boolean;
   clearCompleted(): string[];
+  rehydrate(): Promise<void>;
+  flush(): Promise<void>;
 }
+
+const RUNNING_PHASES = [
+  'preparing',
+  'fetching',
+  'decrypting',
+  'transmuxing',
+  'assembling',
+  'finalizing',
+  'exporting',
+] as const;
+
+type CandidateSnapshot = Array<[string, MediaCandidate]>;
 
 function failureFromError(error: unknown): JobFailure {
   return {
@@ -52,6 +73,18 @@ export function createDownloadQueue(options: DownloadQueueOptions): DownloadQueu
   const candidates = new Map<string, MediaCandidate>();
   const active = new Set<string>();
   const maxConcurrent = Math.max(1, Math.floor(options.maxConcurrent ?? 3));
+
+  const persistKey = options.persistKey ?? 'queue-candidates';
+  const writer = options.persistence
+    ? createDebouncedWriter(async () => {
+        const snapshot: CandidateSnapshot = Array.from(candidates.entries());
+        await options.persistence?.write(persistKey, snapshot);
+      }, options.debounceMs ?? 250)
+    : undefined;
+
+  function persist(): void {
+    writer?.schedule();
+  }
 
   async function runOne(job: DownloadJob): Promise<void> {
     const candidate = candidates.get(job.id);
@@ -94,6 +127,7 @@ export function createDownloadQueue(options: DownloadQueueOptions): DownloadQueu
     enqueue(candidate, selection) {
       const job = options.jobStore.create(candidate, selection);
       candidates.set(job.id, candidate);
+      persist();
 
       return job;
     },
@@ -124,9 +158,7 @@ export function createDownloadQueue(options: DownloadQueueOptions): DownloadQueu
       return {
         queued: jobs.filter((job) => job.phase === 'queued').length,
         running: jobs.filter((job) =>
-          ['preparing', 'fetching', 'decrypting', 'transmuxing', 'assembling', 'finalizing', 'exporting'].includes(
-            job.phase,
-          ),
+          (RUNNING_PHASES as readonly string[]).includes(job.phase),
         ).length,
         failed: jobs.filter((job) => job.phase === 'failed').length,
         completed: jobs.filter((job) => job.phase === 'completed').length,
@@ -198,8 +230,31 @@ export function createDownloadQueue(options: DownloadQueueOptions): DownloadQueu
         options.jobStore.delete(id);
         candidates.delete(id);
       }
+      persist();
 
       return completedIds;
+    },
+
+    async rehydrate() {
+      const snapshot = await options.persistence?.read<CandidateSnapshot>(
+        persistKey,
+      );
+      if (snapshot) {
+        candidates.clear();
+        for (const [jobId, candidate] of snapshot) {
+          candidates.set(jobId, candidate);
+        }
+      }
+
+      for (const job of options.jobStore.list()) {
+        if ((RUNNING_PHASES as readonly string[]).includes(job.phase)) {
+          options.jobStore.update(job.id, { phase: 'queued', progressPct: 0 });
+        }
+      }
+    },
+
+    async flush() {
+      await writer?.flushNow();
     },
   };
 }

@@ -36,6 +36,7 @@ import {
   registerPassiveRequestJournal,
 } from '@/src/background/network/request-journal';
 import { createHeaderContextStore } from '@/src/background/network/header-context';
+import { getDefaultSessionPersistence } from '@/src/background/state/state-persistence';
 import { registerBackgroundCommandHandlers } from '@/src/background/commands/background-commands';
 import { createAutoScanController } from '@/src/background/scanning/auto-scan';
 import { createTabSnapshotStore } from '@/src/background/state/tab-snapshots';
@@ -66,11 +67,12 @@ import { detectStreamingWriteCapabilities } from '@/src/core/capabilities/stream
 import type { SegmentProgressEvent } from '@/src/core/download/progress-events';
 
 export function initializeBackgroundShell() {
-  const candidateRegistry = createCandidateRegistry();
-  const requestJournal = createRequestJournal();
+  const statePersistence = getDefaultSessionPersistence();
+  const candidateRegistry = createCandidateRegistry({ persistence: statePersistence });
+  const requestJournal = createRequestJournal(200, { persistence: statePersistence });
   const headerContext = createHeaderContextStore();
   const settingsStore = createSettingsStore();
-  const jobStore = createJobStore();
+  const jobStore = createJobStore(Date.now, { persistence: statePersistence });
   const historyStore = createHistoryStore();
   const fragmentStore = createIndexedDbFragmentStore();
   const bucketMetadataStore = createBucketMetadataStore();
@@ -444,6 +446,7 @@ export function initializeBackgroundShell() {
   };
   const downloadQueue = createDownloadQueue({
     jobStore,
+    persistence: statePersistence,
     executeJob: async (job) => {
       const candidate = candidateRegistry
         .get(job.tabId)
@@ -599,7 +602,34 @@ export function initializeBackgroundShell() {
     jobStore,
     downloadQueue,
   });
-  registerRuntimeRouter(runtimeRouter);
+  const rehydrateState = async (): Promise<void> => {
+    if (!statePersistence) {
+      return;
+    }
+
+    await jobStore.rehydrate();
+    await candidateRegistry.rehydrate();
+    await requestJournal.rehydrate();
+    await downloadQueue.rehydrate();
+
+    if (downloadQueue.stats().queued > 0) {
+      void downloadQueue.drain();
+    }
+  };
+  const ready = rehydrateState();
+  registerRuntimeRouter(runtimeRouter, chrome.runtime, ready);
+
+  const KEEPALIVE_ALARM = 'unshackle:keepalive';
+  chrome.alarms?.create(KEEPALIVE_ALARM, { periodInMinutes: 0.5 });
+  chrome.alarms?.onAlarm?.addListener((alarm) => {
+    if (alarm.name !== KEEPALIVE_ALARM) {
+      return;
+    }
+    const stats = downloadQueue.stats();
+    if (stats.queued > 0 || stats.running > 0) {
+      void downloadQueue.drain();
+    }
+  });
   chrome.tabs?.onRemoved?.addListener((tabId, removeInfo) => {
     autoScan.handleTabRemoved(tabId);
     const candidates = candidateRegistry.get(tabId);
