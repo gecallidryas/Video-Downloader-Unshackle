@@ -37,6 +37,11 @@ import {
 } from '@/src/background/network/request-journal';
 import { createHeaderContextStore } from '@/src/background/network/header-context';
 import { getDefaultSessionPersistence } from '@/src/background/state/state-persistence';
+import {
+  createUpdatePortBroadcaster,
+  UPDATE_PORT_NAME,
+  type UpdatePortLike,
+} from '@/src/background/messaging/update-port';
 import { registerBackgroundCommandHandlers } from '@/src/background/commands/background-commands';
 import { createAutoScanController } from '@/src/background/scanning/auto-scan';
 import { createTabSnapshotStore } from '@/src/background/state/tab-snapshots';
@@ -68,11 +73,20 @@ import type { SegmentProgressEvent } from '@/src/core/download/progress-events';
 
 export function initializeBackgroundShell() {
   const statePersistence = getDefaultSessionPersistence();
-  const candidateRegistry = createCandidateRegistry({ persistence: statePersistence });
+  const updateBroadcaster = createUpdatePortBroadcaster();
+  let onJobsChanged = (): void => {};
+  let onCandidatesChanged = (): void => {};
+  const candidateRegistry = createCandidateRegistry({
+    persistence: statePersistence,
+    onChange: () => onCandidatesChanged(),
+  });
   const requestJournal = createRequestJournal(200, { persistence: statePersistence });
   const headerContext = createHeaderContextStore();
   const settingsStore = createSettingsStore();
-  const jobStore = createJobStore(Date.now, { persistence: statePersistence });
+  const jobStore = createJobStore(Date.now, {
+    persistence: statePersistence,
+    onChange: () => onJobsChanged(),
+  });
   const historyStore = createHistoryStore();
   const fragmentStore = createIndexedDbFragmentStore();
   const bucketMetadataStore = createBucketMetadataStore();
@@ -616,6 +630,38 @@ export function initializeBackgroundShell() {
       void downloadQueue.drain();
     }
   };
+  let jobsBroadcastTimer: ReturnType<typeof setTimeout> | undefined;
+  onJobsChanged = () => {
+    if (jobsBroadcastTimer !== undefined) {
+      return;
+    }
+    jobsBroadcastTimer = setTimeout(() => {
+      jobsBroadcastTimer = undefined;
+      if (updateBroadcaster.size() > 0) {
+        updateBroadcaster.broadcast({ type: 'JOBS_UPDATED', jobs: jobStore.list() });
+      }
+    }, 150);
+  };
+  let candidatesBroadcastTimer: ReturnType<typeof setTimeout> | undefined;
+  onCandidatesChanged = () => {
+    if (candidatesBroadcastTimer !== undefined) {
+      return;
+    }
+    candidatesBroadcastTimer = setTimeout(() => {
+      candidatesBroadcastTimer = undefined;
+      if (updateBroadcaster.size() > 0) {
+        updateBroadcaster.broadcast({ type: 'CANDIDATES_UPDATED' });
+      }
+    }, 150);
+  };
+  chrome.runtime.onConnect?.addListener((port) => {
+    if (port.name !== UPDATE_PORT_NAME) {
+      return;
+    }
+    updateBroadcaster.addPort(port as unknown as UpdatePortLike);
+    port.postMessage({ type: 'JOBS_UPDATED', jobs: jobStore.list() });
+  });
+
   const ready = rehydrateState();
   registerRuntimeRouter(runtimeRouter, chrome.runtime, ready);
 

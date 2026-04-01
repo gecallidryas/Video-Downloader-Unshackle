@@ -104,6 +104,7 @@ function buildRuntimeClient(candidates: MediaCandidate[]): RuntimeClient {
     replaceHlsManifestUrl: vi.fn().mockResolvedValue(undefined),
     getAllCandidates: vi.fn().mockResolvedValue(candidates),
     getJobs: vi.fn().mockResolvedValue([]),
+    subscribeToUpdates: vi.fn(() => ({ close: vi.fn() })),
     retryDownload: vi.fn().mockResolvedValue(undefined),
     resaveDownload: vi.fn().mockResolvedValue(undefined),
     removeDownload: vi.fn().mockResolvedValue(true),

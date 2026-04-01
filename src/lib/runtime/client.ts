@@ -15,8 +15,39 @@ import type {
 } from '@/video_downloader_types_skeleton';
 import { createRuntimeRequest } from '@/src/shared/contracts/messages';
 import { isRuntimeErrorResponse } from '@/src/shared/contracts/runtime';
+import { UPDATE_PORT_NAME } from '@/src/background/messaging/update-port';
 
 type RuntimeTransport = (message: RuntimeRequest) => Promise<RuntimeResponse>;
+
+export interface RuntimeUpdatePort {
+  onMessage: { addListener(callback: (message: unknown) => void): void };
+  onDisconnect: { addListener(callback: () => void): void };
+  disconnect(): void;
+}
+
+export type RuntimeUpdateConnect = () => RuntimeUpdatePort;
+
+export interface RuntimeUpdateHandlers {
+  onJobs?(jobs: DownloadJob[]): void;
+  onCandidatesChanged?(): void;
+}
+
+export interface RuntimeSubscription {
+  close(): void;
+}
+
+interface JobsUpdatedMessage {
+  type: 'JOBS_UPDATED';
+  jobs: DownloadJob[];
+}
+
+interface CandidatesUpdatedMessage {
+  type: 'CANDIDATES_UPDATED';
+}
+
+function defaultUpdateConnect(): RuntimeUpdatePort {
+  return chrome.runtime.connect({ name: UPDATE_PORT_NAME }) as RuntimeUpdatePort;
+}
 
 export class RuntimeClientError extends Error {
   constructor(
@@ -75,6 +106,7 @@ export interface RuntimeClient {
     referer?: string;
     origin?: string;
   }): Promise<DownloadJob | undefined>;
+  subscribeToUpdates(handlers: RuntimeUpdateHandlers): RuntimeSubscription;
 }
 
 async function defaultTransport(
@@ -85,8 +117,57 @@ async function defaultTransport(
 
 export function createRuntimeClient(
   transport: RuntimeTransport = defaultTransport,
+  connect: RuntimeUpdateConnect = defaultUpdateConnect,
 ): RuntimeClient {
   return {
+    subscribeToUpdates(handlers) {
+      let closed = false;
+      let reconnectTimer: ReturnType<typeof setTimeout> | undefined;
+
+      const open = (): void => {
+        if (closed) {
+          return;
+        }
+
+        let port: RuntimeUpdatePort;
+        try {
+          port = connect();
+        } catch {
+          // Port unavailable (e.g. worker asleep at connect time); the caller's
+          // fallback poll covers this until the next reconnect attempt.
+          return;
+        }
+        port.onMessage.addListener((message) => {
+          const typed = message as
+            | JobsUpdatedMessage
+            | CandidatesUpdatedMessage
+            | undefined;
+          if (typed?.type === 'JOBS_UPDATED') {
+            handlers.onJobs?.(typed.jobs);
+          } else if (typed?.type === 'CANDIDATES_UPDATED') {
+            handlers.onCandidatesChanged?.();
+          }
+        });
+        port.onDisconnect.addListener(() => {
+          if (closed) {
+            return;
+          }
+          reconnectTimer = setTimeout(open, 1000);
+        });
+      };
+
+      open();
+
+      return {
+        close() {
+          closed = true;
+          if (reconnectTimer !== undefined) {
+            clearTimeout(reconnectTimer);
+          }
+        },
+      };
+    },
+
     async getCandidates(tabId) {
       const response = await transport(
         createRuntimeRequest('GET_CANDIDATES', { tabId }),

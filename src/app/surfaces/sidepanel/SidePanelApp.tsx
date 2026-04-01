@@ -396,6 +396,7 @@ function DetectionView({ activeTabId, runtimeClient }: DetectionViewProps) {
     }
 
     let cancelled = false;
+    let lastPushAt = 0;
     const refreshJobs = async () => {
       try {
         const jobs = await runtimeClient.getJobs();
@@ -410,14 +411,27 @@ function DetectionView({ activeTabId, runtimeClient }: DetectionViewProps) {
         }
       }
     };
-    void refreshJobs();
-    const intervalId = window.setInterval(
-      () => void refreshJobs(),
-      CURRENT_TAB_REFRESH_INTERVAL_MS,
-    );
+
+    const subscription = runtimeClient.subscribeToUpdates({
+      onJobs: (jobs) => {
+        if (cancelled) {
+          return;
+        }
+        lastPushAt = Date.now();
+        syncQueueJobs(jobs);
+      },
+    });
+
+    // Fallback poll: only fires if the Port has not pushed recently (e.g. dropped).
+    const intervalId = window.setInterval(() => {
+      if (Date.now() - lastPushAt >= CURRENT_TAB_REFRESH_INTERVAL_MS) {
+        void refreshJobs();
+      }
+    }, CURRENT_TAB_REFRESH_INTERVAL_MS);
 
     return () => {
       cancelled = true;
+      subscription.close();
       window.clearInterval(intervalId);
     };
   }, [runtimeClient, setErrorMessage, syncQueueJobs]);
@@ -1171,35 +1185,6 @@ function DownloadsPanel({ runtimeClient }: DownloadsPanelProps) {
     };
   }, []);
 
-  useEffect(() => {
-    let cancelled = false;
-
-    const refreshJobs = async () => {
-      try {
-        const jobs = await runtimeClient.getJobs();
-        if (!cancelled) {
-          syncQueueJobs(jobs);
-        }
-      } catch (error) {
-        if (!cancelled) {
-          setErrorMessage(
-            error instanceof Error ? error.message : 'Unable to refresh downloads',
-          );
-        }
-      }
-    };
-
-    void refreshJobs();
-    const intervalId = window.setInterval(
-      () => void refreshJobs(),
-      CURRENT_TAB_REFRESH_INTERVAL_MS,
-    );
-
-    return () => {
-      cancelled = true;
-      window.clearInterval(intervalId);
-    };
-  }, [runtimeClient, setErrorMessage, syncQueueJobs]);
 
   const queueItems = useMemo<QueueViewItem[]>(
     () => {

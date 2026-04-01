@@ -7,6 +7,7 @@ import { useSettingsStore } from '@/src/state/useSettingsStore';
 import type { RuntimeClient } from '@/src/lib/runtime/client';
 import type { DetectedMedia } from '@/src/types/media';
 import type {
+  DownloadJob,
   MediaAssetState,
   MediaCandidate,
 } from '@/video_downloader_types_skeleton';
@@ -42,6 +43,7 @@ function buildCandidate(
 }
 
 function buildRuntimeClient(candidates: MediaCandidate[]): RuntimeClient {
+  const getJobs = vi.fn().mockResolvedValue([]);
   return {
     getCandidates: vi.fn().mockResolvedValue(candidates),
     ingestManualHls: vi.fn().mockResolvedValue([]),
@@ -85,7 +87,11 @@ function buildRuntimeClient(candidates: MediaCandidate[]): RuntimeClient {
     recoverHlsExport: vi.fn().mockResolvedValue(undefined),
     replaceHlsManifestUrl: vi.fn().mockResolvedValue(undefined),
     getAllCandidates: vi.fn().mockResolvedValue(candidates),
-    getJobs: vi.fn().mockResolvedValue([]),
+    getJobs,
+    subscribeToUpdates: vi.fn((handlers) => {
+      void Promise.resolve(getJobs()).then((jobs) => handlers.onJobs?.(jobs));
+      return { close: vi.fn() };
+    }),
     retryDownload: vi.fn().mockResolvedValue(undefined),
     resaveDownload: vi.fn().mockResolvedValue(undefined),
     removeDownload: vi.fn().mockResolvedValue(true),
@@ -793,26 +799,30 @@ test('refreshes runtime download jobs after a queued start', async () => {
     bytesDownloaded: 0,
   };
   vi.mocked(runtimeClient.startDownload).mockResolvedValue(queuedJob);
-  vi.mocked(runtimeClient.getJobs).mockResolvedValueOnce([]).mockResolvedValue([
-    {
-      ...queuedJob,
-      phase: 'fetching',
-      progressPct: 12,
-      updatedAt: 2,
-    },
-  ]);
+  vi.mocked(runtimeClient.getJobs).mockResolvedValue([]);
+  let pushJobs: ((jobs: DownloadJob[]) => void) | undefined;
+  vi.mocked(runtimeClient.subscribeToUpdates).mockImplementation((handlers) => {
+    pushJobs = (jobs) => handlers.onJobs?.(jobs);
+    return { close: vi.fn() };
+  });
 
   render(<SidePanelApp activeTabId={7} runtimeClient={runtimeClient} />);
 
   expect(await screen.findByText('Refreshing queued stream')).toBeInTheDocument();
   await user.click(screen.getByRole('button', { name: /^download$/i }));
-  await user.click(screen.getByRole('button', { name: /downloads/i }));
+  expect(await screen.findByRole('button', { name: /^downloading$/i })).toBeDisabled();
 
+  // A fetching update pushed over the Port keeps the card in its downloading state.
   await waitFor(() => {
-    expect(runtimeClient.getJobs).toHaveBeenCalled();
+    pushJobs?.([{ ...queuedJob, phase: 'fetching', progressPct: 12, updatedAt: 2 }]);
+    expect(screen.getByRole('button', { name: /^downloading$/i })).toBeDisabled();
   });
-  expect(await screen.findByText('fetching')).toBeInTheDocument();
-  expect(screen.queryByText('queued')).not.toBeInTheDocument();
+
+  // A completed update pushed over the Port restores the download action.
+  await waitFor(() => {
+    pushJobs?.([{ ...queuedJob, phase: 'completed', progressPct: 100, updatedAt: 3 }]);
+    expect(screen.getByRole('button', { name: /^download$/i })).toBeEnabled();
+  });
 });
 
 test('marks the current media card as downloading after start', async () => {
@@ -840,9 +850,21 @@ test('restores current media card download action after runtime job completes', 
       displayName: 'Completing label stream',
     }),
   ]);
-  vi.mocked(runtimeClient.getJobs)
-    .mockResolvedValueOnce([])
-    .mockResolvedValue([
+  vi.mocked(runtimeClient.getJobs).mockResolvedValue([]);
+  let pushJobs: ((jobs: DownloadJob[]) => void) | undefined;
+  vi.mocked(runtimeClient.subscribeToUpdates).mockImplementation((handlers) => {
+    pushJobs = (jobs) => handlers.onJobs?.(jobs);
+    return { close: vi.fn() };
+  });
+
+  render(<SidePanelApp activeTabId={7} runtimeClient={runtimeClient} />);
+
+  expect(await screen.findByText('Completing label stream')).toBeInTheDocument();
+  await user.click(screen.getByRole('button', { name: /^download$/i }));
+  expect(await screen.findByRole('button', { name: /^downloading$/i })).toBeDisabled();
+
+  await waitFor(() => {
+    pushJobs?.([
       {
         id: 'job-complete-label',
         candidateId: 'download-complete-label',
@@ -855,21 +877,8 @@ test('restores current media card download action after runtime job completes', 
         bytesDownloaded: 100,
       },
     ]);
-
-  render(<SidePanelApp activeTabId={7} runtimeClient={runtimeClient} />);
-
-  expect(await screen.findByText('Completing label stream')).toBeInTheDocument();
-  await user.click(screen.getByRole('button', { name: /^download$/i }));
-  expect(await screen.findByRole('button', { name: /^downloading$/i })).toBeDisabled();
-
-  await waitFor(
-    () => {
-      expect(runtimeClient.getJobs).toHaveBeenCalledTimes(2);
-    },
-    { timeout: 2_500 },
-  );
-
-  expect(await screen.findByRole('button', { name: /^download$/i })).toBeEnabled();
+    expect(screen.getByRole('button', { name: /^download$/i })).toBeEnabled();
+  });
 }, 6_000);
 
 test('current media copy URL action writes the browser fallback source URL', async () => {

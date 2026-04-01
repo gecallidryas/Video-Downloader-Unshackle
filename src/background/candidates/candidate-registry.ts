@@ -24,6 +24,7 @@ export interface CandidateRegistryOptions {
   persistence?: StatePersistence;
   persistKey?: string;
   debounceMs?: number;
+  onChange?: () => void;
 }
 
 type CandidateSnapshot = Array<[number, MediaCandidate[]]>;
@@ -53,6 +54,7 @@ export function createCandidateRegistry(
 
   function persist(): void {
     writer?.schedule();
+    options.onChange?.();
   }
 
   return {

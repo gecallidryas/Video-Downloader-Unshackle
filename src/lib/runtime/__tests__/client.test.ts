@@ -224,4 +224,43 @@ describe('RuntimeClient', () => {
       payload: { candidateId: 'candidate-1', kind: 'poster', priority: 'visible' },
     }));
   });
+
+  test('subscribeToUpdates receives pushed job updates over the port', () => {
+    let messageCb: ((message: unknown) => void) | undefined;
+    const port = {
+      onMessage: { addListener: (cb: (m: unknown) => void) => { messageCb = cb; } },
+      onDisconnect: { addListener: vi.fn() },
+      disconnect: vi.fn(),
+    };
+    const connect = vi.fn(() => port);
+    const client = createRuntimeClient(vi.fn(), connect);
+    const onJobs = vi.fn();
+
+    client.subscribeToUpdates({ onJobs });
+    messageCb?.({ type: 'JOBS_UPDATED', jobs: [{ id: 'job-1' }] });
+
+    expect(connect).toHaveBeenCalledTimes(1);
+    expect(onJobs).toHaveBeenCalledWith([{ id: 'job-1' }]);
+  });
+
+  test('subscribeToUpdates reconnects after the port disconnects', () => {
+    vi.useFakeTimers();
+    let disconnectCb: (() => void) | undefined;
+    const makePort = () => ({
+      onMessage: { addListener: vi.fn() },
+      onDisconnect: { addListener: (cb: () => void) => { disconnectCb = cb; } },
+      disconnect: vi.fn(),
+    });
+    const connect = vi.fn(() => makePort());
+    const client = createRuntimeClient(vi.fn(), connect);
+
+    client.subscribeToUpdates({ onJobs: vi.fn() });
+    expect(connect).toHaveBeenCalledTimes(1);
+
+    disconnectCb?.();
+    vi.advanceTimersByTime(1000);
+
+    expect(connect).toHaveBeenCalledTimes(2);
+    vi.useRealTimers();
+  });
 });

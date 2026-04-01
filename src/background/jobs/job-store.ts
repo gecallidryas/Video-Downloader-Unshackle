@@ -23,6 +23,7 @@ export interface JobStoreOptions {
   persistence?: StatePersistence;
   persistKey?: string;
   debounceMs?: number;
+  onChange?: () => void;
 }
 
 interface JobStoreSnapshot {
@@ -59,6 +60,7 @@ export function createJobStore(
 
   function persist(): void {
     writer?.schedule();
+    options.onChange?.();
   }
 
   return {
