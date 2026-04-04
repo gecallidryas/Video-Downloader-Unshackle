@@ -223,6 +223,52 @@ function buildEvidence(
   };
 }
 
+export interface PlayerRequestInput {
+  url: string;
+  contentType?: string;
+}
+
+export interface PlayerManifestDetection {
+  category: Extract<RequestCategory, 'hls_manifest' | 'dash_manifest'>;
+  protocol: Extract<StreamProtocol, 'hls' | 'dash'>;
+  url: string;
+  mimeType?: string;
+}
+
+// Pure URL/MIME test for a manifest fetched by a JS player (hls.js/shaka/dash.js)
+// in the MAIN world — webRequest never surfaces these usefully when the player
+// feeds MSE via blob:. Returns undefined for anything that is not an HLS/DASH manifest.
+export function classifyPlayerRequest(
+  input: PlayerRequestInput,
+): PlayerManifestDetection | undefined {
+  const extension = getExtension(input.url);
+  const mimeType = normalizeMimeType(input.contentType);
+
+  if (
+    extension === 'm3u8' ||
+    extension === 'm3u' ||
+    (mimeType && hlsMimeTypes.has(mimeType))
+  ) {
+    return {
+      category: 'hls_manifest',
+      protocol: 'hls',
+      url: input.url,
+      mimeType,
+    };
+  }
+
+  if (extension === 'mpd' || (mimeType && dashMimeTypes.has(mimeType))) {
+    return {
+      category: 'dash_manifest',
+      protocol: 'dash',
+      url: input.url,
+      mimeType,
+    };
+  }
+
+  return undefined;
+}
+
 export function classifyRequest(request: RequestLike): RequestClassification {
   const extension = getExtension(request.url);
   const mimeType = normalizeMimeType(

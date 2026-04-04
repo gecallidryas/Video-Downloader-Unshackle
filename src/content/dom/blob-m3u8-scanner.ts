@@ -41,6 +41,27 @@ function getProtocol(type: string | undefined): Extract<StreamProtocol, 'hls' | 
   return undefined;
 }
 
+export interface MseActivitySignal {
+  usingMediaSource: true;
+  sourceMimeType?: string;
+  protocol?: Extract<StreamProtocol, 'hls' | 'dash'>;
+}
+
+// Connects the MAIN-world MediaSource/appendBuffer hook to detection: blob:/MSE
+// players never expose a fetchable manifest URL here, so we surface only that MSE
+// is in use plus the buffered source mime, letting the UI/native path take over.
+export function classifyMseActivity(
+  mimeType: string | undefined,
+): MseActivitySignal {
+  const normalized = mimeType?.split(';', 1)[0]?.trim().toLowerCase() || undefined;
+
+  return {
+    usingMediaSource: true,
+    sourceMimeType: normalized,
+    protocol: getProtocol(mimeType),
+  };
+}
+
 function getElementSelector(element: HTMLMediaElement): string {
   const tagName = element.tagName.toLowerCase();
 

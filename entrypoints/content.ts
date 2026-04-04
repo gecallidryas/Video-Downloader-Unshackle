@@ -1,7 +1,8 @@
 import { defineContentScript } from 'wxt/utils/define-content-script';
 import type { DetectionEvidence } from '@/video_downloader_types_skeleton';
 import { collectPageContext } from '@/src/content/dom/collect-page-context';
-import { detectBlobMedia } from '@/src/content/dom/blob-m3u8-scanner';
+import { classifyMseActivity, detectBlobMedia } from '@/src/content/dom/blob-m3u8-scanner';
+import { classifyPlayerRequest } from '@/src/background/network/classify-request';
 import { extractMediaResources } from '@/src/content/dom/performance-extractor';
 import { extractPlayerSources } from '@/src/content/dom/player-extractor';
 import { scanEmbedSignals } from '@/src/content/dom/scan-embed-signals';
@@ -191,6 +192,68 @@ export function relayMainWorldMessages(
             pageUrl: location.href,
             title: payload.title ?? document.title ?? 'iQIYI',
             m3u8Urls: payload.m3u8Urls,
+          }),
+        );
+      } catch {
+        // Extension context may be invalidated; fail silently.
+      }
+      return;
+    }
+
+    if (type === 'unshackle_media_request') {
+      const data = event.data as { url?: string; contentType?: string; via?: string };
+      if (!data.url) return;
+      const detection = classifyPlayerRequest({
+        url: data.url,
+        contentType: data.contentType,
+      });
+      if (!detection) return;
+      try {
+        void runtime.sendMessage(
+          createRuntimeRequest('INGEST_CONTENT_EVIDENCE', {
+            pageUrl: location.href,
+            pageTitle: document.title || undefined,
+            evidence: [
+              {
+                source: 'player-config',
+                confidence: 0.8,
+                url: detection.url,
+                notes: [
+                  `main-world:${data.via === 'xhr' ? 'xhr' : 'fetch'}`,
+                  `protocol:${detection.protocol}`,
+                  ...(detection.mimeType ? [`mime-type:${detection.mimeType}`] : []),
+                ],
+                createdAt: Date.now(),
+              },
+            ],
+          }),
+        );
+      } catch {
+        // Extension context may be invalidated; fail silently.
+      }
+      return;
+    }
+
+    if (type === 'unshackle_mse_activity') {
+      const data = event.data as { mime?: string };
+      const signal = classifyMseActivity(data.mime);
+      try {
+        void runtime.sendMessage(
+          createRuntimeRequest('INGEST_CONTENT_EVIDENCE', {
+            pageUrl: location.href,
+            pageTitle: document.title || undefined,
+            evidence: [
+              {
+                source: 'blob-correlation',
+                confidence: 0.5,
+                notes: [
+                  'main-world:mse',
+                  ...(signal.sourceMimeType ? [`mime:${signal.sourceMimeType}`] : []),
+                  ...(signal.protocol ? [`protocol:${signal.protocol}`] : []),
+                ],
+                createdAt: Date.now(),
+              },
+            ],
           }),
         );
       } catch {

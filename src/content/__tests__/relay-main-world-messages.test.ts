@@ -57,6 +57,80 @@ test('unshackle_drm_detected message → sendMessage called with DRM_DETECTED an
   );
 });
 
+test('unshackle_media_request HLS manifest → INGEST_CONTENT_EVIDENCE with player-config evidence', () => {
+  const runtime = makeRuntime();
+  relayMainWorldMessages(runtime);
+
+  dispatch({
+    type: 'unshackle_media_request',
+    url: 'https://cdn.example.com/master.m3u8',
+    contentType: 'application/vnd.apple.mpegurl',
+    via: 'fetch',
+  });
+
+  expect(runtime.sendMessage).toHaveBeenCalledOnce();
+  expect(runtime.sendMessage).toHaveBeenCalledWith(
+    expect.objectContaining({
+      type: 'INGEST_CONTENT_EVIDENCE',
+      payload: expect.objectContaining({
+        pageUrl: expect.any(String),
+        evidence: expect.arrayContaining([
+          expect.objectContaining({
+            source: 'player-config',
+            url: 'https://cdn.example.com/master.m3u8',
+            notes: expect.arrayContaining([
+              'main-world:fetch',
+              'protocol:hls',
+            ]),
+          }),
+        ]),
+      }),
+    }),
+  );
+});
+
+test('unshackle_media_request non-manifest → sendMessage NOT called', () => {
+  const runtime = makeRuntime();
+  relayMainWorldMessages(runtime);
+
+  dispatch({
+    type: 'unshackle_media_request',
+    url: 'https://cdn.example.com/segment-1.ts',
+    contentType: 'video/mp2t',
+    via: 'xhr',
+  });
+
+  expect(runtime.sendMessage).not.toHaveBeenCalled();
+});
+
+test('unshackle_mse_activity → INGEST_CONTENT_EVIDENCE with blob-correlation evidence', () => {
+  const runtime = makeRuntime();
+  relayMainWorldMessages(runtime);
+
+  dispatch({
+    type: 'unshackle_mse_activity',
+    mime: 'video/mp4; codecs="avc1.640028"',
+  });
+
+  expect(runtime.sendMessage).toHaveBeenCalledOnce();
+  expect(runtime.sendMessage).toHaveBeenCalledWith(
+    expect.objectContaining({
+      type: 'INGEST_CONTENT_EVIDENCE',
+      payload: expect.objectContaining({
+        evidence: expect.arrayContaining([
+          expect.objectContaining({
+            source: 'blob-correlation',
+            notes: expect.arrayContaining([
+              'main-world:mse',
+              'mime:video/mp4',
+            ]),
+          }),
+        ]),
+      }),
+    }),
+  );
+});
+
 test('unrelated message type → sendMessage NOT called', () => {
   const runtime = makeRuntime();
   relayMainWorldMessages(runtime);
