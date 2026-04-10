@@ -62,6 +62,62 @@ function normalizeSafeHeaders(
   }, {});
 }
 
+export interface EngineHandoffHeader {
+  name: string;
+  value: string;
+}
+
+// A captured request context bundled for a download engine to consume as
+// yt-dlp-style --add-header (headers[]) / --cookies (cookie), or as browser-fetch
+// headers. Cookie/Authorization are credential-bearing and gated by policy.
+export interface EngineHandoff {
+  url: string;
+  headers: EngineHandoffHeader[];
+  cookie?: string;
+}
+
+export interface EngineHandoffPolicy {
+  advancedMode?: boolean;
+  captureCredentialHeaders?: boolean;
+}
+
+// Pure builder — does NOT call any native/yt-dlp path. Referer/Origin are always
+// emitted; Cookie/Authorization only when advancedMode && captureCredentialHeaders,
+// matching the credential policy enforced at capture time in header-context.
+export function buildEngineHandoff(
+  context: HeaderContext,
+  policy: EngineHandoffPolicy,
+): EngineHandoff {
+  const headers: EngineHandoffHeader[] = [];
+
+  if (context.headers.referer) {
+    headers.push({ name: 'Referer', value: context.headers.referer });
+  }
+  if (context.headers.origin) {
+    headers.push({ name: 'Origin', value: context.headers.origin });
+  }
+
+  const credentialsAllowed =
+    policy.advancedMode === true && policy.captureCredentialHeaders === true;
+
+  if (!credentialsAllowed) {
+    return { url: context.url, headers };
+  }
+
+  if (context.headers.authorization) {
+    headers.push({
+      name: 'Authorization',
+      value: context.headers.authorization,
+    });
+  }
+
+  return {
+    url: context.url,
+    headers,
+    ...(context.headers.cookie ? { cookie: context.headers.cookie } : {}),
+  };
+}
+
 export function createHeaderContextStore(
   options: HeaderContextStoreOptions = {},
 ): HeaderContextStore {
