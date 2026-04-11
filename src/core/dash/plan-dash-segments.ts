@@ -8,6 +8,20 @@ export interface PlanDashSegmentsOptions {
   selection?: DownloadSelection;
 }
 
+// A DASH presentation that exposes both a video and a separate audio
+// AdaptationSet requires muxing two independent sources, which the browser-only
+// path cannot do. The single-representation planner would emit video-only,
+// producing a silent file, so callers must refuse and defer to native FFmpeg.
+export function dashRequiresSeparateAudioVideo(
+  manifest: ParsedDashManifest,
+): boolean {
+  const trackTypes = new Set(
+    manifest.representations.map((representation) => representation.trackType),
+  );
+
+  return trackTypes.has('video') && trackTypes.has('audio');
+}
+
 function replaceNumberToken(template: string, number: number): string {
   return template.replace(/\$Number(?:%0(\d+)d)?\$/g, (_match, width: string) => {
     if (!width) {

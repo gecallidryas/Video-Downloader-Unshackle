@@ -9,6 +9,7 @@ import type {
   BrowserHlsExportRoute,
 } from '@/src/shared/contracts/offscreen';
 import type { ParsedHlsManifest } from '@/src/core/hls/parse-hls-manifest';
+import { hlsRequiresSeparateAudio } from '@/src/core/hls/plan-hls-segments';
 import type { MpegTsSegmentProbe } from './mpeg-ts-probe';
 
 export interface BrowserHlsExportRouteDecision {
@@ -151,6 +152,13 @@ function isMuxEligibleTs(input: BrowserHlsExportRouteInput): boolean {
   );
 }
 
+function selectedVariant(input: BrowserHlsExportRouteInput) {
+  return (
+    input.candidate.variants.find((variant) => variant.isDefault) ??
+    input.candidate.variants[0]
+  );
+}
+
 function chooseSink(input: BrowserHlsExportRouteInput): BrowserExportSinkKind {
   if (input.capabilities.persistedOutputDirectory && input.capabilities.fileSystemAccess) {
     return 'file-system-access';
@@ -173,6 +181,18 @@ export function resolveBrowserHlsExportRoute(
       outputExtension: 'bin',
       mimeType: 'application/octet-stream',
       reason: 'Protected HLS media is blocked before browser-only export.',
+      rawFallbackAllowed: false,
+    };
+  }
+
+  if (hlsRequiresSeparateAudio(input.manifest, selectedVariant(input))) {
+    return {
+      route: 'unsupported-browser-only',
+      sinkKind: 'blob-memory',
+      outputExtension: 'bin',
+      mimeType: 'application/octet-stream',
+      reason:
+        'Browser-only HLS export cannot mux a separate audio rendition with the video stream into a playable file; enable native FFmpeg export.',
       rawFallbackAllowed: false,
     };
   }

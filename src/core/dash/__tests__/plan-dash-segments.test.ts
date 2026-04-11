@@ -1,6 +1,54 @@
 import { describe, expect, test } from 'vitest';
 import { parseMpd } from '../parse-mpd';
-import { planDashSegments } from '../plan-dash-segments';
+import {
+  dashRequiresSeparateAudioVideo,
+  planDashSegments,
+} from '../plan-dash-segments';
+
+describe('dashRequiresSeparateAudioVideo', () => {
+  test('flags a manifest that splits audio and video into separate AdaptationSets', () => {
+    const manifest = parseMpd({
+      manifestUrl: 'https://cdn.example.com/dash/manifest.mpd',
+      content: [
+        '<MPD mediaPresentationDuration="PT8S">',
+        '<Period>',
+        '<AdaptationSet contentType="video"><Representation id="v1">',
+        '<BaseURL>video.mp4</BaseURL></Representation></AdaptationSet>',
+        '<AdaptationSet contentType="audio"><Representation id="a1">',
+        '<BaseURL>audio.mp4</BaseURL></Representation></AdaptationSet>',
+        '</Period></MPD>',
+      ].join(''),
+    });
+
+    expect(dashRequiresSeparateAudioVideo(manifest)).toBe(true);
+  });
+
+  test('does not flag a single video-only AdaptationSet', () => {
+    const manifest = parseMpd({
+      manifestUrl: 'https://cdn.example.com/dash/manifest.mpd',
+      content: [
+        '<MPD mediaPresentationDuration="PT8S">',
+        '<Period><AdaptationSet contentType="video"><Representation id="v1">',
+        '<BaseURL>video.mp4</BaseURL></Representation></AdaptationSet></Period></MPD>',
+      ].join(''),
+    });
+
+    expect(dashRequiresSeparateAudioVideo(manifest)).toBe(false);
+  });
+
+  test('does not flag an audio-only manifest', () => {
+    const manifest = parseMpd({
+      manifestUrl: 'https://cdn.example.com/dash/manifest.mpd',
+      content: [
+        '<MPD mediaPresentationDuration="PT8S">',
+        '<Period><AdaptationSet contentType="audio"><Representation id="a1">',
+        '<BaseURL>audio.mp4</BaseURL></Representation></AdaptationSet></Period></MPD>',
+      ].join(''),
+    });
+
+    expect(dashRequiresSeparateAudioVideo(manifest)).toBe(false);
+  });
+});
 
 describe('planDashSegments', () => {
   test('expands SegmentTimeline $Time$ templates', () => {

@@ -256,6 +256,38 @@ describe('browser DASH export runner', () => {
     runDashJobSpy.mockRestore();
   });
 
+  test('refuses a manifest with separate audio + video AdaptationSets before fetching', async () => {
+    const manifest = parseMpd({
+      manifestUrl: 'https://cdn.example.com/dash/manifest.mpd',
+      content: [
+        '<MPD mediaPresentationDuration="PT8S">',
+        '<Period>',
+        '<AdaptationSet contentType="video"><Representation id="v1">',
+        '<SegmentTemplate duration="4" startNumber="1" initialization="v/init.mp4" media="v/seg-$Number$.m4s" />',
+        '</Representation></AdaptationSet>',
+        '<AdaptationSet contentType="audio"><Representation id="a1">',
+        '<SegmentTemplate duration="4" startNumber="1" initialization="a/init.mp4" media="a/seg-$Number$.m4s" />',
+        '</Representation></AdaptationSet>',
+        '</Period></MPD>',
+      ].join(''),
+    });
+    const fetchBytes = vi.fn();
+    const download = vi.fn();
+
+    await expect(
+      runBrowserDashExportJob({
+        candidate: candidate(),
+        job: job(),
+        manifest,
+        fetchBytes,
+        download,
+      }),
+    ).rejects.toThrow(/cannot mux separate audio and video tracks/i);
+
+    expect(fetchBytes).not.toHaveBeenCalled();
+    expect(download).not.toHaveBeenCalled();
+  });
+
   test('emits a single-track plan through the normal raw export path', async () => {
     const manifest = parseMpd({
       manifestUrl: 'https://cdn.example.com/dash/manifest.mpd',

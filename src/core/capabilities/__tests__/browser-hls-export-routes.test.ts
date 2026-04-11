@@ -303,6 +303,141 @@ describe('browser HLS export route resolver', () => {
     });
   });
 
+  test('refuses HLS that selects a separate audio rendition instead of emitting a silent video', () => {
+    const master = [
+      '#EXTM3U',
+      '#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="aud",NAME="English",DEFAULT=YES,URI="audio/en.m3u8"',
+      '#EXT-X-STREAM-INF:BANDWIDTH=1000000,CODECS="avc1.640028,mp4a.40.2",AUDIO="aud"',
+      'video/720.m3u8',
+    ].join('\n');
+    const manifest = parseHlsManifest({
+      manifestUrl: 'https://cdn.example.com/hls/master.m3u8',
+      content: master,
+    });
+    const videoPlan: SegmentPlan = {
+      jobId: 'job-1',
+      candidateId: manifest.id,
+      protocol: 'hls',
+      variantId: 'variant-1',
+      selectedAudioTrackIds: [],
+      selectedSubtitleTrackIds: [],
+      segments: [
+        { id: 'seg-1', index: 1, url: 'https://cdn.example.com/hls/video/seg-1.ts' },
+      ],
+    };
+
+    expect(
+      resolveBrowserHlsExportRoute({
+        candidate: candidate({
+          codecs: ['avc1.640028', 'mp4a.40.2'],
+          variants: manifest.variants,
+        }),
+        manifest,
+        plan: videoPlan,
+        selection: { mode: 'best' },
+        muxJsEnabled: true,
+        rawFallbackAllowed: false,
+        segmentProbe: compatibleTsProbe,
+        memoryCeilingBytes: 10_000_000,
+        capabilities: {
+          fileSystemAccess: false,
+          opfs: false,
+          writableStream: true,
+          persistedOutputDirectory: false,
+        },
+      }),
+    ).toMatchObject({
+      route: 'unsupported-browser-only',
+      outputExtension: 'bin',
+      reason: expect.stringMatching(/separate audio rendition/i),
+      rawFallbackAllowed: false,
+    });
+  });
+
+  test('still routes a master whose audio group is muxed (no URI) to MP4', () => {
+    const master = [
+      '#EXTM3U',
+      '#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="aud",NAME="English",DEFAULT=YES',
+      '#EXT-X-STREAM-INF:BANDWIDTH=1000000,CODECS="avc1.640028,mp4a.40.2",AUDIO="aud"',
+      'video/720.m3u8',
+    ].join('\n');
+    const manifest = parseHlsManifest({
+      manifestUrl: 'https://cdn.example.com/hls/master.m3u8',
+      content: master,
+    });
+    const videoPlan: SegmentPlan = {
+      jobId: 'job-1',
+      candidateId: manifest.id,
+      protocol: 'hls',
+      variantId: 'variant-1',
+      selectedAudioTrackIds: [],
+      selectedSubtitleTrackIds: [],
+      segments: [
+        { id: 'seg-1', index: 1, url: 'https://cdn.example.com/hls/video/seg-1.ts' },
+      ],
+    };
+
+    expect(
+      resolveBrowserHlsExportRoute({
+        candidate: candidate({
+          codecs: ['avc1.640028', 'mp4a.40.2'],
+          variants: manifest.variants,
+        }),
+        manifest,
+        plan: videoPlan,
+        selection: { mode: 'best' },
+        muxJsEnabled: true,
+        rawFallbackAllowed: false,
+        segmentProbe: compatibleTsProbe,
+        memoryCeilingBytes: 10_000_000,
+        capabilities: {
+          fileSystemAccess: false,
+          opfs: false,
+          writableStream: true,
+          persistedOutputDirectory: false,
+        },
+      }),
+    ).toMatchObject({
+      route: 'hls-ts-streaming-mp4',
+      outputExtension: 'mp4',
+    });
+  });
+
+  test('does not trust an .mp4 extension into the mux route without a TS probe', () => {
+    expect(
+      resolve({
+        content: ['#EXTM3U', '#EXTINF:4,', 'segment.mp4', '#EXT-X-ENDLIST'].join('\n'),
+        candidate: candidate({ codecs: ['avc1.640028', 'mp4a.40.2'] }),
+      }),
+    ).toMatchObject({
+      route: 'unsupported-browser-only',
+      outputExtension: 'bin',
+      rawFallbackAllowed: false,
+    });
+  });
+
+  test('refuses a .ts probe that reports container=ts but is not mux.js-compatible', () => {
+    expect(
+      resolve({
+        content: ['#EXTM3U', '#EXTINF:4,', 'segment.ts', '#EXT-X-ENDLIST'].join('\n'),
+        candidate: candidate({ codecs: ['avc1.640028', 'mp4a.40.2'] }),
+        segmentProbe: {
+          container: 'ts',
+          hasPat: true,
+          hasPmt: true,
+          codecs: ['hevc'],
+          streamTypes: [0x24],
+          muxJsCompatible: false,
+          reason: 'TS PMT advertised an unsupported HEVC stream type.',
+        },
+      }),
+    ).toMatchObject({
+      route: 'unsupported-browser-only',
+      outputExtension: 'bin',
+      rawFallbackAllowed: false,
+    });
+  });
+
   test('refuses oversized browser-only output when no streaming sink is available', () => {
     expect(
       resolve({

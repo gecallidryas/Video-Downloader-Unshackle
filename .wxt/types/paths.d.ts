@@ -16,6 +16,7 @@ declare module "wxt/browser" {
     | "/iqiyi-main.js"
     | "/native-helper.html"
     | "/offscreen.html"
+    | "/player-probe-main.js"
     | "/popup.html"
     | "/sidepanel.html"
   type HtmlPublicPath = Extract<PublicPath, `${string}.html`>

@@ -12,6 +12,7 @@ import {
   rawSegmentOutputName,
 } from '@/src/core/export/downloads-export';
 import type { ParsedDashManifest } from '@/src/core/dash/parse-mpd';
+import { dashRequiresSeparateAudioVideo } from '@/src/core/dash/plan-dash-segments';
 import { runDashJob } from '@/src/core/dash/run-dash-job';
 
 export type FetchBrowserDashBytes = (
@@ -127,6 +128,12 @@ export async function runBrowserDashExportJob(
 ): Promise<JobOutput> {
   if (!input.allowProtected && isBlockedProtection(input.candidate)) {
     throw new Error('Protected DASH media cannot be exported by the browser runner.');
+  }
+
+  if (dashRequiresSeparateAudioVideo(input.manifest)) {
+    throw new Error(
+      'Browser-only DASH export cannot mux separate audio and video tracks into a playable file; enable native FFmpeg export for this multi-track stream.',
+    );
   }
 
   const fetchBytes = input.fetchBytes ?? defaultFetchBytes;

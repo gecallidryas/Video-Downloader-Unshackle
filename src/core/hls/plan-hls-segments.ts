@@ -109,6 +109,36 @@ function buildSegmentsWithInitMaps(
   return planned;
 }
 
+// An HLS master that selects a video variant whose audio is delivered as a
+// separate EXT-X-MEDIA rendition (an alternate audio group with its own URI)
+// needs two independent sources muxed together. The browser-only path cannot do
+// that — the media playlist behind the video variant is video-only — so callers
+// must refuse and defer to native FFmpeg instead of emitting a silent file.
+export function hlsRequiresSeparateAudio(
+  manifest: ParsedHlsManifest,
+  selectedVariant?: { audioGroupId?: string },
+): boolean {
+  const audioRenditions = manifest.audioTracks.filter((track) =>
+    Boolean(track.url),
+  );
+
+  if (audioRenditions.length === 0) {
+    return false;
+  }
+
+  const selectedGroupId = selectedVariant?.audioGroupId;
+
+  if (selectedGroupId) {
+    return audioRenditions.some((track) => track.groupId === selectedGroupId);
+  }
+
+  return manifest.variants.some(
+    (variant) =>
+      variant.audioGroupId !== undefined &&
+      audioRenditions.some((track) => track.groupId === variant.audioGroupId),
+  );
+}
+
 export function planHlsSegments(
   manifest: ParsedHlsManifest,
   options: PlanHlsSegmentsOptions,
