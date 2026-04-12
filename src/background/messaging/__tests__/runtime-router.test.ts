@@ -318,6 +318,7 @@ test('GET_JOBS and queue actions expose production download queue operations', a
     enqueue: vi.fn(() => jobStore.create(candidate, { mode: 'best' })),
     drain: vi.fn(async () => undefined),
     stats: vi.fn(),
+    setMaxConcurrent: vi.fn(),
     retry: vi.fn(() => true),
     cancel: vi.fn(),
     pause: vi.fn(),
@@ -792,6 +793,233 @@ test('DRM_DETECTED deduplicates repeated reports for the same DRM system', async
   );
 
   expect(drmDetections.get('https://video.example.com/watch')).toHaveLength(1);
+});
+
+function buildQueueMock(jobStore: ReturnType<typeof createJobStore>, candidate: MediaCandidate) {
+  return {
+    enqueue: vi.fn(() => jobStore.create(candidate, { mode: 'best' })),
+    drain: vi.fn(async () => undefined),
+    stats: vi.fn(),
+    setMaxConcurrent: vi.fn(),
+    retry: vi.fn(() => true),
+    cancel: vi.fn(() => true),
+    pause: vi.fn(() => true),
+    resume: vi.fn(() => true),
+    removeQueued: vi.fn(() => true),
+    clearCompleted: vi.fn(() => [] as string[]),
+    rehydrate: vi.fn(async () => undefined),
+    flush: vi.fn(async () => undefined),
+  };
+}
+
+function makeDirectCandidate(): MediaCandidate {
+  return {
+    id: 'direct-pause',
+    tabId: 7,
+    mediaKind: 'video',
+    protocol: 'direct',
+    status: 'ready',
+    pageUrl: 'https://example.com/',
+    origin: 'https://example.com',
+    displayName: 'Direct',
+    sourceUrl: 'https://cdn.example.com/direct.mp4',
+    protection: { kind: 'none' },
+    variants: [],
+    audioTracks: [],
+    subtitleTracks: [],
+    evidence: [],
+    preview: { playable: true, adapter: 'native' },
+    createdAt: 1,
+    updatedAt: 1,
+  };
+}
+
+test('PAUSE_ALL_DOWNLOADS delegates to queue.pause and returns paused ids', async () => {
+  const candidateRegistry = createCandidateRegistry();
+  const jobStore = createJobStore(() => 1);
+  const candidate = makeDirectCandidate();
+  candidateRegistry.set(7, [candidate]);
+  const running = jobStore.create(candidate, { mode: 'best' });
+  jobStore.update(running.id, { phase: 'fetching' });
+  const queued = jobStore.create(candidate, { mode: 'best' });
+  const completed = jobStore.create(candidate, { mode: 'best' });
+  jobStore.update(completed.id, { phase: 'completed' });
+
+  const downloadQueue = buildQueueMock(jobStore, candidate);
+  const router = createRuntimeRouter({
+    candidateRegistry,
+    tabSnapshots: createTabSnapshotStore(),
+    jobStore,
+    downloadQueue,
+  });
+
+  const response = await router.handleMessage(
+    createRuntimeRequest('PAUSE_ALL_DOWNLOADS', {}, 'req-pause-all'),
+  );
+
+  expect(downloadQueue.pause).toHaveBeenCalledWith(running.id);
+  expect(downloadQueue.pause).toHaveBeenCalledWith(queued.id);
+  expect(downloadQueue.pause).not.toHaveBeenCalledWith(completed.id);
+  expect(response.type).toBe('PAUSE_ALL_DOWNLOADS_RESULT');
+  if (response.type !== 'PAUSE_ALL_DOWNLOADS_RESULT') return;
+  expect(response.payload.pausedIds).toEqual(
+    expect.arrayContaining([running.id, queued.id]),
+  );
+  expect(response.payload.pausedIds).not.toContain(completed.id);
+});
+
+test('PAUSE_ALL_DOWNLOADS does not directly mutate jobStore phase', async () => {
+  const candidateRegistry = createCandidateRegistry();
+  const jobStore = createJobStore(() => 1);
+  const candidate = makeDirectCandidate();
+  candidateRegistry.set(7, [candidate]);
+  const running = jobStore.create(candidate, { mode: 'best' });
+  jobStore.update(running.id, { phase: 'fetching' });
+
+  const downloadQueue = buildQueueMock(jobStore, candidate);
+  // queue.pause is a no-op mock here, so the job phase must remain 'fetching'
+  // when the router correctly delegates instead of writing the phase itself.
+  downloadQueue.pause = vi.fn(() => false);
+  const router = createRuntimeRouter({
+    candidateRegistry,
+    tabSnapshots: createTabSnapshotStore(),
+    jobStore,
+    downloadQueue,
+  });
+
+  const response = await router.handleMessage(
+    createRuntimeRequest('PAUSE_ALL_DOWNLOADS', {}, 'req-pause-noop'),
+  );
+
+  expect(jobStore.get(running.id)?.phase).toBe('fetching');
+  if (response.type !== 'PAUSE_ALL_DOWNLOADS_RESULT') return;
+  expect(response.payload.pausedIds).toEqual([]);
+});
+
+test('RESUME_ALL_DOWNLOADS calls queue.resume + drain and returns resumed ids', async () => {
+  const candidateRegistry = createCandidateRegistry();
+  const jobStore = createJobStore(() => 1);
+  const candidate = makeDirectCandidate();
+  candidateRegistry.set(7, [candidate]);
+  const paused = jobStore.create(candidate, { mode: 'best' });
+  jobStore.update(paused.id, { phase: 'paused' });
+  const failed = jobStore.create(candidate, { mode: 'best' });
+  jobStore.update(failed.id, { phase: 'failed' });
+
+  const downloadQueue = buildQueueMock(jobStore, candidate);
+  const router = createRuntimeRouter({
+    candidateRegistry,
+    tabSnapshots: createTabSnapshotStore(),
+    jobStore,
+    downloadQueue,
+  });
+
+  const response = await router.handleMessage(
+    createRuntimeRequest(
+      'RESUME_ALL_DOWNLOADS' as never,
+      {} as never,
+      'req-resume-all',
+    ),
+  );
+
+  expect(downloadQueue.resume).toHaveBeenCalledWith(paused.id);
+  expect(downloadQueue.resume).not.toHaveBeenCalledWith(failed.id);
+  expect(downloadQueue.drain).toHaveBeenCalled();
+  expect(response.type).toBe('RESUME_ALL_DOWNLOADS_RESULT');
+  if (response.type !== 'RESUME_ALL_DOWNLOADS_RESULT') return;
+  expect(response.payload.resumedIds).toEqual([paused.id]);
+});
+
+test('RESUME_ALL_DOWNLOADS is reported as handled by canHandleMessage', () => {
+  const router = createRuntimeRouter({
+    candidateRegistry: createCandidateRegistry(),
+    tabSnapshots: createTabSnapshotStore(),
+  });
+
+  expect(
+    router.canHandleMessage(
+      createRuntimeRequest('RESUME_ALL_DOWNLOADS' as never, {} as never, 'req-can'),
+    ),
+  ).toBe(true);
+});
+
+test('DRM_DETECTED with a provided map records and marks matching candidates protected', async () => {
+  const drmDetections = new Map();
+  const candidateRegistry = createCandidateRegistry();
+  candidateRegistry.set(7, [
+    {
+      id: 'hls-drm',
+      tabId: 7,
+      mediaKind: 'video',
+      protocol: 'hls',
+      status: 'ready',
+      pageUrl: 'https://video.example.com/watch',
+      origin: 'https://video.example.com',
+      displayName: 'Stream',
+      manifestUrl: 'https://video.example.com/stream/master.m3u8',
+      protection: { kind: 'none' },
+      variants: [],
+      audioTracks: [],
+      subtitleTracks: [],
+      evidence: [],
+      preview: { playable: true, adapter: 'native' },
+      createdAt: 1,
+      updatedAt: 1,
+    },
+  ]);
+  const router = createRuntimeRouter({
+    candidateRegistry,
+    tabSnapshots: createTabSnapshotStore(),
+    drmDetections,
+  });
+
+  const response = await router.handleMessage(
+    createRuntimeRequest(
+      'DRM_DETECTED',
+      {
+        drmName: 'Widevine',
+        trigger: 'keySystemRequest',
+        url: 'https://video.example.com/stream/master.m3u8',
+      },
+      'req-drm-mark',
+    ),
+  );
+
+  expect(response.type).toBe('DRM_DETECTED_RESULT');
+  if (response.type !== 'DRM_DETECTED_RESULT') return;
+  expect(response.payload.ok).toBe(true);
+  expect(
+    drmDetections.get('https://video.example.com/stream/master.m3u8'),
+  ).toHaveLength(1);
+
+  const updated = candidateRegistry.findById('hls-drm');
+  expect(updated?.protection.kind).toBe('drm');
+  expect(updated?.status).toBe('protected');
+  expect(updated?.protection.drmSystems).toContain('Widevine');
+  expect(updated?.preview.playable).toBe(false);
+});
+
+test('DRM_DETECTED without a map returns ok:false instead of false success', async () => {
+  const router = createRuntimeRouter({
+    candidateRegistry: createCandidateRegistry(),
+    tabSnapshots: createTabSnapshotStore(),
+  });
+
+  const response = await router.handleMessage(
+    createRuntimeRequest(
+      'DRM_DETECTED',
+      {
+        drmName: 'Widevine',
+        trigger: 'keySystemRequest',
+        url: 'https://video.example.com/watch',
+      },
+      'req-drm-nomap',
+    ),
+  );
+
+  expect(response.type).toBe('DRM_DETECTED_RESULT');
+  if (response.type !== 'DRM_DETECTED_RESULT') return;
+  expect(response.payload.ok).toBe(false);
 });
 
 test('registerRuntimeRouter returns an error response when an async handler throws', async () => {

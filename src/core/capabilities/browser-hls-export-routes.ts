@@ -171,6 +171,13 @@ function chooseSink(input: BrowserHlsExportRouteInput): BrowserExportSinkKind {
   return 'blob-memory';
 }
 
+// blob-memory and chrome-download sinks finalize the whole file in the worker
+// heap (see BlobMemorySink). OPFS and File-System-Access stream to disk, so they
+// are exempt from the in-memory ceiling.
+function finalizesInMemory(sinkKind: BrowserExportSinkKind): boolean {
+  return sinkKind === 'blob-memory' || sinkKind === 'chrome-download';
+}
+
 export function resolveBrowserHlsExportRoute(
   input: BrowserHlsExportRouteInput,
 ): BrowserHlsExportRouteDecision {
@@ -202,7 +209,7 @@ export function resolveBrowserHlsExportRoute(
   const rawRequested = outputKind === 'original';
   const sinkKind = chooseSink(input);
   const oversizedForMemory =
-    sinkKind === 'blob-memory' &&
+    finalizesInMemory(sinkKind) &&
     (input.estimatedBytes ?? input.candidate.sizeEstimateBytes ?? 0) > input.memoryCeilingBytes;
 
   if (oversizedForMemory) {

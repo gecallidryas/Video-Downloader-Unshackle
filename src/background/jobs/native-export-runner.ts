@@ -32,6 +32,7 @@ export interface NativeExportRunnerInput {
   fetchText?: (url: string, init?: RequestInit) => Promise<string>;
   readFullOutput?: (input: ReadFullNativeOutputInput) => Promise<Blob>;
   deliverOutput?: DeliverNativeOutput;
+  headers?: Record<string, string>;
 }
 
 const PROGRESS_PHASE_MAP: Record<string, DownloadJob['phase']> = {
@@ -257,6 +258,7 @@ export async function runNativeExportJob({
   fetchText,
   readFullOutput,
   deliverOutput,
+  headers,
 }: NativeExportRunnerInput): Promise<JobOutput> {
   if (isProtected(candidate)) {
     throw new Error('Protected media cannot be exported by the native helper.');
@@ -281,6 +283,7 @@ export async function runNativeExportJob({
       outputName,
       outputKind,
       ...(job.selection.trim ? { trim: job.selection.trim } : {}),
+      ...(headers ? { headers } : {}),
     },
     {
       onProgress: (progress) => {

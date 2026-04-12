@@ -243,6 +243,61 @@ describe('RuntimeClient', () => {
     expect(onJobs).toHaveBeenCalledWith([{ id: 'job-1' }]);
   });
 
+  test('subscribeToUpdates forwards CANDIDATES_UPDATED to onCandidatesChanged', () => {
+    let messageCb: ((message: unknown) => void) | undefined;
+    const port = {
+      onMessage: { addListener: (cb: (m: unknown) => void) => { messageCb = cb; } },
+      onDisconnect: { addListener: vi.fn() },
+      disconnect: vi.fn(),
+    };
+    const connect = vi.fn(() => port);
+    const client = createRuntimeClient(vi.fn(), connect);
+    const onCandidatesChanged = vi.fn();
+
+    client.subscribeToUpdates({ onCandidatesChanged });
+    messageCb?.({ type: 'CANDIDATES_UPDATED' });
+
+    expect(onCandidatesChanged).toHaveBeenCalledTimes(1);
+  });
+
+  test('subscribeToUpdates close() disconnects the active port', () => {
+    const disconnect = vi.fn();
+    const port = {
+      onMessage: { addListener: vi.fn() },
+      onDisconnect: { addListener: vi.fn() },
+      disconnect,
+    };
+    const connect = vi.fn(() => port);
+    const client = createRuntimeClient(vi.fn(), connect);
+
+    const subscription = client.subscribeToUpdates({ onJobs: vi.fn() });
+    expect(disconnect).not.toHaveBeenCalled();
+
+    subscription.close();
+
+    expect(disconnect).toHaveBeenCalledTimes(1);
+  });
+
+  test('subscribeToUpdates close() does not reconnect after port disconnects', () => {
+    vi.useFakeTimers();
+    let disconnectCb: (() => void) | undefined;
+    const makePort = () => ({
+      onMessage: { addListener: vi.fn() },
+      onDisconnect: { addListener: (cb: () => void) => { disconnectCb = cb; } },
+      disconnect: vi.fn(),
+    });
+    const connect = vi.fn(() => makePort());
+    const client = createRuntimeClient(vi.fn(), connect);
+
+    const subscription = client.subscribeToUpdates({ onJobs: vi.fn() });
+    subscription.close();
+    disconnectCb?.();
+    vi.advanceTimersByTime(2000);
+
+    expect(connect).toHaveBeenCalledTimes(1);
+    vi.useRealTimers();
+  });
+
   test('subscribeToUpdates reconnects after the port disconnects', () => {
     vi.useFakeTimers();
     let disconnectCb: (() => void) | undefined;

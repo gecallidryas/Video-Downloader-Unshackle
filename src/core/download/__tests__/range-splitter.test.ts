@@ -63,6 +63,64 @@ describe('downloadDirectWithRanges', () => {
     expect(fetcher).toHaveBeenCalledTimes(4);
   });
 
+  test('refuses with a clear error when accumulated size would exceed maxInMemoryBytes', async () => {
+    const fetcher = vi.fn(async (_url: string, init?: RequestInit) => {
+      if (init?.method === 'HEAD') {
+        return new Response(null, {
+          status: 200,
+          headers: {
+            'Accept-Ranges': 'bytes',
+            'Content-Length': String(10 * 1024 * 1024),
+          },
+        });
+      }
+
+      return new Response(new Uint8Array(2 * 1024 * 1024), { status: 206 });
+    });
+
+    await expect(
+      downloadDirectWithRanges({
+        url: 'https://cdn.example.com/video.mp4',
+        chunkSizeBytes: 2 * 1024 * 1024,
+        maxInMemoryBytes: 5 * 1024 * 1024,
+        fetch: fetcher,
+      }),
+    ).rejects.toThrow(/exceeds.*memory.*ceiling|memory.*ceiling.*exceeded/i);
+  });
+
+  test('accepts a download whose total size is within maxInMemoryBytes', async () => {
+    const fetcher = vi.fn(async (_url: string, init?: RequestInit) => {
+      if (init?.method === 'HEAD') {
+        return new Response(null, {
+          status: 200,
+          headers: {
+            'Accept-Ranges': 'bytes',
+            'Content-Length': '5',
+          },
+        });
+      }
+
+      const range = new Headers(init?.headers).get('Range');
+      const bytes =
+        range === 'bytes=0-1'
+          ? new Uint8Array([1, 2])
+          : range === 'bytes=2-3'
+            ? new Uint8Array([3, 4])
+            : new Uint8Array([5]);
+
+      return new Response(bytes, { status: 206 });
+    });
+
+    await expect(
+      downloadDirectWithRanges({
+        url: 'https://cdn.example.com/video.mp4',
+        chunkSizeBytes: 2,
+        maxInMemoryBytes: 100,
+        fetch: fetcher,
+      }),
+    ).resolves.toEqual(new Uint8Array([1, 2, 3, 4, 5]));
+  });
+
   test('rejects range responses that ignore the Range request', async () => {
     const fetcher = vi.fn(async (_url: string, init?: RequestInit) => {
       if (init?.method === 'HEAD') {

@@ -75,12 +75,13 @@ export default defineContentScript({
         this: TrackedXHR,
         method: string,
         url: string | URL,
-        ...rest: unknown[]
+        async?: boolean,
+        user?: string | null,
+        password?: string | null,
       ) {
         this._ushUrl = typeof url === 'string' ? url : url.href;
-        // @ts-expect-error — forward original variadic signature unchanged.
-        return origOpen.call(this, method, url, ...rest);
-      };
+        return origOpen.call(this, method, url, async ?? true, user, password);
+      } as typeof origOpen;
 
       XHR.prototype.send = function (this: TrackedXHR, body?: Document | XMLHttpRequestBodyInit | null) {
         this.addEventListener('load', () => {

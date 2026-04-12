@@ -45,6 +45,7 @@ export function planDashSegments(
   }
 
   const representation = selectDashRepresentation(manifest, options.selection);
+  const trackType = representation.trackType;
   const segments: SegmentDescriptor[] = [];
 
   if (representation.initializationUrl) {
@@ -53,7 +54,7 @@ export function planDashSegments(
       index: 0,
       url: representation.initializationUrl,
       initSegment: true,
-      trackType: 'video',
+      trackType,
     });
   }
 
@@ -71,7 +72,7 @@ export function planDashSegments(
         id: `dash-segment-${representation.id}-${index}`,
         index,
         url: explicitSegment.url,
-        trackType: 'video',
+        trackType,
         byteRange: explicitSegment.byteRange,
         durationSec: explicitSegment.durationSec,
       });
@@ -84,7 +85,7 @@ export function planDashSegments(
         id: `dash-segment-${representation.id}-${timelineSegment.time}`,
         index,
         url: replaceTimeToken(mediaUrlTemplate, timelineSegment.time),
-        trackType: 'video',
+        trackType,
         durationSec: timelineSegment.durationSec,
       });
     }
@@ -101,7 +102,7 @@ export function planDashSegments(
       id: `dash-segment-${representation.id}-${number}`,
       index,
       url: replaceNumberToken(mediaUrlTemplate, number),
-      trackType: 'video',
+      trackType,
       durationSec: representation.segmentDurationSec,
     });
   }

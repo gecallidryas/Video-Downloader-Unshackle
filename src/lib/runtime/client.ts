@@ -123,6 +123,8 @@ export function createRuntimeClient(
     subscribeToUpdates(handlers) {
       let closed = false;
       let reconnectTimer: ReturnType<typeof setTimeout> | undefined;
+      // Held in outer scope so close() can disconnect it even while open() is running.
+      let activePort: RuntimeUpdatePort | undefined;
 
       const open = (): void => {
         if (closed) {
@@ -137,6 +139,7 @@ export function createRuntimeClient(
           // fallback poll covers this until the next reconnect attempt.
           return;
         }
+        activePort = port;
         port.onMessage.addListener((message) => {
           const typed = message as
             | JobsUpdatedMessage
@@ -149,6 +152,9 @@ export function createRuntimeClient(
           }
         });
         port.onDisconnect.addListener(() => {
+          if (activePort === port) {
+            activePort = undefined;
+          }
           if (closed) {
             return;
           }
@@ -164,6 +170,8 @@ export function createRuntimeClient(
           if (reconnectTimer !== undefined) {
             clearTimeout(reconnectTimer);
           }
+          activePort?.disconnect();
+          activePort = undefined;
         },
       };
     },

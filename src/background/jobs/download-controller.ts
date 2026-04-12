@@ -28,6 +28,7 @@ export interface DownloadControllerSettings {
   defaultQualityPolicy?: DefaultQualityPolicy;
   maxConcurrentSegments?: number;
   maxConcurrentSegmentsPerHost?: number;
+  maxBandwidthPerHostKBps?: number;
   segmentTimeoutMs?: number;
   enableNativeFeatures?: boolean;
   enableBrowserFallbacks?: boolean;
@@ -50,6 +51,7 @@ export type RunHlsControllerJob = (input: {
   allowProtected?: boolean;
   concurrency?: number;
   maxConcurrentPerHost?: number;
+  bandwidthBytesPerSecond?: number;
   segmentTimeoutMs?: number;
   qualityPolicy?: DefaultQualityPolicy;
   browserTransmuxWithMuxJs?: boolean;
@@ -64,6 +66,7 @@ export type RunDashControllerJob = (input: {
   allowProtected?: boolean;
   concurrency?: number;
   maxConcurrentPerHost?: number;
+  bandwidthBytesPerSecond?: number;
   segmentTimeoutMs?: number;
   signal?: AbortSignal;
 }) => Promise<JobOutput>;
@@ -403,6 +406,7 @@ export function createDownloadController(options: DownloadControllerOptions) {
       const concurrencyFields: {
         concurrency?: number;
         maxConcurrentPerHost?: number;
+        bandwidthBytesPerSecond?: number;
         segmentTimeoutMs?: number;
       } = {};
 
@@ -412,6 +416,14 @@ export function createDownloadController(options: DownloadControllerOptions) {
 
       if (settings.maxConcurrentSegmentsPerHost !== undefined) {
         concurrencyFields.maxConcurrentPerHost = settings.maxConcurrentSegmentsPerHost;
+      }
+
+      if (
+        settings.maxBandwidthPerHostKBps !== undefined &&
+        settings.maxBandwidthPerHostKBps > 0
+      ) {
+        concurrencyFields.bandwidthBytesPerSecond =
+          settings.maxBandwidthPerHostKBps * 1024;
       }
 
       if (settings.segmentTimeoutMs !== undefined) {
@@ -483,7 +495,10 @@ export function createDownloadController(options: DownloadControllerOptions) {
 
       return completed;
     } catch (error) {
-      if (managedOptions.jobStore.get(job.id)?.phase === 'cancelled') {
+      const phase = managedOptions.jobStore.get(job.id)?.phase;
+      // A pause or cancel deliberately aborted this run; rethrow without
+      // overwriting the deliberate phase with 'failed'.
+      if (phase === 'cancelled' || phase === 'paused') {
         throw error;
       }
 
@@ -538,6 +553,18 @@ export function createDownloadController(options: DownloadControllerOptions) {
     };
   }
 
+  // Pure abort of the in-flight controller run for a job. Unlike `abort`, this
+  // does NOT touch the jobStore — the queue owns the resulting phase (e.g.
+  // 'paused'). Used to wire `queue.pause` to real cancellation of work.
+  function signalAbort(jobId: string): void {
+    const activeController = activeAbortControllers.get(jobId);
+
+    if (activeController) {
+      activeController.abort(new DOMException('Cancelled by user', 'AbortError'));
+      activeAbortControllers.delete(jobId);
+    }
+  }
+
   function updateSettings(
     patch: Pick<DownloadControllerOptions, 'suppressProtectedDownloads'> &
       Partial<DownloadControllerSettings>,
@@ -558,6 +585,9 @@ export function createDownloadController(options: DownloadControllerOptions) {
         : {}),
       ...(patch.maxConcurrentSegmentsPerHost !== undefined
         ? { maxConcurrentSegmentsPerHost: patch.maxConcurrentSegmentsPerHost }
+        : {}),
+      ...(patch.maxBandwidthPerHostKBps !== undefined
+        ? { maxBandwidthPerHostKBps: patch.maxBandwidthPerHostKBps }
         : {}),
       ...(patch.segmentTimeoutMs !== undefined
         ? { segmentTimeoutMs: patch.segmentTimeoutMs }
@@ -587,6 +617,7 @@ export function createDownloadController(options: DownloadControllerOptions) {
     start,
     runManaged,
     abort,
+    signalAbort,
     updateSettings,
   };
 }

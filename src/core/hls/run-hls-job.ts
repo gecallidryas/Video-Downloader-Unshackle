@@ -50,6 +50,7 @@ export interface RunHlsJobInput {
   allowProtected?: boolean;
   concurrency?: number;
   maxConcurrentPerHost?: number;
+  bandwidthBytesPerSecond?: number;
   segmentTimeoutMs?: number;
   qualityPolicy?: DefaultQualityPolicy;
   fragmentStore?: SegmentSchedulerStorage;
@@ -139,6 +140,7 @@ export async function runHlsJob(input: RunHlsJobInput): Promise<JobOutput> {
     storage: fragmentStore,
     concurrency: input.concurrency ?? 1,
     maxConcurrentPerHost: input.maxConcurrentPerHost,
+    bandwidthBytesPerSecond: input.bandwidthBytesPerSecond,
     segmentTimeoutMs: input.segmentTimeoutMs,
     signal: input.signal,
     fetchKey: input.fetchKey,

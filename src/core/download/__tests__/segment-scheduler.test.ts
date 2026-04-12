@@ -175,6 +175,7 @@ describe('scheduleSegments', () => {
       createBucket: vi.fn(),
       listFragmentIndices: vi.fn().mockResolvedValue([0]),
       writeFragment: vi.fn(),
+      readFragment: vi.fn().mockResolvedValue(new Uint8Array([0])),
     };
     const fetchSegment = vi.fn().mockImplementation(async () => {
       controller.abort();
@@ -195,6 +196,71 @@ describe('scheduleSegments', () => {
     expect(fetchSegment).toHaveBeenCalledTimes(1);
     expect(fetchSegment.mock.calls[0][0]).toMatchObject({ index: 1 });
     expect(storage.writeFragment).toHaveBeenCalledWith('job-1', 1, new Uint8Array([1]));
+  });
+
+  test('returns an empty array and does not retain parts when a streaming consumer is attached', async () => {
+    const completed: Array<{ index: number; bytes: Uint8Array }> = [];
+
+    const result = await scheduleSegments({
+      segments: [segment(0), segment(1)],
+      fetchSegment: vi.fn(async (item) => new Uint8Array([item.index])),
+      onSegmentComplete: async (event) => {
+        completed.push({ index: event.segment.index, bytes: event.bytes });
+      },
+    });
+
+    expect(result).toEqual([]);
+    expect(completed.map((entry) => entry.index).sort()).toEqual([0, 1]);
+  });
+
+  test('replays stored fragments through onSegmentComplete in index order on resume', async () => {
+    const storage = {
+      createBucket: vi.fn(),
+      listFragmentIndices: vi.fn().mockResolvedValue([0, 2]),
+      writeFragment: vi.fn(),
+      readFragment: vi.fn(async (_jobId: string, index: number) => new Uint8Array([index])),
+    };
+    const order: number[] = [];
+    const fetchSegment = vi.fn(async (item: SegmentDescriptor) => new Uint8Array([item.index]));
+
+    const result = await scheduleSegments({
+      jobId: 'job-resume',
+      segments: [segment(0), segment(1), segment(2)],
+      storage,
+      fetchSegment,
+      onSegmentComplete: async (event) => {
+        order.push(event.segment.index);
+      },
+    });
+
+    expect(result).toEqual([]);
+    expect(fetchSegment).toHaveBeenCalledTimes(1);
+    expect(fetchSegment.mock.calls[0][0]).toMatchObject({ index: 1 });
+    // Stored 0 and 2 replayed first (in order), then freshly fetched 1.
+    expect(order.slice(0, 2)).toEqual([0, 2]);
+    expect(order).toContain(1);
+    expect(storage.readFragment).toHaveBeenCalledWith('job-resume', 0);
+    expect(storage.readFragment).toHaveBeenCalledWith('job-resume', 2);
+  });
+
+  test('re-fetches a stored index whose bytes are missing on resume', async () => {
+    const storage = {
+      createBucket: vi.fn(),
+      listFragmentIndices: vi.fn().mockResolvedValue([0]),
+      writeFragment: vi.fn(),
+      readFragment: vi.fn().mockResolvedValue(null),
+    };
+    const fetchSegment = vi.fn(async (item: SegmentDescriptor) => new Uint8Array([item.index]));
+
+    const result = await scheduleSegments({
+      jobId: 'job-missing',
+      segments: [segment(0)],
+      storage,
+      fetchSegment,
+    });
+
+    expect(fetchSegment).toHaveBeenCalledTimes(1);
+    expect(result).toEqual([new Uint8Array([0])]);
   });
 
   test('aborts a segment fetch after the configured timeout', async () => {

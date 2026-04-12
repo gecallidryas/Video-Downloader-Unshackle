@@ -28,7 +28,11 @@ export interface HeaderContextStore {
 
 export interface HeaderContextStoreOptions {
   captureCredentialHeaders?: boolean;
+  /** How long (ms) to retain the by-URL mapping after the request completes. Default: 5 minutes. */
+  urlRetentionMs?: number;
 }
+
+const DEFAULT_URL_RETENTION_MS = 5 * 60 * 1_000;
 
 const safeHeaderNames = new Set(['referer', 'origin']);
 const credentialHeaderNames = new Set(['cookie', 'authorization']);
@@ -118,17 +122,33 @@ export function buildEngineHandoff(
   };
 }
 
+interface UrlEntry {
+  context: HeaderContext;
+  capturedAt: number;
+}
+
 export function createHeaderContextStore(
   options: HeaderContextStoreOptions = {},
 ): HeaderContextStore {
   let captureCredentialHeaders = options.captureCredentialHeaders ?? false;
+  let urlRetentionMs = options.urlRetentionMs ?? DEFAULT_URL_RETENTION_MS;
   const byRequestId = new Map<string, HeaderContext>();
-  const byUrl = new Map<string, HeaderContext>();
+  const byUrl = new Map<string, UrlEntry>();
+
+  function pruneUrlEntry(url: string, now: number): void {
+    const entry = byUrl.get(url);
+    if (entry && now - entry.capturedAt > urlRetentionMs) {
+      byUrl.delete(url);
+    }
+  }
 
   return {
     updateOptions(newOptions) {
       if (newOptions.captureCredentialHeaders !== undefined) {
         captureCredentialHeaders = newOptions.captureCredentialHeaders;
+      }
+      if (newOptions.urlRetentionMs !== undefined) {
+        urlRetentionMs = newOptions.urlRetentionMs;
       }
     },
 
@@ -154,7 +174,7 @@ export function createHeaderContextStore(
       };
 
       byRequestId.set(input.requestId, context);
-      byUrl.set(input.url, context);
+      byUrl.set(input.url, { context, capturedAt: Date.now() });
 
       return cloneContext(context);
     },
@@ -164,17 +184,13 @@ export function createHeaderContextStore(
     },
 
     getByUrl(url) {
-      return cloneContext(byUrl.get(url));
+      const now = Date.now();
+      pruneUrlEntry(url, now);
+      return cloneContext(byUrl.get(url)?.context);
     },
 
     deleteRequest(requestId) {
-      const context = byRequestId.get(requestId);
-
       byRequestId.delete(requestId);
-
-      if (context) {
-        byUrl.delete(context.url);
-      }
     },
   };
 }

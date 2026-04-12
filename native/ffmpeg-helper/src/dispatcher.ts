@@ -1,5 +1,5 @@
 import { spawn } from 'node:child_process';
-import { readFile } from 'node:fs/promises';
+import { open, readFile } from 'node:fs/promises';
 import type { NativeJson } from './native-protocol.js';
 import {
   buildExportArgs,
@@ -14,6 +14,12 @@ import {
 import { defaultJobRegistry, type JobRegistry } from './job-registry.js';
 import { ensureHelperOutputDirs, helperOwnedPath, type HelperOutputDirs } from './output-paths.js';
 import { runProcessJob, type ProcessJobResult, type RunProcessJobOptions } from './process-runner.js';
+
+// Mirror the PROTOCOLS/OUTPUT_KINDS literal sets from src/native/native-ffmpeg-contract.ts.
+// Cannot import across the project boundary (the helper is a standalone Node process),
+// so these are maintained in sync manually — they must match the contract's const arrays.
+const VALID_PROTOCOLS = new Set(['direct', 'hls', 'dash']);
+const VALID_OUTPUT_KINDS = new Set(['original', 'mp4', 'mkv', 'webm', 'audio-only']);
 
 const HELPER_VERSION = '0.1.0';
 
@@ -89,12 +95,19 @@ type AssetBytesPayload = {
   eof?: boolean;
 };
 
+export type RangedReadResult = {
+  buffer: Buffer;
+  bytesRead: number;
+  fileSize: number;
+};
+
 export type DispatcherDeps = {
   checkExecutable?: (file: 'ffmpeg' | 'ffprobe') => Promise<boolean>;
   ensureOutputDirs?: () => Promise<HelperOutputDirs>;
   runProbe?: (plan: FfmpegCommandPlan) => Promise<ProbeResult>;
   runProcessJob?: (options: RunProcessJobOptions) => Promise<ProcessJobResult>;
   readAsset?: (outputPath: string) => Promise<Buffer | Uint8Array>;
+  readAssetRange?: (outputPath: string, offset: number, length: number) => Promise<RangedReadResult>;
   registry?: JobRegistry;
 };
 
@@ -186,11 +199,21 @@ async function dispatchExport(
 ): Promise<NativeHelperResponse> {
   const dirs = await ensureDirs(deps);
   const outputPath = helperOwnedPath(dirs, 'outputs', request.payload.outputName, extensionForOutput(request.payload));
+
+  let expectedDurationSec: number | undefined;
+  try {
+    const probeResult = await (deps.runProbe ?? runProbe)(buildProbeArgs(request.payload.inputUrl));
+    expectedDurationSec = probeResult.durationSec;
+  } catch {
+    // Probe failure is non-fatal — progress will be coarse (0% until completion).
+  }
+
   const result = await (deps.runProcessJob ?? runProcessJob)({
     jobId: request.payload.jobId,
     plan: buildExportArgs(request.payload, outputPath),
     outputPath,
     mimeType: mimeForOutput(request.payload),
+    expectedDurationSec,
     registry: deps.registry,
     ...(emit
       ? {
@@ -269,25 +292,29 @@ async function dispatchReadAssetBytes(
   deps: DispatcherDeps,
 ): Promise<NativeHelperResponse> {
   const { outputPath, maxBytes, offset } = request.payload;
-  const bytes = Buffer.from(await (deps.readAsset ?? readFile)(outputPath));
 
-  // Ranged read: callers paginate large exports past the whole-file cap.
+  // Ranged read: open ONE file descriptor and read only the requested window to avoid
+  // the O(n²) pattern where a 2GB export with 512KB chunks would cause 4096 full-file reads.
   if (offset !== undefined) {
-    const start = Math.min(offset, bytes.byteLength);
-    const end = Math.min(start + maxBytes, bytes.byteLength);
-    const slice = bytes.subarray(start, end);
+    const { buffer, bytesRead, fileSize } = await (deps.readAssetRange ?? readAssetRange)(
+      outputPath,
+      offset,
+      maxBytes,
+    );
 
     return {
       type: 'ASSET_BYTES_RESULT',
       requestId: request.requestId,
       payload: {
         outputPath,
-        sizeBytes: slice.byteLength,
-        base64: slice.toString('base64'),
-        eof: end >= bytes.byteLength,
+        sizeBytes: bytesRead,
+        base64: buffer.subarray(0, bytesRead).toString('base64'),
+        eof: offset + bytesRead >= fileSize,
       },
     };
   }
+
+  const bytes = Buffer.from(await (deps.readAsset ?? readFile)(outputPath));
 
   if (bytes.byteLength > maxBytes) {
     return errorResponse(
@@ -306,6 +333,22 @@ async function dispatchReadAssetBytes(
       base64: bytes.toString('base64'),
     },
   };
+}
+
+async function readAssetRange(outputPath: string, offset: number, length: number): Promise<RangedReadResult> {
+  const handle = await open(outputPath, 'r');
+  try {
+    const stat = await handle.stat();
+    const fileSize = stat.size;
+    const toRead = Math.min(length, Math.max(0, fileSize - offset));
+    const buffer = Buffer.allocUnsafe(toRead);
+    const { bytesRead } = toRead > 0
+      ? await handle.read(buffer, 0, toRead, offset)
+      : { bytesRead: 0 };
+    return { buffer, bytesRead, fileSize };
+  } finally {
+    await handle.close();
+  }
 }
 
 async function buildAssetDataUrl(
@@ -391,8 +434,10 @@ function isNativeHelperRequest(value: unknown): value is NativeHelperRequest {
         isString(value.payload.jobId) &&
         isString(value.payload.inputUrl) &&
         isString(value.payload.protocol) &&
+        VALID_PROTOCOLS.has(value.payload.protocol) &&
         isString(value.payload.outputName) &&
-        isString(value.payload.outputKind)
+        isString(value.payload.outputKind) &&
+        VALID_OUTPUT_KINDS.has(value.payload.outputKind)
       );
     case 'EXTRACT_THUMBNAIL':
       return (

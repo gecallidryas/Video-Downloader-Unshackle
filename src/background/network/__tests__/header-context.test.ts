@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'vitest';
+import { describe, expect, test, vi, afterEach, beforeEach } from 'vitest';
 import { createHeaderContextStore } from '../header-context';
 
 describe('createHeaderContextStore', () => {
@@ -97,7 +97,7 @@ describe('createHeaderContextStore', () => {
     });
   });
 
-  test('drops empty contexts and can remove request entries', () => {
+  test('drops empty contexts and removes the requestId entry', () => {
     const store = createHeaderContextStore();
 
     expect(
@@ -116,6 +116,86 @@ describe('createHeaderContextStore', () => {
     store.deleteRequest('req-3');
 
     expect(store.getByRequestId('req-3')).toBeUndefined();
-    expect(store.getByUrl('https://cdn.example.com/video.mp4')).toBeUndefined();
+  });
+
+  test('deleteRequest removes only the requestId entry; byUrl is retained within TTL', () => {
+    const store = createHeaderContextStore({ urlRetentionMs: 5_000 });
+
+    store.capture({
+      requestId: 'req-ttl',
+      url: 'https://cdn.example.com/retain.m3u8',
+      requestHeaders: [{ name: 'Referer', value: 'https://example.com/watch' }],
+    });
+
+    store.deleteRequest('req-ttl');
+
+    expect(store.getByRequestId('req-ttl')).toBeUndefined();
+    expect(store.getByUrl('https://cdn.example.com/retain.m3u8')).toEqual({
+      url: 'https://cdn.example.com/retain.m3u8',
+      requestId: 'req-ttl',
+      headers: { referer: 'https://example.com/watch' },
+    });
+  });
+});
+
+describe('createHeaderContextStore — URL TTL', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  test('getByUrl returns headers within TTL after deleteRequest', () => {
+    const store = createHeaderContextStore({ urlRetentionMs: 10_000 });
+
+    store.capture({
+      requestId: 'r1',
+      url: 'https://cdn.example.com/video.m3u8',
+      requestHeaders: [{ name: 'Referer', value: 'https://example.com' }],
+    });
+
+    store.deleteRequest('r1');
+
+    vi.advanceTimersByTime(9_999);
+
+    expect(store.getByUrl('https://cdn.example.com/video.m3u8')).not.toBeUndefined();
+    expect(store.getByUrl('https://cdn.example.com/video.m3u8')?.headers.referer).toBe(
+      'https://example.com',
+    );
+  });
+
+  test('getByUrl returns undefined after TTL expires', () => {
+    const store = createHeaderContextStore({ urlRetentionMs: 10_000 });
+
+    store.capture({
+      requestId: 'r2',
+      url: 'https://cdn.example.com/expired.m3u8',
+      requestHeaders: [{ name: 'Referer', value: 'https://example.com' }],
+    });
+
+    store.deleteRequest('r2');
+
+    vi.advanceTimersByTime(10_001);
+
+    expect(store.getByUrl('https://cdn.example.com/expired.m3u8')).toBeUndefined();
+  });
+
+  test('updateOptions can change urlRetentionMs at runtime', () => {
+    const store = createHeaderContextStore({ urlRetentionMs: 60_000 });
+
+    store.capture({
+      requestId: 'r3',
+      url: 'https://cdn.example.com/dynamic.m3u8',
+      requestHeaders: [{ name: 'Referer', value: 'https://example.com' }],
+    });
+
+    store.deleteRequest('r3');
+    store.updateOptions({ urlRetentionMs: 1_000 });
+
+    vi.advanceTimersByTime(1_500);
+
+    expect(store.getByUrl('https://cdn.example.com/dynamic.m3u8')).toBeUndefined();
   });
 });

@@ -1,5 +1,6 @@
-import { describe, expect, test } from 'vitest';
-import { createRequestJournal } from '../request-journal';
+import { describe, expect, test, vi } from 'vitest';
+import { createRequestJournal, registerPassiveRequestJournal } from '../request-journal';
+import type { WebRequestHostLike } from '../request-journal';
 
 describe('createRequestJournal', () => {
   test('debounces duplicate requests per tab and URL', () => {
@@ -173,5 +174,242 @@ describe('createRequestJournal', () => {
         category: 'direct_media',
       }),
     ]);
+  });
+});
+
+describe('createRequestJournal — recentRequests prune and clear', () => {
+  test('expired recentRequests keys are pruned when writing a new entry', () => {
+    let nowMs = 1_000;
+    const journal = createRequestJournal(200, {
+      duplicateWindowMs: 2_000,
+      now: () => nowMs,
+    });
+
+    journal.addRequest(1, { url: 'https://cdn.example.com/a.m3u8', timeStamp: nowMs });
+    journal.addRequest(2, { url: 'https://cdn.example.com/b.m3u8', timeStamp: nowMs });
+
+    nowMs = 5_000;
+
+    journal.addRequest(3, { url: 'https://cdn.example.com/c.m3u8', timeStamp: nowMs });
+
+    nowMs = 7_500;
+
+    journal.addRequest(1, { url: 'https://cdn.example.com/a.m3u8', timeStamp: nowMs });
+
+    expect(journal.get(1)).toHaveLength(2);
+    expect(journal.get(3)).toHaveLength(1);
+  });
+
+  test('clear(tabId) removes that tab\'s recentRequests keys so the next request is not deduplicated', () => {
+    let nowMs = 1_000;
+    const journal = createRequestJournal(200, {
+      duplicateWindowMs: 60_000,
+      now: () => nowMs,
+    });
+
+    journal.addRequest(1, { url: 'https://cdn.example.com/v.m3u8', timeStamp: nowMs });
+
+    nowMs = 1_500;
+    journal.clear(1);
+
+    journal.addRequest(1, { url: 'https://cdn.example.com/v.m3u8', timeStamp: nowMs });
+
+    expect(journal.get(1)).toHaveLength(1);
+  });
+
+  test('clear(tabId) does not disturb other tabs\' recentRequests', () => {
+    let nowMs = 1_000;
+    const journal = createRequestJournal(200, {
+      duplicateWindowMs: 60_000,
+      now: () => nowMs,
+    });
+
+    journal.addRequest(1, { url: 'https://cdn.example.com/v.m3u8', timeStamp: nowMs });
+    journal.addRequest(2, { url: 'https://cdn.example.com/v.m3u8', timeStamp: nowMs });
+
+    nowMs = 1_500;
+    journal.clear(1);
+
+    journal.addRequest(2, { url: 'https://cdn.example.com/v.m3u8', timeStamp: nowMs });
+
+    expect(journal.get(2)).toHaveLength(1);
+  });
+});
+
+describe('registerPassiveRequestJournal — isCaptureEnabled', () => {
+  function makeWebRequestHost(): {
+    host: WebRequestHostLike;
+    triggerBeforeSend(details: object): void;
+    triggerCompleted(details: object): void;
+  } {
+    let beforeSendCb: ((d: chrome.webRequest.WebRequestDetails) => void) | undefined;
+    let completedCb: ((d: chrome.webRequest.WebRequestDetails) => void) | undefined;
+
+    const host: WebRequestHostLike = {
+      onBeforeSendHeaders: {
+        addListener(cb) {
+          beforeSendCb = cb;
+        },
+      },
+      onCompleted: {
+        addListener(cb) {
+          completedCb = cb;
+        },
+      },
+    };
+
+    return {
+      host,
+      triggerBeforeSend(details) {
+        beforeSendCb?.(details as chrome.webRequest.WebRequestDetails);
+      },
+      triggerCompleted(details) {
+        completedCb?.(details as chrome.webRequest.WebRequestDetails);
+      },
+    };
+  }
+
+  test('skips header capture and addRequest when isCaptureEnabled returns false', () => {
+    const journal = createRequestJournal();
+    const { host, triggerBeforeSend, triggerCompleted } = makeWebRequestHost();
+    const captureSpy = vi.fn();
+    const addRequestSpy = vi.spyOn(journal, 'addRequest');
+
+    const headerContext = {
+      capture: captureSpy,
+      getByRequestId: vi.fn(),
+      getByUrl: vi.fn(),
+      deleteRequest: vi.fn(),
+      updateOptions: vi.fn(),
+    };
+
+    registerPassiveRequestJournal(journal, host, headerContext, {
+      isCaptureEnabled: () => false,
+    });
+
+    triggerBeforeSend({
+      requestId: 'r1',
+      url: 'https://cdn.example.com/video.m3u8',
+      tabId: 1,
+      requestHeaders: [{ name: 'Referer', value: 'https://example.com' }],
+    });
+
+    triggerCompleted({
+      requestId: 'r1',
+      url: 'https://cdn.example.com/video.m3u8',
+      tabId: 1,
+      type: 'xmlhttprequest',
+      timeStamp: 1,
+      responseHeaders: [],
+    });
+
+    expect(captureSpy).not.toHaveBeenCalled();
+    expect(addRequestSpy).not.toHaveBeenCalled();
+  });
+
+  test('records capture and addRequest when isCaptureEnabled returns true', () => {
+    const journal = createRequestJournal();
+    const { host, triggerBeforeSend, triggerCompleted } = makeWebRequestHost();
+    const captureSpy = vi.fn();
+    const addRequestSpy = vi.spyOn(journal, 'addRequest');
+
+    const headerContext = {
+      capture: captureSpy,
+      getByRequestId: vi.fn(),
+      getByUrl: vi.fn(),
+      deleteRequest: vi.fn(),
+      updateOptions: vi.fn(),
+    };
+
+    registerPassiveRequestJournal(journal, host, headerContext, {
+      isCaptureEnabled: () => true,
+    });
+
+    triggerBeforeSend({
+      requestId: 'r2',
+      url: 'https://cdn.example.com/video.m3u8',
+      tabId: 1,
+      requestHeaders: [{ name: 'Referer', value: 'https://example.com' }],
+    });
+
+    triggerCompleted({
+      requestId: 'r2',
+      url: 'https://cdn.example.com/video.m3u8',
+      tabId: 1,
+      type: 'xmlhttprequest',
+      timeStamp: 1,
+      responseHeaders: [],
+    });
+
+    expect(captureSpy).toHaveBeenCalledOnce();
+    expect(addRequestSpy).toHaveBeenCalledOnce();
+  });
+
+  test('isCaptureEnabled is re-evaluated per event so toggling takes effect without re-registration', () => {
+    const journal = createRequestJournal();
+    const { host, triggerCompleted } = makeWebRequestHost();
+    const addRequestSpy = vi.spyOn(journal, 'addRequest');
+
+    let captureEnabled = true;
+
+    registerPassiveRequestJournal(journal, host, undefined, {
+      isCaptureEnabled: () => captureEnabled,
+    });
+
+    triggerCompleted({
+      requestId: 'r3',
+      url: 'https://cdn.example.com/v.m3u8',
+      tabId: 1,
+      type: 'xmlhttprequest',
+      timeStamp: 1,
+    });
+
+    expect(addRequestSpy).toHaveBeenCalledTimes(1);
+
+    captureEnabled = false;
+
+    triggerCompleted({
+      requestId: 'r4',
+      url: 'https://cdn.example.com/v2.m3u8',
+      tabId: 1,
+      type: 'xmlhttprequest',
+      timeStamp: 2,
+    });
+
+    expect(addRequestSpy).toHaveBeenCalledTimes(1);
+  });
+
+  test('without isCaptureEnabled option behavior is unchanged (backward compat)', () => {
+    const journal = createRequestJournal();
+    const { host, triggerBeforeSend, triggerCompleted } = makeWebRequestHost();
+    const captureSpy = vi.fn();
+
+    const headerContext = {
+      capture: captureSpy,
+      getByRequestId: vi.fn(),
+      getByUrl: vi.fn(),
+      deleteRequest: vi.fn(),
+      updateOptions: vi.fn(),
+    };
+
+    registerPassiveRequestJournal(journal, host, headerContext);
+
+    triggerBeforeSend({
+      requestId: 'r5',
+      url: 'https://cdn.example.com/video.m3u8',
+      tabId: 1,
+      requestHeaders: [{ name: 'Referer', value: 'https://example.com' }],
+    });
+
+    triggerCompleted({
+      requestId: 'r5',
+      url: 'https://cdn.example.com/video.m3u8',
+      tabId: 1,
+      type: 'xmlhttprequest',
+      timeStamp: 1,
+      responseHeaders: [],
+    });
+
+    expect(captureSpy).toHaveBeenCalledOnce();
   });
 });

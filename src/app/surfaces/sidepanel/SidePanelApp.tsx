@@ -359,6 +359,7 @@ function DetectionView({ activeTabId, runtimeClient }: DetectionViewProps) {
     }
 
     let cancelled = false;
+    let lastPushAt = 0;
     const refresh = async () => {
       try {
         const candidates = await runtimeClient.getCandidates(activeTabId);
@@ -382,10 +383,27 @@ function DetectionView({ activeTabId, runtimeClient }: DetectionViewProps) {
         }
       }
     };
-    const intervalId = window.setInterval(() => void refresh(), CURRENT_TAB_REFRESH_INTERVAL_MS);
+
+    const subscription = runtimeClient.subscribeToUpdates({
+      onCandidatesChanged: () => {
+        if (cancelled) {
+          return;
+        }
+        lastPushAt = Date.now();
+        void refresh();
+      },
+    });
+
+    // Fallback poll: only fires if the Port has not pushed recently (e.g. dropped).
+    const intervalId = window.setInterval(() => {
+      if (Date.now() - lastPushAt >= CURRENT_TAB_REFRESH_INTERVAL_MS) {
+        void refresh();
+      }
+    }, CURRENT_TAB_REFRESH_INTERVAL_MS);
 
     return () => {
       cancelled = true;
+      subscription.close();
       window.clearInterval(intervalId);
     };
   }, [activeTabId, runtimeClient, setCandidates, setErrorMessage]);
@@ -438,6 +456,8 @@ function DetectionView({ activeTabId, runtimeClient }: DetectionViewProps) {
 
   useEffect(() => {
     if (!runtimeClient) return;
+    // Auto-download is intentionally scoped to when the side panel is open.
+    // Silent background downloading without user visibility is a deliberate non-goal for safety.
     for (const candidate of viewCandidates) {
       if (autoDownloadedIdsRef.current.has(candidate.id)) continue;
       const eligible = isAutoDownloadEligible({

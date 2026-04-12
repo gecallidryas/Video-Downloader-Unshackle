@@ -288,12 +288,12 @@ export async function createMuxjsStreamingTransmuxSession(
       emittedInitSegment = true;
     }
     if (data.data && data.data.byteLength > 0) {
+      const dataCopy = new Uint8Array(data.data.byteLength);
+      dataCopy.set(data.data);
       if (!firstFragment) {
-        const fragmentCopy = new Uint8Array(data.data.byteLength);
-        fragmentCopy.set(data.data);
-        firstFragment = fragmentCopy;
+        firstFragment = dataCopy;
       }
-      chunks.push(data.data);
+      chunks.push(dataCopy);
     }
 
     for (const chunk of chunks) {

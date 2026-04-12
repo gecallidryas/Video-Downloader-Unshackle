@@ -89,8 +89,8 @@ describe('browser DASH export runner', () => {
         download,
       }),
     ).resolves.toMatchObject({
-      fileName: 'dash-movie.m4s',
-      mimeType: 'video/iso.segment',
+      fileName: 'dash-movie.mp4',
+      mimeType: 'video/mp4',
       outputUrl: 'blob:raw-dash',
       downloadId: 91,
       sizeBytes: 4,
@@ -103,7 +103,7 @@ describe('browser DASH export runner', () => {
     ]);
     expect(download).toHaveBeenCalledWith({
       url: 'blob:raw-dash',
-      filename: 'dash-movie.m4s',
+      filename: 'dash-movie.mp4',
       saveAs: true,
     });
   });
@@ -328,11 +328,70 @@ describe('browser DASH export runner', () => {
         download: vi.fn().mockResolvedValue(94),
       }),
     ).resolves.toMatchObject({
-      fileName: 'dash-movie.m4s',
-      mimeType: 'video/iso.segment',
+      fileName: 'dash-movie.mp4',
+      mimeType: 'video/mp4',
     });
 
     runDashJobSpy.mockRestore();
+  });
+
+  test('refuses oversize in-memory single-track DASH instead of OOMing the worker', async () => {
+    const manifest = parseMpd({
+      manifestUrl: 'https://cdn.example.com/dash/manifest.mpd',
+      content: [
+        '<MPD mediaPresentationDuration="PT4S">',
+        '<Period><AdaptationSet contentType="video"><Representation id="v1">',
+        '<BaseURL>video.mp4</BaseURL>',
+        '</Representation></AdaptationSet></Period>',
+        '</MPD>',
+      ].join(''),
+    });
+    const download = vi.fn();
+
+    await expect(
+      runBrowserDashExportJob({
+        candidate: candidate(),
+        job: job(),
+        manifest,
+        fetchBytes: vi.fn().mockResolvedValue(new Uint8Array(64)),
+        createObjectUrl: vi.fn(),
+        revokeObjectUrl: vi.fn(),
+        download,
+        memoryCeilingBytes: 16,
+      }),
+    ).rejects.toThrow(/safe in-memory limit/i);
+
+    expect(download).not.toHaveBeenCalled();
+  });
+
+  test('writes an oversize DASH download to disk past the memory ceiling', async () => {
+    const manifest = parseMpd({
+      manifestUrl: 'https://cdn.example.com/dash/manifest.mpd',
+      content: [
+        '<MPD mediaPresentationDuration="PT4S">',
+        '<Period><AdaptationSet contentType="video"><Representation id="v1">',
+        '<BaseURL>video.mp4</BaseURL>',
+        '</Representation></AdaptationSet></Period>',
+        '</MPD>',
+      ].join(''),
+    });
+    const writeFile = vi.fn(async () => undefined);
+
+    await expect(
+      runBrowserDashExportJob({
+        candidate: candidate(),
+        job: job(),
+        manifest,
+        fetchBytes: vi.fn().mockResolvedValue(new Uint8Array(64)),
+        writeFile,
+        download: vi.fn(),
+        memoryCeilingBytes: 16,
+      }),
+    ).resolves.toMatchObject({
+      outputUrl: 'file-system-access://dash-movie.bin',
+    });
+
+    expect(writeFile).toHaveBeenCalled();
   });
 
   test('rejects protected DASH before fetching unless explicitly allowed', async () => {

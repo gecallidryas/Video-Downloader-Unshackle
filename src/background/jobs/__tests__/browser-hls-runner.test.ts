@@ -128,6 +128,53 @@ function deferred<T>() {
   return { promise, resolve, reject };
 }
 
+interface MockOffscreenOptions {
+  output?: BrowserHlsExportResponse['output'];
+  finalizeOk?: boolean;
+  finalizeError?: string;
+}
+
+function mockOffscreenExport(options: MockOffscreenOptions = {}) {
+  return vi.fn(async (command: OffscreenCommand): Promise<BrowserHlsExportResponse> => {
+    if (command.type === 'FINALIZE_BROWSER_HLS_EXPORT') {
+      if (options.finalizeOk === false) {
+        return {
+          ok: false,
+          command: command.type,
+          bytesWritten: 0,
+          error: options.finalizeError ?? 'Browser HLS offscreen export failed.',
+        };
+      }
+
+      return {
+        ok: true,
+        command: command.type,
+        bytesWritten: 8,
+        output: options.output ?? {
+          fileName: 'playlist.mp4',
+          mimeType: 'video/mp4',
+          outputUrl: 'blob:offscreen-mp4',
+          downloadId: 99,
+          sizeBytes: 8,
+        },
+      };
+    }
+
+    return {
+      ok: true,
+      command: command.type,
+      bytesWritten: command.type === 'APPEND_BROWSER_HLS_SEGMENT' ? 4 : 0,
+    };
+  });
+}
+
+const STREAMING_CAPS = {
+  fileSystemAccess: false,
+  opfs: false,
+  writableStream: true,
+  persistedOutputDirectory: false,
+} as const;
+
 describe('browser HLS export runner', () => {
   test('refuses fMP4 HLS in the browser path instead of writing raw segment artifacts', async () => {
     const manifest = parseHlsManifest({
@@ -193,13 +240,20 @@ describe('browser HLS export runner', () => {
     expect(download).not.toHaveBeenCalled();
   });
 
-  test('transmuxes TS segments to MP4 when mux.js browser fallback is enabled', async () => {
+  test('transmuxes TS segments to MP4 through the offscreen streaming export host', async () => {
     const manifest = parseHlsManifest({
       manifestUrl: 'https://cdn.example.com/hls/prog.m3u8',
       content: ['#EXTM3U', '#EXTINF:4,', 'segment.ts', '#EXT-X-ENDLIST'].join('\n'),
     });
-    const createObjectUrl = vi.fn().mockReturnValue('blob:mp4-hls');
-    const download = vi.fn().mockResolvedValue(78);
+    const offscreenExport = mockOffscreenExport({
+      output: {
+        fileName: 'playlist.mp4',
+        mimeType: 'video/mp4',
+        outputUrl: 'blob:mp4-hls',
+        downloadId: 78,
+        sizeBytes: 8,
+      },
+    });
 
     await expect(
       runBrowserHlsExportJob({
@@ -207,14 +261,10 @@ describe('browser HLS export runner', () => {
         job: job(),
         manifest,
         fetchBytes: vi.fn().mockResolvedValue(muxCompatibleTsBytes()),
-        createObjectUrl,
-        download,
         browserTransmuxWithMuxJs: true,
         browserTransmuxMaxBytes: 10_000,
-        transmuxTsToMp4: vi.fn().mockResolvedValue({
-          bytes: new Uint8Array([0, 0, 0, 24, 0x66, 0x74, 0x79, 0x70]),
-          mimeType: 'video/mp4',
-        }),
+        streamingCapabilities: STREAMING_CAPS,
+        offscreenExport,
       }),
     ).resolves.toMatchObject({
       fileName: 'playlist.mp4',
@@ -222,14 +272,13 @@ describe('browser HLS export runner', () => {
       outputUrl: 'blob:mp4-hls',
       downloadId: 78,
       sizeBytes: 8,
-      notes: ['Browser transmuxed MPEG-TS HLS segments to MP4 with mux.js.'],
     });
 
-    expect(download).toHaveBeenCalledWith({
-      url: 'blob:mp4-hls',
-      filename: 'playlist.mp4',
-      saveAs: false,
-    });
+    expect(offscreenExport.mock.calls.map(([command]) => command.type)).toEqual([
+      'START_BROWSER_HLS_EXPORT',
+      'APPEND_BROWSER_HLS_SEGMENT',
+      'FINALIZE_BROWSER_HLS_EXPORT',
+    ]);
   });
 
   test('streams mux.js MP4 browser fallback through the offscreen export host', async () => {
@@ -675,14 +724,10 @@ describe('browser HLS export runner', () => {
       job: job(),
       manifest,
       fetchBytes: vi.fn().mockResolvedValue(muxCompatibleTsBytes()),
-      createObjectUrl: vi.fn().mockReturnValue('blob:mp4-hls'),
-      download: vi.fn().mockResolvedValue(78),
       browserTransmuxWithMuxJs: true,
       browserTransmuxMaxBytes: 10_000,
-      transmuxTsToMp4: vi.fn().mockResolvedValue({
-        bytes: new Uint8Array([0, 0, 0, 24, 0x66, 0x74, 0x79, 0x70]),
-        mimeType: 'video/mp4',
-      }),
+      streamingCapabilities: STREAMING_CAPS,
+      offscreenExport: mockOffscreenExport(),
       onExportPhase: (phase) => phases.push(phase),
     });
 
@@ -715,7 +760,7 @@ describe('browser HLS export runner', () => {
     expect(download).not.toHaveBeenCalled();
   });
 
-  test('fails without saving raw TS when mux.js transmux fails', async () => {
+  test('fails without saving raw TS when the offscreen transmux reports failure', async () => {
     const manifest = parseHlsManifest({
       manifestUrl: 'https://cdn.example.com/hls/prog.m3u8',
       content: ['#EXTM3U', '#EXTINF:4,', 'segment.ts', '#EXT-X-ENDLIST'].join('\n'),
@@ -728,13 +773,16 @@ describe('browser HLS export runner', () => {
         job: job(),
         manifest,
         fetchBytes: vi.fn().mockResolvedValue(muxCompatibleTsBytes()),
-        createObjectUrl: vi.fn().mockReturnValue('blob:raw-hls'),
         download,
         browserTransmuxWithMuxJs: true,
         browserTransmuxMaxBytes: 10_000,
-        transmuxTsToMp4: vi.fn().mockRejectedValue(new Error('unsupported stream')),
+        streamingCapabilities: STREAMING_CAPS,
+        offscreenExport: mockOffscreenExport({
+          finalizeOk: false,
+          finalizeError: 'mux.js transmux produced no playable MP4.',
+        }),
       }),
-    ).rejects.toThrow('Browser HLS transmux failed: unsupported stream');
+    ).rejects.toThrow('mux.js transmux produced no playable MP4.');
 
     expect(download).not.toHaveBeenCalled();
   });
@@ -776,14 +824,10 @@ describe('browser HLS export runner', () => {
       job: job(),
       manifest,
       fetchBytes,
-      createObjectUrl: vi.fn().mockReturnValue('blob:encrypted-hls'),
-      revokeObjectUrl: vi.fn(),
       download: vi.fn().mockResolvedValue(88),
       browserTransmuxWithMuxJs: true,
-      transmuxTsToMp4: vi.fn().mockResolvedValue({
-        bytes: new Uint8Array([0, 0, 0, 24, 0x66, 0x74, 0x79, 0x70]),
-        mimeType: 'video/mp4',
-      }),
+      streamingCapabilities: STREAMING_CAPS,
+      offscreenExport: mockOffscreenExport(),
     });
 
     expect(fetchBytes).toHaveBeenCalledWith(
@@ -804,16 +848,13 @@ describe('browser HLS export runner', () => {
       job: job(),
       manifest,
       fetchBytes: vi.fn().mockResolvedValue(muxCompatibleTsBytes()),
-      createObjectUrl: vi.fn().mockReturnValue('blob:mp4-hls'),
-      revokeObjectUrl: vi.fn(),
       download: vi.fn().mockResolvedValue(99),
       browserTransmuxWithMuxJs: true,
-      transmuxTsToMp4: vi.fn().mockResolvedValue({
-        bytes: new Uint8Array([0, 0, 0, 24, 0x66, 0x74, 0x79, 0x70]),
-        mimeType: 'video/mp4',
-      }),
+      streamingCapabilities: STREAMING_CAPS,
+      offscreenExport: mockOffscreenExport(),
       concurrency: 6,
       maxConcurrentPerHost: 2,
+      bandwidthBytesPerSecond: 1_500_000,
       segmentTimeoutMs: 12_000,
       qualityPolicy: 'lowest',
     });
@@ -822,6 +863,7 @@ describe('browser HLS export runner', () => {
       expect.objectContaining({
         concurrency: 6,
         maxConcurrentPerHost: 2,
+        bandwidthBytesPerSecond: 1_500_000,
         segmentTimeoutMs: 12_000,
       }),
     );
@@ -848,14 +890,10 @@ describe('browser HLS export runner', () => {
       manifest,
       fetchText,
       fetchBytes,
-      createObjectUrl: vi.fn().mockReturnValue('blob:master-hls'),
-      revokeObjectUrl: vi.fn(),
       download: vi.fn().mockResolvedValue(100),
       browserTransmuxWithMuxJs: true,
-      transmuxTsToMp4: vi.fn().mockResolvedValue({
-        bytes: new Uint8Array([0, 0, 0, 24, 0x66, 0x74, 0x79, 0x70]),
-        mimeType: 'video/mp4',
-      }),
+      streamingCapabilities: STREAMING_CAPS,
+      offscreenExport: mockOffscreenExport(),
     });
 
     expect(fetchText).toHaveBeenCalledWith(

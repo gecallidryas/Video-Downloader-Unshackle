@@ -9,11 +9,7 @@ import type {
 } from '@/video_downloader_types_skeleton';
 import type { DefaultQualityPolicy } from '@/src/background/settings/settings-store';
 import type { ChromeDownload } from '@/src/core/export/downloads-export';
-import {
-  exportBlobDownload,
-  joinSegmentsToBlob,
-  rawSegmentOutputName,
-} from '@/src/core/export/downloads-export';
+import { rawSegmentOutputName } from '@/src/core/export/downloads-export';
 import {
   parseHlsManifest,
   type ParsedHlsManifest,
@@ -39,6 +35,7 @@ import {
   type BrowserHlsExportResponse,
   type OffscreenCommand,
 } from '@/src/shared/contracts/offscreen';
+import { formatBrowserHlsExportDiagnostic } from '@/src/offscreen/export-host';
 
 export type FetchBrowserBytes = (
   url: string,
@@ -49,11 +46,6 @@ export type FetchBrowserText = (
   url: string,
   init: RequestInit,
 ) => Promise<string>;
-
-export interface BrowserTransmuxResult {
-  bytes: Uint8Array;
-  mimeType: 'video/mp4';
-}
 
 export type SendBrowserHlsOffscreenCommand = (
   command: OffscreenCommand,
@@ -72,13 +64,13 @@ export interface RunBrowserHlsExportJobInput {
   allowProtected?: boolean;
   concurrency?: number;
   maxConcurrentPerHost?: number;
+  bandwidthBytesPerSecond?: number;
   segmentTimeoutMs?: number;
   qualityPolicy?: DefaultQualityPolicy;
   onPlan?: Parameters<typeof runHlsJob>[0]['onPlan'];
   onProgress?: SegmentProgressCallback;
   browserTransmuxWithMuxJs?: boolean;
   browserTransmuxMaxBytes?: number;
-  transmuxTsToMp4?: (input: { segments: Uint8Array[] }) => Promise<BrowserTransmuxResult>;
   offscreenExport?: SendBrowserHlsOffscreenCommand;
   streamingCapabilities?: StreamingWriteCapabilities;
   onExportRoute?: (decision: BrowserHlsExportRouteDecision) => void;
@@ -132,10 +124,6 @@ function requestInitFromScheduler(request: {
     headers: request.headers,
     signal: request.signal,
   };
-}
-
-function totalBytes(parts: Uint8Array[]): number {
-  return parts.reduce((sum, part) => sum + part.byteLength, 0);
 }
 
 function estimatePlanBytes(plan: SegmentPlan, candidate: MediaCandidate): number | undefined {
@@ -205,35 +193,7 @@ function errorMessage(error: unknown): string {
 }
 
 function formatExportDiagnosticNote(diagnostic: BrowserHlsExportDiagnostic): string {
-  const parts = [
-    `route=${diagnostic.route}`,
-    `sink=${diagnostic.sinkKind}`,
-    `phase=${diagnostic.phase}`,
-  ];
-
-  if (diagnostic.muxErrorCode) {
-    parts.push(`muxCode=${diagnostic.muxErrorCode}`);
-  }
-  if (typeof diagnostic.segmentIndex === 'number') {
-    parts.push(`segment=${String(diagnostic.segmentIndex)}`);
-  }
-  if (diagnostic.segmentUrl) {
-    parts.push(`url=${diagnostic.segmentUrl}`);
-  }
-  if (typeof diagnostic.segmentBytes === 'number') {
-    parts.push(`bytes=${String(diagnostic.segmentBytes)}`);
-  }
-  if (diagnostic.firstBytesHex) {
-    parts.push(`firstBytes=${diagnostic.firstBytesHex}`);
-  }
-  if (typeof diagnostic.hasTsSyncByteAt0 === 'boolean') {
-    parts.push(`tsSync0=${String(diagnostic.hasTsSyncByteAt0)}`);
-  }
-  if (typeof diagnostic.hasTsSyncByteAt188 === 'boolean') {
-    parts.push(`tsSync188=${String(diagnostic.hasTsSyncByteAt188)}`);
-  }
-
-  return `Browser HLS export diagnostic: ${diagnostic.message} (${parts.join(', ')})`;
+  return `Browser HLS export diagnostic: ${formatBrowserHlsExportDiagnostic(diagnostic)}`;
 }
 
 function mergeDiagnostics(
@@ -315,7 +275,6 @@ export async function runBrowserHlsExportJob(
   const fetchBytes = input.fetchBytes ?? defaultFetchBytes;
   const resolvedPlaylist = await resolveMediaPlaylist(input);
   const mediaManifest = resolvedPlaylist.manifest;
-  let activeRouteDecision: BrowserHlsExportRouteDecision | undefined;
   let activeOffscreenExport:
     | {
         decision: BrowserHlsExportRouteDecision;
@@ -411,6 +370,7 @@ export async function runBrowserHlsExportJob(
       allowProtected: input.allowProtected,
       concurrency: input.concurrency,
       maxConcurrentPerHost: input.maxConcurrentPerHost,
+      bandwidthBytesPerSecond: input.bandwidthBytesPerSecond,
       segmentTimeoutMs: input.segmentTimeoutMs,
       qualityPolicy: input.qualityPolicy,
       onPlan: async (plan) => {
@@ -442,8 +402,6 @@ export async function runBrowserHlsExportJob(
           memoryCeilingBytes: maxTransmuxBytes,
           capabilities: input.streamingCapabilities ?? defaultStreamingCapabilities(),
         });
-        activeRouteDecision = decision;
-
         if (decision.route === 'unsupported-browser-only') {
           throw new Error(decision.reason);
         }
@@ -458,7 +416,7 @@ export async function runBrowserHlsExportJob(
           diagnostics: [],
         };
 
-        if (!input.offscreenExport && decision.outputExtension === 'mp4' && !input.transmuxTsToMp4) {
+        if (!input.offscreenExport && decision.outputExtension === 'mp4') {
           throw new Error(
             'Browser HLS MP4 export requires an offscreen export host in MV3.',
           );
@@ -501,7 +459,7 @@ export async function runBrowserHlsExportJob(
         fetchBytes(segment.url, requestInitFromScheduler(request)),
       fetchKey: (keyUri, request) =>
         fetchBytes(keyUri, requestInitFromScheduler(request)),
-      writeOutput: async (_plan, parts) => {
+      writeOutput: async (_plan, _parts) => {
         if (activeOffscreenExport?.started && input.offscreenExport) {
           input.onExportPhase?.('exporting');
           const response = await input.offscreenExport(
@@ -541,57 +499,13 @@ export async function runBrowserHlsExportJob(
           };
         }
 
-        const maxTransmuxBytes = input.browserTransmuxMaxBytes ?? 150 * 1024 * 1024;
-        const outputBytes = totalBytes(parts);
-
-        if (!input.writeFile && outputBytes > maxTransmuxBytes) {
-          throw new Error(
-            `Browser HLS export exceeded the safe in-memory limit (${String(outputBytes)} bytes > ${String(maxTransmuxBytes)} bytes). Enable native FFmpeg or direct-to-disk output for large HLS downloads.`,
-          );
-        }
-
-        if (
-          activeRouteDecision?.outputExtension === 'mp4' &&
-          input.browserTransmuxWithMuxJs &&
-          outputBytes <= maxTransmuxBytes
-        ) {
-          try {
-            const transmux = input.transmuxTsToMp4;
-
-            if (!transmux) {
-              throw new Error('Offscreen export host is unavailable.');
-            }
-
-            input.onExportPhase?.('transmuxing');
-            const result = await transmux({ segments: parts });
-            input.onExportPhase?.('exporting');
-            const output = await exportBlobDownload({
-              blob: joinSegmentsToBlob([result.bytes], result.mimeType),
-              filename: rawSegmentOutputName({
-                displayName: input.candidate.displayName,
-                protocol: 'hls',
-                extension: 'mp4',
-              }),
-              mimeType: result.mimeType,
-              saveAs: input.job.selection.saveAs,
-              writeFile: input.writeFile,
-              createObjectUrl: input.createObjectUrl,
-              revokeObjectUrl: input.revokeObjectUrl,
-              download: input.download,
-            });
-
-            return {
-              ...output,
-              notes: ['Browser transmuxed MPEG-TS HLS segments to MP4 with mux.js.'],
-            };
-          } catch (error) {
-            throw new Error(
-              `Browser HLS transmux failed: ${errorMessage(error)}. Enable native FFmpeg to save a playable MP4.`,
-            );
-          }
-        }
-
-        throw new Error('Browser HLS export did not produce a playable MP4 route; enable native FFmpeg export.');
+        // The streaming offscreen export host is the only supported MP4 writer.
+        // The legacy whole-file mux.js transmux buffered the entire input and
+        // output in the worker heap; it is no longer used here. Without a live
+        // offscreen session there is no playable-MP4 path to finalize.
+        throw new Error(
+          'Browser HLS MP4 export requires the offscreen streaming export host; enable native FFmpeg export.',
+        );
       },
     });
   } catch (error) {

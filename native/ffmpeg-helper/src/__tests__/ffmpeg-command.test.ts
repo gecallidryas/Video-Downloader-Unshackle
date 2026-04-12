@@ -294,4 +294,36 @@ describe('ffmpeg command builder', () => {
       expect(options.shell).toBe(false);
     }).not.toThrow();
   });
+
+  it('Cookie and Authorization header values are passed as a single opaque -headers arg and do not appear in any other arg position', () => {
+    const secretCookie = 'session=super-secret-cookie-value';
+    const secretAuth = 'Bearer my-auth-token-12345';
+
+    const plan = buildExportArgs(
+      {
+        jobId: 'job-cred',
+        inputUrl: directMp4,
+        protocol: 'direct',
+        outputName: 'video.mp4',
+        outputKind: 'mp4',
+        headers: {
+          cookie: secretCookie,
+          authorization: secretAuth,
+          referer: 'https://example.com/watch',
+        },
+      },
+      'C:\\Users\\tester\\AppData\\Local\\VideoDownloaderUnshackle\\outputs\\video.mp4',
+    );
+
+    const headersArgIndex = plan.args.indexOf('-headers');
+    expect(headersArgIndex).toBeGreaterThan(-1);
+
+    // The credential values must be confined to the single -headers blob arg.
+    // No other arg (flag, input path, output path, codec flag) should contain them.
+    const otherArgs = plan.args.filter((_, i) => i !== headersArgIndex + 1);
+    for (const arg of otherArgs) {
+      expect(arg).not.toContain(secretCookie);
+      expect(arg).not.toContain(secretAuth);
+    }
+  });
 });

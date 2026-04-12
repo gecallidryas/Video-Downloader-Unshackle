@@ -281,16 +281,29 @@ describe('native ffmpeg helper dispatcher', () => {
   });
 
   it('dispatches a ranged READ_ASSET_BYTES slice with an eof flag past the cap', async () => {
-    const readAsset = vi.fn().mockResolvedValue(Buffer.from('0123456789'));
+    const fileBytes = Buffer.from('0123456789');
+    const fileSize = fileBytes.byteLength;
+
+    const readAssetRange = vi.fn(
+      async (_path: string, offset: number, length: number) => {
+        const toRead = Math.min(length, Math.max(0, fileSize - offset));
+        return {
+          buffer: fileBytes.subarray(offset, offset + toRead),
+          bytesRead: toRead,
+          fileSize,
+        };
+      },
+    );
+
     const outputPath = `${dirs.previewsDir}\\big-output.mp4`;
 
     const first = await dispatchNativeRequest(
       { type: 'READ_ASSET_BYTES', requestId: 'r1', payload: { outputPath, maxBytes: 4, offset: 0 } },
-      { readAsset },
+      { readAssetRange },
     );
     const second = await dispatchNativeRequest(
       { type: 'READ_ASSET_BYTES', requestId: 'r2', payload: { outputPath, maxBytes: 4, offset: 8 } },
-      { readAsset },
+      { readAssetRange },
     );
 
     expect(first).toEqual({
@@ -302,6 +315,134 @@ describe('native ffmpeg helper dispatcher', () => {
       type: 'ASSET_BYTES_RESULT',
       requestId: 'r2',
       payload: { outputPath, sizeBytes: 2, base64: Buffer.from('89').toString('base64'), eof: true },
+    });
+  });
+
+  it('ranged READ_ASSET_BYTES does not call readAsset — only readAssetRange is invoked', async () => {
+    const fileBytes = Buffer.from('hello world');
+    const fileSize = fileBytes.byteLength;
+    const readAsset = vi.fn();
+    const readAssetRange = vi.fn(async (_path: string, offset: number, length: number) => ({
+      buffer: fileBytes.subarray(offset, offset + length),
+      bytesRead: Math.min(length, fileSize - offset),
+      fileSize,
+    }));
+    const outputPath = `${dirs.previewsDir}\\check.mp4`;
+
+    await dispatchNativeRequest(
+      { type: 'READ_ASSET_BYTES', requestId: 'r-check', payload: { outputPath, maxBytes: 5, offset: 0 } },
+      { readAsset, readAssetRange },
+    );
+
+    expect(readAsset).not.toHaveBeenCalled();
+    expect(readAssetRange).toHaveBeenCalledWith(outputPath, 0, 5);
+  });
+
+  it('EXPORT_MEDIA threads expectedDurationSec from probe into runProcessJob', async () => {
+    const runProbe = vi.fn().mockResolvedValue({ durationSec: 120 });
+    const runProcessJob = vi.fn().mockResolvedValue({
+      jobId: 'job-dur',
+      outputPath: `${dirs.outputsDir}\\clip.mp4`,
+      mimeType: 'video/mp4',
+    });
+
+    await dispatchNativeRequest(
+      {
+        type: 'EXPORT_MEDIA',
+        requestId: 'req-dur',
+        payload: {
+          jobId: 'job-dur',
+          inputUrl: 'https://media.example.test/video.mp4',
+          protocol: 'direct',
+          outputName: 'clip.mp4',
+          outputKind: 'mp4',
+        },
+      },
+      {
+        checkExecutable: vi.fn().mockResolvedValue(true),
+        ensureOutputDirs: vi.fn().mockResolvedValue(dirs),
+        runProbe,
+        runProcessJob,
+      },
+    );
+
+    expect(runProbe).toHaveBeenCalled();
+    expect(runProcessJob).toHaveBeenCalledWith(
+      expect.objectContaining({ expectedDurationSec: 120 }),
+    );
+  });
+
+  it('EXPORT_MEDIA proceeds without expectedDurationSec when probe fails', async () => {
+    const runProbe = vi.fn().mockRejectedValue(new Error('ffprobe unavailable'));
+    const runProcessJob = vi.fn().mockResolvedValue({
+      jobId: 'job-probe-fail',
+      outputPath: `${dirs.outputsDir}\\clip.mp4`,
+      mimeType: 'video/mp4',
+    });
+
+    const response = await dispatchNativeRequest(
+      {
+        type: 'EXPORT_MEDIA',
+        requestId: 'req-probe-fail',
+        payload: {
+          jobId: 'job-probe-fail',
+          inputUrl: 'https://media.example.test/video.mp4',
+          protocol: 'direct',
+          outputName: 'clip.mp4',
+          outputKind: 'mp4',
+        },
+      },
+      {
+        checkExecutable: vi.fn().mockResolvedValue(true),
+        ensureOutputDirs: vi.fn().mockResolvedValue(dirs),
+        runProbe,
+        runProcessJob,
+      },
+    );
+
+    expect(response.type).toBe('COMPLETED');
+    expect(runProcessJob).toHaveBeenCalledWith(
+      expect.objectContaining({ expectedDurationSec: undefined }),
+    );
+  });
+
+  it('rejects EXPORT_MEDIA with unknown protocol as INVALID_REQUEST', async () => {
+    const response = await dispatchNativeRequest({
+      type: 'EXPORT_MEDIA',
+      requestId: 'req-proto',
+      payload: {
+        jobId: 'job-proto',
+        inputUrl: 'https://media.example.test/video.mp4',
+        protocol: 'ftp',
+        outputName: 'clip.mp4',
+        outputKind: 'mp4',
+      },
+    });
+
+    expect(response).toEqual({
+      type: 'ERROR',
+      requestId: 'req-proto',
+      payload: { code: 'INVALID_REQUEST', message: expect.stringContaining('Invalid native ffmpeg request') },
+    });
+  });
+
+  it('rejects EXPORT_MEDIA with unknown outputKind as INVALID_REQUEST', async () => {
+    const response = await dispatchNativeRequest({
+      type: 'EXPORT_MEDIA',
+      requestId: 'req-kind',
+      payload: {
+        jobId: 'job-kind',
+        inputUrl: 'https://media.example.test/video.mp4',
+        protocol: 'direct',
+        outputName: 'clip.mov',
+        outputKind: 'mov',
+      },
+    });
+
+    expect(response).toEqual({
+      type: 'ERROR',
+      requestId: 'req-kind',
+      payload: { code: 'INVALID_REQUEST', message: expect.stringContaining('Invalid native ffmpeg request') },
     });
   });
 
@@ -364,5 +505,50 @@ describe('native ffmpeg helper dispatcher', () => {
         message: expect.stringContaining('ffmpeg'),
       },
     });
+  });
+
+  it('Cookie and Authorization values from headers do not appear in HELPER_ERROR message when process fails', async () => {
+    const secretCookie = 'session=leaked-cookie-value';
+    const secretAuth = 'Bearer leaked-auth-token';
+
+    // Simulate a process failure whose .message does NOT contain credential values.
+    // The ProcessRunnerError.stderr may contain them (ffmpeg echoes request headers on error),
+    // but only .message must reach the ERROR response payload.
+    const runProcessJob = vi.fn().mockRejectedValue(
+      Object.assign(new Error('Process exited with code 1.'), {
+        name: 'ProcessRunnerError',
+        code: 'PROCESS_FAILED',
+        stderr: `ffmpeg error output\ncookie: ${secretCookie}\nauthorization: ${secretAuth}`,
+      }),
+    );
+
+    // dispatchExport is not awaited inside the switch, so a rejection from runProcessJob
+    // propagates out of dispatchNativeRequest rather than being caught by the inner try/catch.
+    // The top-level error message is the Error.message — never the stderr.
+    const rejection = dispatchNativeRequest(
+      {
+        type: 'EXPORT_MEDIA',
+        requestId: 'req-cred-leak',
+        payload: {
+          jobId: 'job-cred-leak',
+          inputUrl: 'https://media.example.test/video.mp4',
+          protocol: 'direct',
+          outputName: 'clip.mp4',
+          outputKind: 'mp4',
+          headers: { cookie: secretCookie, authorization: secretAuth },
+        },
+      },
+      {
+        checkExecutable: vi.fn().mockResolvedValue(true),
+        ensureOutputDirs: vi.fn().mockResolvedValue(dirs),
+        runProbe: vi.fn().mockResolvedValue({ durationSec: 10 }),
+        runProcessJob,
+      },
+    );
+
+    await expect(rejection).rejects.toThrow();
+    const error = await rejection.catch((e: unknown) => e as Error);
+    expect(error.message).not.toContain(secretCookie);
+    expect(error.message).not.toContain(secretAuth);
   });
 });

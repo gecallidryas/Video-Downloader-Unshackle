@@ -4,6 +4,14 @@ function makeRuntime() {
   return { sendMessage: vi.fn(async () => undefined) };
 }
 
+function makeStorage(advancedMode: boolean) {
+  return {
+    get: vi.fn(async () => ({
+      unshackle_settings: { advancedMode },
+    })),
+  };
+}
+
 function dispatch(data: unknown) {
   window.dispatchEvent(new MessageEvent('message', { data }));
 }
@@ -57,9 +65,44 @@ test('unshackle_drm_detected message → sendMessage called with DRM_DETECTED an
   );
 });
 
-test('unshackle_media_request HLS manifest → INGEST_CONTENT_EVIDENCE with player-config evidence', () => {
+test('unshackle_media_request dropped when advancedMode is false (default safe state)', () => {
   const runtime = makeRuntime();
-  relayMainWorldMessages(runtime);
+  relayMainWorldMessages(runtime, { storage: makeStorage(false) });
+
+  dispatch({
+    type: 'unshackle_media_request',
+    url: 'https://cdn.example.com/master.m3u8',
+    contentType: 'application/vnd.apple.mpegurl',
+    via: 'fetch',
+  });
+
+  expect(runtime.sendMessage).not.toHaveBeenCalled();
+});
+
+test('unshackle_media_request dropped before settings load resolves (advancedModeKnown false)', () => {
+  const runtime = makeRuntime();
+  // Storage promise never resolves during this synchronous tick
+  const storage = {
+    get: vi.fn(() => new Promise<Record<string, unknown>>(() => undefined)),
+  };
+  relayMainWorldMessages(runtime, { storage });
+
+  dispatch({
+    type: 'unshackle_media_request',
+    url: 'https://cdn.example.com/master.m3u8',
+    contentType: 'application/vnd.apple.mpegurl',
+    via: 'fetch',
+  });
+
+  expect(runtime.sendMessage).not.toHaveBeenCalled();
+});
+
+test('unshackle_media_request HLS manifest relayed when advancedMode is true', async () => {
+  const runtime = makeRuntime();
+  relayMainWorldMessages(runtime, { storage: makeStorage(true) });
+
+  // Flush the settings load: readAdvancedMode awaits storage.get, then the outer .then resolves.
+  await new Promise<void>((resolve) => setTimeout(resolve));
 
   dispatch({
     type: 'unshackle_media_request',
@@ -89,9 +132,11 @@ test('unshackle_media_request HLS manifest → INGEST_CONTENT_EVIDENCE with play
   );
 });
 
-test('unshackle_media_request non-manifest → sendMessage NOT called', () => {
+test('unshackle_media_request non-manifest → sendMessage NOT called even when advancedMode is true', async () => {
   const runtime = makeRuntime();
-  relayMainWorldMessages(runtime);
+  relayMainWorldMessages(runtime, { storage: makeStorage(true) });
+
+  await new Promise<void>((resolve) => setTimeout(resolve));
 
   dispatch({
     type: 'unshackle_media_request',
@@ -103,9 +148,23 @@ test('unshackle_media_request non-manifest → sendMessage NOT called', () => {
   expect(runtime.sendMessage).not.toHaveBeenCalled();
 });
 
-test('unshackle_mse_activity → INGEST_CONTENT_EVIDENCE with blob-correlation evidence', () => {
+test('unshackle_mse_activity dropped when advancedMode is false', () => {
   const runtime = makeRuntime();
-  relayMainWorldMessages(runtime);
+  relayMainWorldMessages(runtime, { storage: makeStorage(false) });
+
+  dispatch({
+    type: 'unshackle_mse_activity',
+    mime: 'video/mp4; codecs="avc1.640028"',
+  });
+
+  expect(runtime.sendMessage).not.toHaveBeenCalled();
+});
+
+test('unshackle_mse_activity relayed when advancedMode is true', async () => {
+  const runtime = makeRuntime();
+  relayMainWorldMessages(runtime, { storage: makeStorage(true) });
+
+  await new Promise<void>((resolve) => setTimeout(resolve));
 
   dispatch({
     type: 'unshackle_mse_activity',
@@ -129,6 +188,28 @@ test('unshackle_mse_activity → INGEST_CONTENT_EVIDENCE with blob-correlation e
       }),
     }),
   );
+});
+
+test('advancedMode gate: false instance does not relay, true instance does relay', async () => {
+  // Two independent relay instances share the same window; only the one with advancedMode=true
+  // should forward MAIN-world player evidence.
+  const runtime1 = makeRuntime();
+  const runtime2 = makeRuntime();
+
+  relayMainWorldMessages(runtime1, { storage: makeStorage(false) });
+  relayMainWorldMessages(runtime2, { storage: makeStorage(true) });
+
+  await new Promise<void>((resolve) => setTimeout(resolve));
+
+  dispatch({
+    type: 'unshackle_media_request',
+    url: 'https://cdn.example.com/updated.m3u8',
+    contentType: 'application/vnd.apple.mpegurl',
+    via: 'fetch',
+  });
+
+  expect(runtime1.sendMessage).not.toHaveBeenCalled();
+  expect(runtime2.sendMessage).toHaveBeenCalledOnce();
 });
 
 test('unrelated message type → sendMessage NOT called', () => {

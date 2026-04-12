@@ -170,12 +170,38 @@ export async function submitPageMediaEvidence(
   }
 }
 
+export interface RelayMainWorldMessagesOptions {
+  storage?: SettingsStorageLike;
+}
+
 export function relayMainWorldMessages(
   runtime: Pick<typeof chrome.runtime, 'sendMessage'> | undefined =
     typeof chrome !== 'undefined' ? chrome.runtime : undefined,
+  options: RelayMainWorldMessagesOptions = {},
 ): void {
   if (!runtime?.sendMessage) {
     return;
+  }
+
+  // advancedMode gate: unknown until storage resolves. Default is the SAFE state
+  // (false) so early events fired before the setting loads are dropped, not forwarded.
+  let advancedModeKnown = false;
+  let advancedMode = false;
+
+  const storageImpl = options.storage ?? getDefaultSettingsStorage();
+
+  void readAdvancedMode(storageImpl).then((value) => {
+    advancedMode = value;
+    advancedModeKnown = true;
+  });
+
+  if (typeof chrome !== 'undefined' && chrome.storage?.onChanged) {
+    chrome.storage.onChanged.addListener((changes, area) => {
+      if (area !== 'local' || !(SETTINGS_STORAGE_KEY in changes)) return;
+      const newValue = changes[SETTINGS_STORAGE_KEY]?.newValue;
+      advancedMode = isRecord(newValue) && newValue.advancedMode === true;
+      advancedModeKnown = true;
+    });
   }
 
   window.addEventListener('message', (event) => {
@@ -200,7 +226,10 @@ export function relayMainWorldMessages(
       return;
     }
 
+    // MAIN-world deep-capture relay: only forward when advancedMode is confirmed true.
+    // Events before the setting loads are dropped (advancedModeKnown is false ⇒ not relayed).
     if (type === 'unshackle_media_request') {
+      if (!advancedModeKnown || !advancedMode) return;
       const data = event.data as { url?: string; contentType?: string; via?: string };
       if (!data.url) return;
       const detection = classifyPlayerRequest({
@@ -235,6 +264,7 @@ export function relayMainWorldMessages(
     }
 
     if (type === 'unshackle_mse_activity') {
+      if (!advancedModeKnown || !advancedMode) return;
       const data = event.data as { mime?: string };
       const signal = classifyMseActivity(data.mime);
       try {
@@ -284,6 +314,8 @@ export default defineContentScript({
   matches: ['<all_urls>'],
   allFrames: true,
   matchAboutBlank: true,
+  // document_start so the relay listener is registered before the MAIN-world probe emits.
+  runAt: 'document_start',
   main() {
     void submitPageMediaEvidence();
     relayMainWorldMessages();

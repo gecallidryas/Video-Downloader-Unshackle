@@ -13,11 +13,13 @@ export interface DownloadDirectWithRangesOptions {
   url: string;
   chunkSizeBytes?: number;
   concurrency?: number;
+  maxInMemoryBytes?: number;
   fetch?: DirectRangeFetch;
   signal?: AbortSignal;
 }
 
 const DEFAULT_DIRECT_CHUNK_SIZE_BYTES = 2 * 1024 * 1024;
+const DEFAULT_MAX_IN_MEMORY_BYTES = 2 * 1024 * 1024 * 1024;
 
 export function splitIntoRanges(totalBytes: number, chunkSize: number): RangeChunk[] {
   if (totalBytes <= 0 || chunkSize <= 0) {
@@ -54,6 +56,7 @@ export async function downloadDirectWithRanges(
   options: DownloadDirectWithRangesOptions,
 ): Promise<Uint8Array> {
   const fetcher = options.fetch ?? fetch;
+  const ceiling = options.maxInMemoryBytes ?? DEFAULT_MAX_IN_MEMORY_BYTES;
   const head = await fetcher(options.url, {
     method: 'HEAD',
     signal: options.signal,
@@ -69,6 +72,13 @@ export async function downloadDirectWithRanges(
     1,
     Math.floor(options.chunkSizeBytes ?? DEFAULT_DIRECT_CHUNK_SIZE_BYTES),
   );
+
+  if (Number.isFinite(totalBytes) && totalBytes > ceiling) {
+    throw new Error(
+      `Direct download of ${String(totalBytes)} bytes exceeds the memory ceiling of ${String(ceiling)} bytes. ` +
+      'Use a streaming sink or native download path for files this large.',
+    );
+  }
 
   if (!acceptsRanges || !Number.isFinite(totalBytes) || totalBytes <= chunkSizeBytes) {
     const response = await fetcher(options.url, { signal: options.signal });

@@ -269,6 +269,50 @@ describe('mux.js TS transmuxer', () => {
     expect(session.bytesEmitted).toBe(10);
   });
 
+  test('emitted media fragments are defensively copied — mutating source after emit does not corrupt the chunk', async () => {
+    const emittedChunks: Uint8Array[] = [];
+    const dataCallbacks: MuxjsDataCallback[] = [];
+    const sourceDataBuffer = new Uint8Array([0x01, 0x02, 0x03]);
+    const transmuxer: MuxjsTransmuxer = {
+      on(event, callback) {
+        if (event === 'data') {
+          dataCallbacks.push(callback as MuxjsDataCallback);
+        }
+      },
+      push() {
+        return undefined;
+      },
+      flush() {
+        dataCallbacks.forEach((callback) =>
+          callback({
+            initSegment: new Uint8Array([0x00, 0x00, 0x00, 0x08, 0x66, 0x74, 0x79, 0x70]),
+            data: sourceDataBuffer,
+          }),
+        );
+        // Mutate the source buffer immediately after the synchronous data event fires.
+        sourceDataBuffer[0] = 0xff;
+        sourceDataBuffer[1] = 0xff;
+        sourceDataBuffer[2] = 0xff;
+      },
+    };
+    const tsPacket = new Uint8Array(188);
+    tsPacket[0] = 0x47;
+    const session = await createMuxjsStreamingTransmuxSession(
+      async (chunk) => {
+        emittedChunks.push(chunk);
+      },
+      { createTransmuxer: async () => transmuxer },
+    );
+
+    await session.append(tsPacket);
+    await session.finalize();
+
+    const mediaChunk = emittedChunks.find((c) => c.byteLength === 3);
+    expect(mediaChunk).toBeDefined();
+    // The chunk must be a copy — it must NOT reflect the post-emit mutation.
+    expect(Array.from(mediaChunk!)).toEqual([0x01, 0x02, 0x03]);
+  });
+
   test('rejects empty mux.js output', async () => {
     const emptyPacket = new Uint8Array(188);
     emptyPacket[0] = 0x47;

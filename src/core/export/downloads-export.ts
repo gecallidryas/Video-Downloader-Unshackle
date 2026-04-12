@@ -84,43 +84,6 @@ export function joinSegmentsToBlob(parts: Uint8Array[], mimeType: string): Blob 
   }), { type: mimeType });
 }
 
-function bytesToBase64(bytes: Uint8Array): string {
-  const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
-  let output = '';
-  let index = 0;
-
-  for (; index + 2 < bytes.length; index += 3) {
-    const value = (bytes[index] << 16) | (bytes[index + 1] << 8) | bytes[index + 2];
-    output +=
-      alphabet[(value >> 18) & 63] +
-      alphabet[(value >> 12) & 63] +
-      alphabet[(value >> 6) & 63] +
-      alphabet[value & 63];
-  }
-
-  if (index < bytes.length) {
-    const first = bytes[index];
-    const second = bytes[index + 1];
-
-    if (second === undefined) {
-      const value = first << 16;
-      output +=
-        alphabet[(value >> 18) & 63] +
-        alphabet[(value >> 12) & 63] +
-        '==';
-    } else {
-      const value = (first << 16) | (second << 8);
-      output +=
-        alphabet[(value >> 18) & 63] +
-        alphabet[(value >> 12) & 63] +
-        alphabet[(value >> 6) & 63] +
-        '=';
-    }
-  }
-
-  return output;
-}
-
 async function blobToBytes(blob: Blob): Promise<Uint8Array> {
   const buffer =
     typeof blob.arrayBuffer === 'function'
@@ -142,11 +105,6 @@ async function blobToBytes(blob: Blob): Promise<Uint8Array> {
           reader.readAsArrayBuffer(blob);
         });
   return new Uint8Array(buffer);
-}
-
-async function blobToDataUrl(blob: Blob, mimeType: string): Promise<string> {
-  const bytes = await blobToBytes(blob);
-  return `data:${mimeType};base64,${bytesToBase64(bytes)}`;
 }
 
 export async function exportBlobDownload(
@@ -171,22 +129,28 @@ export async function exportBlobDownload(
     (typeof URL.createObjectURL === 'function'
       ? URL.createObjectURL.bind(URL)
       : undefined);
+
+  if (!createObjectUrl) {
+    throw new Error(
+      'URL.createObjectURL is unavailable in this context (MV3 service worker). ' +
+      'Use an offscreen document or defer to the native download path instead.',
+    );
+  }
+
   const revokeObjectUrl =
     input.revokeObjectUrl ??
     (typeof URL.revokeObjectURL === 'function'
       ? URL.revokeObjectURL.bind(URL)
       : undefined);
   const download = input.download ?? chrome.downloads.download;
-  const outputUrl = createObjectUrl
-    ? createObjectUrl(input.blob)
-    : await blobToDataUrl(input.blob, input.mimeType);
+  const outputUrl = createObjectUrl(input.blob);
   const downloadId = await download({
     url: outputUrl,
     filename: input.filename,
     saveAs: Boolean(input.saveAs),
   });
 
-  if (createObjectUrl && revokeObjectUrl) {
+  if (revokeObjectUrl) {
     setTimeout(() => revokeObjectUrl(outputUrl), 30_000);
   }
 

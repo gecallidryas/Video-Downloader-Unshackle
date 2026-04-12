@@ -85,7 +85,11 @@ function createMuxDiagnostic(input: {
   };
 }
 
-function formatDiagnostic(diagnostic: BrowserHlsExportDiagnostic): string {
+// Shared diagnostic formatter used by both the offscreen export host and the
+// background HLS runner so the rendered fields stay in lockstep.
+export function formatBrowserHlsExportDiagnostic(
+  diagnostic: BrowserHlsExportDiagnostic,
+): string {
   const parts = [
     `route=${diagnostic.route}`,
     `sink=${diagnostic.sinkKind}`,
@@ -291,11 +295,11 @@ export function createBrowserHlsExportHost(options: BrowserHlsExportHostOptions 
           command: 'FINALIZE_BROWSER_HLS_EXPORT',
           bytesWritten: 0,
           diagnostics: session.diagnostics,
-          error: `${formatDiagnostic(diagnostic)} Browser HLS downloads are restricted to playable MP4 output.`,
+          error: `${formatBrowserHlsExportDiagnostic(diagnostic)} Browser HLS downloads are restricted to playable MP4 output.`,
         };
       }
 
-      throw new Error(formatDiagnostic(diagnostic));
+      throw new Error(formatBrowserHlsExportDiagnostic(diagnostic));
     }
   }
 

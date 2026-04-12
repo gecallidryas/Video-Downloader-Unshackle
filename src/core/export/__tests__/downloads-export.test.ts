@@ -150,7 +150,7 @@ describe('downloads export', () => {
     expect(revokeObjectUrl).toHaveBeenCalledWith('blob:raw-hls');
   });
 
-  test('exports blob downloads as data URLs when object URLs are unavailable', async () => {
+  test('refuses with a clear error when object URLs are unavailable (no base64 fallback)', async () => {
     const originalCreateObjectUrl = URL.createObjectURL;
     const originalRevokeObjectUrl = URL.revokeObjectURL;
     Object.defineProperty(URL, 'createObjectURL', {
@@ -172,13 +172,8 @@ describe('downloads export', () => {
           mimeType: 'video/mp2t',
           download,
         }),
-      ).resolves.toMatchObject({
-        fileName: 'raw.ts',
-        mimeType: 'video/mp2t',
-        outputUrl: 'data:video/mp2t;base64,AQID',
-        downloadId: 43,
-        sizeBytes: 3,
-      });
+      ).rejects.toThrow('URL.createObjectURL is unavailable');
+      expect(download).not.toHaveBeenCalled();
     } finally {
       Object.defineProperty(URL, 'createObjectURL', {
         configurable: true,

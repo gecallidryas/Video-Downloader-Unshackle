@@ -21,6 +21,7 @@ export interface DownloadQueueOptions {
   jobStore: JobStore;
   executeJob: DownloadQueueExecutor;
   maxConcurrent?: number;
+  abortJob?: (jobId: string) => void;
   persistence?: StatePersistence;
   persistKey?: string;
   debounceMs?: number;
@@ -30,6 +31,7 @@ export interface DownloadQueue {
   enqueue(candidate: MediaCandidate, selection?: DownloadSelection): DownloadJob;
   drain(): Promise<void>;
   stats(): QueueStats;
+  setMaxConcurrent(n: number): void;
   retry(jobId: string): boolean;
   cancel(jobId: string): boolean;
   pause(jobId: string): boolean;
@@ -69,10 +71,24 @@ function cancelledFailure(): JobFailure {
   };
 }
 
+function missingCandidateFailure(): JobFailure {
+  return {
+    code: 'NETWORK_ERROR',
+    message: 'Missing candidate snapshot for queued job; cannot start download.',
+    retryable: false,
+  };
+}
+
+// A 'paused' or 'cancelled' job has been deliberately taken out of the active
+// run; an AbortError surfacing from executeJob after that point must not flip
+// its phase to 'failed'/'completed'.
+const ABORT_PRESERVED_PHASES = ['cancelled', 'paused'] as const;
+
 export function createDownloadQueue(options: DownloadQueueOptions): DownloadQueue {
   const candidates = new Map<string, MediaCandidate>();
   const active = new Set<string>();
-  const maxConcurrent = Math.max(1, Math.floor(options.maxConcurrent ?? 3));
+  let maxConcurrent = Math.max(1, Math.floor(options.maxConcurrent ?? 3));
+  let drainPromise: Promise<void> | undefined;
 
   const persistKey = options.persistKey ?? 'queue-candidates';
   const writer = options.persistence
@@ -90,6 +106,11 @@ export function createDownloadQueue(options: DownloadQueueOptions): DownloadQueu
     const candidate = candidates.get(job.id);
 
     if (!candidate) {
+      options.jobStore.update(job.id, {
+        phase: 'failed',
+        failure: missingCandidateFailure(),
+      });
+      active.delete(job.id);
       return;
     }
 
@@ -101,7 +122,11 @@ export function createDownloadQueue(options: DownloadQueueOptions): DownloadQueu
 
     try {
       const output = await options.executeJob(runningJob, candidate);
-      if (options.jobStore.get(job.id)?.phase === 'cancelled') {
+      if (
+        (ABORT_PRESERVED_PHASES as readonly string[]).includes(
+          options.jobStore.get(job.id)?.phase ?? '',
+        )
+      ) {
         return;
       }
       options.jobStore.update(job.id, {
@@ -111,7 +136,11 @@ export function createDownloadQueue(options: DownloadQueueOptions): DownloadQueu
         bytesDownloaded: output.sizeBytes ?? runningJob.bytesDownloaded,
       });
     } catch (error) {
-      if (options.jobStore.get(job.id)?.phase === 'cancelled') {
+      if (
+        (ABORT_PRESERVED_PHASES as readonly string[]).includes(
+          options.jobStore.get(job.id)?.phase ?? '',
+        )
+      ) {
         return;
       }
       options.jobStore.update(job.id, {
@@ -132,24 +161,45 @@ export function createDownloadQueue(options: DownloadQueueOptions): DownloadQueu
       return job;
     },
 
-    async drain() {
-      while (true) {
-        const queued = options.jobStore
-          .list()
-          .filter((job) => job.phase === 'queued' && !active.has(job.id))
-          .slice(0, Math.max(0, maxConcurrent - active.size));
-
-        if (queued.length === 0) {
-          if (active.size === 0) {
-            return;
-          }
-
-          await new Promise((resolve) => setTimeout(resolve, 0));
-          continue;
-        }
-
-        await Promise.all(queued.map(runOne));
+    drain() {
+      // Idempotent: a single drain loop runs at a time. Concurrent callers
+      // (e.g. the keepalive alarm firing while a drain is in flight) share the
+      // same promise instead of spinning up a second setTimeout busy-waiter.
+      // Newly enqueued work is still picked up because the loop re-reads the
+      // job store on each iteration.
+      if (drainPromise) {
+        return drainPromise;
       }
+
+      drainPromise = (async () => {
+        try {
+          while (true) {
+            const queued = options.jobStore
+              .list()
+              .filter((job) => job.phase === 'queued' && !active.has(job.id))
+              .slice(0, Math.max(0, maxConcurrent - active.size));
+
+            if (queued.length === 0) {
+              if (active.size === 0) {
+                return;
+              }
+
+              await new Promise((resolve) => setTimeout(resolve, 0));
+              continue;
+            }
+
+            await Promise.all(queued.map(runOne));
+          }
+        } finally {
+          drainPromise = undefined;
+        }
+      })();
+
+      return drainPromise;
+    },
+
+    setMaxConcurrent(n) {
+      maxConcurrent = Math.max(1, Math.floor(n));
     },
 
     stats() {
@@ -168,7 +218,7 @@ export function createDownloadQueue(options: DownloadQueueOptions): DownloadQueu
     retry(jobId) {
       const job = options.jobStore.get(jobId);
 
-      if (!job || job.phase !== 'failed') {
+      if (!job || (job.phase !== 'failed' && job.phase !== 'paused')) {
         return false;
       }
 
@@ -198,11 +248,39 @@ export function createDownloadQueue(options: DownloadQueueOptions): DownloadQueu
     },
 
     pause(jobId) {
-      return Boolean(options.jobStore.get(jobId));
+      const job = options.jobStore.get(jobId);
+
+      if (
+        !job ||
+        (job.phase !== 'queued' &&
+          !(RUNNING_PHASES as readonly string[]).includes(job.phase))
+      ) {
+        return false;
+      }
+
+      options.jobStore.update(jobId, {
+        phase: 'paused',
+        failure: undefined,
+      });
+      active.delete(jobId);
+      options.abortJob?.(jobId);
+
+      return true;
     },
 
     resume(jobId) {
-      return Boolean(options.jobStore.get(jobId));
+      const job = options.jobStore.get(jobId);
+
+      if (!job || job.phase !== 'paused') {
+        return false;
+      }
+
+      options.jobStore.update(jobId, {
+        phase: 'queued',
+        failure: undefined,
+      });
+
+      return true;
     },
 
     removeQueued(jobId) {

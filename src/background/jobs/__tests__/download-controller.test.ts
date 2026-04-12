@@ -627,6 +627,122 @@ describe('download controller decision flow', () => {
     );
   });
 
+  test('threads max bandwidth per host through to runHls as bytes/sec', async () => {
+    const runHls = vi.fn().mockResolvedValue({ fileName: 'hls.mp4', mimeType: 'video/mp4' });
+    const fetchText = vi
+      .fn()
+      .mockResolvedValue('#EXTM3U\n#EXT-X-TARGETDURATION:6\n#EXTINF:6,\nseg0.ts\n#EXT-X-ENDLIST');
+    const controller = createDownloadController({
+      downloadFile: vi.fn(),
+      runHls,
+      runDash: vi.fn(),
+      fetchText,
+    });
+
+    await controller.start(
+      candidate({ protocol: 'hls', sourceUrl: undefined, manifestUrl: 'https://cdn.example.com/master.m3u8' }),
+      job(),
+      {
+        selection: { mode: 'best' },
+        settings: { maxBandwidthPerHostKBps: 500 },
+      },
+    );
+
+    expect(runHls).toHaveBeenCalledWith(
+      expect.objectContaining({ bandwidthBytesPerSecond: 500 * 1024 }),
+    );
+  });
+
+  test('omits bandwidth from runHls when max bandwidth is zero or unset', async () => {
+    const runHls = vi.fn().mockResolvedValue({ fileName: 'hls.mp4', mimeType: 'video/mp4' });
+    const fetchText = vi
+      .fn()
+      .mockResolvedValue('#EXTM3U\n#EXT-X-TARGETDURATION:6\n#EXTINF:6,\nseg0.ts\n#EXT-X-ENDLIST');
+    const controller = createDownloadController({
+      downloadFile: vi.fn(),
+      runHls,
+      runDash: vi.fn(),
+      fetchText,
+    });
+
+    await controller.start(
+      candidate({ protocol: 'hls', sourceUrl: undefined, manifestUrl: 'https://cdn.example.com/master.m3u8' }),
+      job(),
+      {
+        selection: { mode: 'best' },
+        settings: { maxBandwidthPerHostKBps: 0 },
+      },
+    );
+
+    expect(runHls.mock.calls[0][0]).not.toHaveProperty('bandwidthBytesPerSecond');
+  });
+
+  test('threads max bandwidth per host through to runDash as bytes/sec', async () => {
+    const runDash = vi.fn().mockResolvedValue({ fileName: 'dash.mp4', mimeType: 'video/mp4' });
+    const fetchText = vi
+      .fn()
+      .mockResolvedValue(
+        '<MPD mediaPresentationDuration="PT1S"><Period><AdaptationSet contentType="video"><Representation id="v1"><BaseURL>video.mp4</BaseURL></Representation></AdaptationSet></Period></MPD>',
+      );
+    const controller = createDownloadController({
+      downloadFile: vi.fn(),
+      runHls: vi.fn(),
+      runDash,
+      fetchText,
+    });
+
+    await controller.start(
+      candidate({ protocol: 'dash', sourceUrl: undefined, manifestUrl: 'https://cdn.example.com/manifest.mpd' }),
+      job(),
+      {
+        selection: { mode: 'best' },
+        settings: { maxBandwidthPerHostKBps: 250 },
+      },
+    );
+
+    expect(runDash).toHaveBeenCalledWith(
+      expect.objectContaining({ bandwidthBytesPerSecond: 250 * 1024 }),
+    );
+  });
+
+  test('signalAbort cancels the in-flight run without touching the job store', async () => {
+    const runHls = vi.fn(async (input: { signal?: AbortSignal }) => {
+      await new Promise<void>((_resolve, reject) => {
+        input.signal?.addEventListener('abort', () => reject(new Error('aborted')), {
+          once: true,
+        });
+      });
+      return { fileName: 'never.mp4', mimeType: 'video/mp4' };
+    });
+    const fetchText = vi
+      .fn()
+      .mockResolvedValue('#EXTM3U\n#EXTINF:1,\nseg.ts\n#EXT-X-ENDLIST');
+    const jobStore = createJobStore(() => 1);
+    const controller = createDownloadController({
+      downloadFile: vi.fn(),
+      runHls,
+      runDash: vi.fn(),
+      fetchText,
+    });
+    const hlsCandidate = candidate({
+      protocol: 'hls',
+      sourceUrl: undefined,
+      manifestUrl: 'https://cdn.example.com/master.m3u8',
+    });
+    const queuedJob = jobStore.create(hlsCandidate, { mode: 'best' });
+
+    const pending = controller.start(hlsCandidate, queuedJob, {
+      selection: { mode: 'best' },
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    controller.signalAbort(queuedJob.id);
+
+    await expect(pending).rejects.toThrow('aborted');
+    // signalAbort must NOT mutate the job store (queue owns the phase).
+    expect(jobStore.get(queuedJob.id)).toMatchObject({ phase: 'queued' });
+  });
+
   test('threads segment timeout settings through to runHls', async () => {
     const runHls = vi.fn().mockResolvedValue({ fileName: 'hls.mp4', mimeType: 'video/mp4' });
     const fetchText = vi

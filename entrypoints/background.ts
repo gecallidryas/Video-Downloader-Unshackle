@@ -35,7 +35,11 @@ import {
   createRequestJournal,
   registerPassiveRequestJournal,
 } from '@/src/background/network/request-journal';
-import { createHeaderContextStore } from '@/src/background/network/header-context';
+import {
+  buildEngineHandoff,
+  createHeaderContextStore,
+} from '@/src/background/network/header-context';
+import type { DrmDetectionRecord } from '@/src/background/messaging/runtime-router';
 import { getDefaultSessionPersistence } from '@/src/background/state/state-persistence';
 import {
   createUpdatePortBroadcaster,
@@ -125,7 +129,26 @@ export function initializeBackgroundShell() {
       return undefined;
     }
 
-    return headerContext.getByUrl(inputUrl)?.headers;
+    const context = headerContext.getByUrl(inputUrl);
+    if (!context) {
+      return undefined;
+    }
+
+    // Single gated policy path: Referer/Origin always flow; Cookie/Authorization
+    // only when advancedMode && captureCredentialHeaders.
+    const handoff = buildEngineHandoff(context, {
+      advancedMode: settingsStore.get('advancedMode'),
+      captureCredentialHeaders: settingsStore.get('captureCredentialHeaders'),
+    });
+    const headers: Record<string, string> = {};
+    for (const header of handoff.headers) {
+      headers[header.name] = header.value;
+    }
+    if (handoff.cookie) {
+      headers.Cookie = handoff.cookie;
+    }
+
+    return Object.keys(headers).length > 0 ? headers : undefined;
   }
 
   function initializeHlsSegmentStatuses(jobId: string, plan: SegmentPlan): void {
@@ -258,7 +281,9 @@ export function initializeBackgroundShell() {
       browserTransmuxWithMuxJs: settings.browserTransmuxWithMuxJs,
       browserTransmuxMaxBytes: settings.browserTransmuxMaxBytes,
       autoDeleteAfterSave: settings.autoDeleteAfterSave,
+      maxBandwidthPerHostKBps: settings.maxBandwidthPerHostKBps,
     });
+    downloadQueue.setMaxConcurrent(settings.maxConcurrentDownloads);
     notificationManager.applySettings(settings);
     detectionNotifier.configure(settings);
   }
@@ -435,6 +460,9 @@ export function initializeBackgroundShell() {
         jobStore,
         subtitleStore,
         readFullOutput: nativeAssetServer?.readFullOutput,
+        ...(headersForCandidate(candidate)
+          ? { headers: headersForCandidate(candidate) }
+          : {}),
       }),
     browserDirectTrim: ({ candidate, job }) =>
       runBrowserDirectTrimJob({
@@ -461,6 +489,7 @@ export function initializeBackgroundShell() {
   const downloadQueue = createDownloadQueue({
     jobStore,
     persistence: statePersistence,
+    abortJob: (jobId) => downloadController.signalAbort(jobId),
     executeJob: async (job) => {
       const candidate = candidateRegistry
         .get(job.tabId)
@@ -501,6 +530,7 @@ export function initializeBackgroundShell() {
       setBadgeText?.({ text }).catch?.(() => undefined);
     },
   });
+  const drmDetections = new Map<string, DrmDetectionRecord[]>();
   const runtimeRouter = createRuntimeRouter({
     candidateRegistry,
     tabSnapshots,
@@ -508,6 +538,7 @@ export function initializeBackgroundShell() {
     historyStore,
     downloadQueue,
     requestJournal,
+    drmDetections,
     fetchManifest: async (url) => {
       const allowCredentials =
         settingsStore.get('advancedMode') && settingsStore.get('captureCredentialHeaders');
@@ -607,7 +638,9 @@ export function initializeBackgroundShell() {
 
     void settingsStore.load().then(applyLoadedSettingsWithNative);
   });
-  registerPassiveRequestJournal(requestJournal, undefined, headerContext);
+  registerPassiveRequestJournal(requestJournal, undefined, headerContext, {
+    isCaptureEnabled: () => settingsStore.get('networkCaptureEnabled'),
+  });
   registerBackgroundCommandHandlers({
     commands: chrome.commands,
     sidePanel: chrome.sidePanel,

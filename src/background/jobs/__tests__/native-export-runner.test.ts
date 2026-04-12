@@ -120,6 +120,47 @@ describe('runNativeExportJob', () => {
     });
   });
 
+  test('threads gated handoff headers into the export payload when provided', async () => {
+    const client = nativeClient();
+    const jobStore = createJobStore(() => 100);
+    const queued = jobStore.create(candidate(), { mode: 'best', outputKind: 'mp4' });
+
+    await runNativeExportJob({
+      candidate: candidate(),
+      job: queued,
+      nativeClient: client,
+      jobStore,
+      headers: { Cookie: 'session=abc', Referer: 'https://example.com/watch' },
+      readFullOutput: stubReadFullOutput(new Uint8Array([1])),
+      deliverOutput: vi.fn().mockResolvedValue(1),
+    });
+
+    expect(client.exportMedia).toHaveBeenCalledWith(
+      expect.objectContaining({
+        headers: { Cookie: 'session=abc', Referer: 'https://example.com/watch' },
+      }),
+      expect.anything(),
+    );
+  });
+
+  test('omits the headers key from the export payload when none are provided', async () => {
+    const client = nativeClient();
+    const jobStore = createJobStore(() => 100);
+    const queued = jobStore.create(candidate(), { mode: 'best', outputKind: 'mp4' });
+
+    await runNativeExportJob({
+      candidate: candidate(),
+      job: queued,
+      nativeClient: client,
+      jobStore,
+      readFullOutput: stubReadFullOutput(new Uint8Array([1])),
+      deliverOutput: vi.fn().mockResolvedValue(1),
+    });
+
+    const payload = vi.mocked(client.exportMedia).mock.calls[0][0];
+    expect(payload).not.toHaveProperty('headers');
+  });
+
   test('forwards native progress events to the job store', async () => {
     const client = nativeClient();
     vi.mocked(client.exportMedia).mockImplementationOnce(async (_payload, options) => {

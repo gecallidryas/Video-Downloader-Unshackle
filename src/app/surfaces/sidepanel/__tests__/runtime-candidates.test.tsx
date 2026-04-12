@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { vi } from 'vitest';
 import { SidePanelApp } from '../SidePanelApp';
@@ -136,6 +136,10 @@ beforeEach(() => {
     downloadingIds: new Set<string>(),
   });
   useSettingsStore.setState({ advancedMode: false });
+});
+
+afterEach(() => {
+  vi.useRealTimers();
 });
 
 test('loads side panel candidates from a typed runtime client', async () => {
@@ -296,6 +300,91 @@ test('opens preview modal for preview-capable streamed media', async () => {
     'src',
     'https://cdn.example.com/master.m3u8',
   );
+});
+
+test('refreshes candidates immediately when CANDIDATES_UPDATED Port push arrives', async () => {
+  const candidatesHandlerRefs: Array<{ onCandidatesChanged?(): void }> = [];
+  const runtimeClient = buildRuntimeClient([]);
+  vi.mocked(runtimeClient.getCandidates)
+    .mockResolvedValueOnce([])
+    .mockResolvedValue([
+      buildCandidate({ id: 'pushed-1', displayName: 'Pushed candidate' }),
+    ]);
+  vi.mocked(runtimeClient.subscribeToUpdates).mockImplementation((handlers) => {
+    candidatesHandlerRefs.push(handlers);
+    return { close: vi.fn() };
+  });
+
+  render(<SidePanelApp activeTabId={7} runtimeClient={runtimeClient} />);
+
+  await waitFor(() => {
+    expect(runtimeClient.getCandidates).toHaveBeenCalledTimes(1);
+  });
+
+  // Find the subscription that has onCandidatesChanged (the candidates interval effect).
+  const candidatesHandler = candidatesHandlerRefs.find((h) => typeof h.onCandidatesChanged === 'function');
+  expect(candidatesHandler).toBeDefined();
+
+  act(() => {
+    candidatesHandler?.onCandidatesChanged?.();
+  });
+
+  expect(await screen.findByText('Pushed candidate')).toBeInTheDocument();
+  expect(screen.getByText('1 File')).toBeInTheDocument();
+});
+
+test('suppresses fallback interval when Port push has arrived recently', async () => {
+  vi.useFakeTimers();
+  const candidatesHandlerRefs: Array<{ onCandidatesChanged?(): void }> = [];
+  const runtimeClient = buildRuntimeClient([]);
+  vi.mocked(runtimeClient.getCandidates).mockResolvedValue([]);
+  vi.mocked(runtimeClient.subscribeToUpdates).mockImplementation((handlers) => {
+    candidatesHandlerRefs.push(handlers);
+    return { close: vi.fn() };
+  });
+
+  render(<SidePanelApp activeTabId={7} runtimeClient={runtimeClient} />);
+
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(0);
+  });
+
+  // Find the subscription that has onCandidatesChanged (the candidates interval effect).
+  const candidatesHandler = candidatesHandlerRefs.find((h) => typeof h.onCandidatesChanged === 'function');
+  expect(candidatesHandler).toBeDefined();
+
+  // Simulate a Port push just before the interval fires — should suppress the poll.
+  act(() => {
+    candidatesHandler?.onCandidatesChanged?.();
+  });
+
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(0);
+  });
+  const callsAfterPush = vi.mocked(runtimeClient.getCandidates).mock.calls.length;
+
+  // Advance less than the interval — fallback should not fire again (recent push).
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(500);
+  });
+  expect(vi.mocked(runtimeClient.getCandidates).mock.calls.length).toBe(callsAfterPush);
+
+  // Advance past the full interval without a push — fallback should now fire.
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(1_500);
+  });
+  expect(vi.mocked(runtimeClient.getCandidates).mock.calls.length).toBeGreaterThan(callsAfterPush);
+});
+
+test('closes candidates Port subscription on unmount', () => {
+  const closeSpy = vi.fn();
+  const runtimeClient = buildRuntimeClient([]);
+  vi.mocked(runtimeClient.subscribeToUpdates).mockReturnValue({ close: closeSpy });
+
+  const { unmount } = render(<SidePanelApp activeTabId={7} runtimeClient={runtimeClient} />);
+  unmount();
+
+  expect(closeSpy).toHaveBeenCalled();
 });
 
 test('preview modal download with no trim sends null', async () => {

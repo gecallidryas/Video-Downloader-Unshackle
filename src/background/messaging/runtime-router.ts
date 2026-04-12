@@ -1,7 +1,9 @@
 import type {
   ActiveTabSnapshot,
   DownloadJob,
+  DownloadPhase,
   MediaCandidate,
+  MessageEnvelope,
   QueueStats,
   RuntimeRequest,
   RuntimeResponse,
@@ -11,6 +13,7 @@ import type {
   MediaAssetState,
 } from '@/video_downloader_types_skeleton';
 import {
+  createMessageEnvelope,
   createRuntimeErrorResponse,
   createRuntimeResponse,
 } from '@/src/shared/contracts/messages';
@@ -40,6 +43,32 @@ export interface DrmDetectionRecord {
   url: string;
   detectedAt: number;
 }
+
+// RESUME_ALL_DOWNLOADS is not (yet) part of the canonical RuntimeRequest union
+// in the types skeleton, so its contract lives here alongside the handler that
+// owns it. Defined as MessageEnvelopes so it composes with the skeleton unions.
+export type ResumeAllDownloadsRequest = MessageEnvelope<
+  'RESUME_ALL_DOWNLOADS',
+  Record<string, never>
+>;
+export type ResumeAllDownloadsResult = MessageEnvelope<
+  'RESUME_ALL_DOWNLOADS_RESULT',
+  { resumedIds: string[] }
+>;
+
+export type RuntimeRouterRequest = RuntimeRequest | ResumeAllDownloadsRequest;
+export type RuntimeRouterResponse = RuntimeResponse | ResumeAllDownloadsResult;
+
+const PAUSEABLE_PHASES: readonly DownloadPhase[] = [
+  'queued',
+  'preparing',
+  'fetching',
+  'decrypting',
+  'transmuxing',
+  'assembling',
+  'finalizing',
+  'exporting',
+];
 
 export interface RuntimeRouterDependencies {
   candidateRegistry: CandidateRegistry;
@@ -73,11 +102,11 @@ export interface RuntimeRouterDependencies {
 }
 
 export interface RuntimeRouter {
-  canHandleMessage(request: RuntimeRequest): boolean;
+  canHandleMessage(request: RuntimeRouterRequest): boolean;
   handleMessage(
-    request: RuntimeRequest,
+    request: RuntimeRouterRequest,
     sender?: chrome.runtime.MessageSender,
-  ): Promise<RuntimeResponse>;
+  ): Promise<RuntimeRouterResponse>;
 }
 
 export interface RuntimeMessageHost {
@@ -86,7 +115,7 @@ export interface RuntimeMessageHost {
       callback: (
         message: unknown,
         sender: chrome.runtime.MessageSender,
-        sendResponse: (response: RuntimeResponse) => void,
+        sendResponse: (response: RuntimeRouterResponse) => void,
       ) => boolean | void,
     ): void;
   };
@@ -120,6 +149,7 @@ type RoutedRuntimeRequest = Extract<
       | 'CLEAR_COMPLETED_DOWNLOADS'
       | 'PAUSE_ALL_DOWNLOADS'
       | 'INGEST_DIRECT_URL'
+      // RESUME_ALL_DOWNLOADS is appended to the handled set below.
       | 'RETRY_HLS_SEGMENT'
       | 'RETRY_FAILED_HLS_SEGMENTS'
       | 'EXPORT_PARTIAL_HLS'
@@ -129,7 +159,9 @@ type RoutedRuntimeRequest = Extract<
   }
 >;
 
-const handledRequestTypes = new Set<RoutedRuntimeRequest['type']>([
+const handledRequestTypes = new Set<
+  RoutedRuntimeRequest['type'] | 'RESUME_ALL_DOWNLOADS'
+>([
   'INGEST_CONTENT_EVIDENCE',
   'INGEST_MANUAL_HLS',
   'INGEST_IQIYI_CONFIG',
@@ -153,6 +185,7 @@ const handledRequestTypes = new Set<RoutedRuntimeRequest['type']>([
   'REMOVE_DOWNLOAD',
   'CLEAR_COMPLETED_DOWNLOADS',
   'PAUSE_ALL_DOWNLOADS',
+  'RESUME_ALL_DOWNLOADS',
   'INGEST_DIRECT_URL',
   'RETRY_HLS_SEGMENT',
   'RETRY_FAILED_HLS_SEGMENTS',
@@ -400,6 +433,65 @@ function recordNewDetections(
   for (const [hostname, count] of countsByHostname) {
     dependencies.recordDetection(hostname, count);
   }
+}
+
+function candidateMatchesUrl(candidate: MediaCandidate, url: string): boolean {
+  return (
+    candidate.sourceUrl === url ||
+    candidate.manifestUrl === url ||
+    candidate.pageUrl === url
+  );
+}
+
+// Marks every candidate whose source/manifest/page URL matches the detected DRM
+// URL as DRM-protected so the detection actually propagates into the pipeline
+// (download/preview gates read `protection.kind === 'drm'` / status 'protected').
+// Returns the number of candidates updated across all tabs.
+function markCandidatesDrmProtected(
+  dependencies: RuntimeRouterDependencies,
+  url: string,
+  drmName: string,
+): number {
+  let updatedCount = 0;
+
+  for (const tabId of dependencies.candidateRegistry.tabIds()) {
+    const candidates = dependencies.candidateRegistry.get(tabId);
+    let changed = false;
+
+    const next = candidates.map((candidate) => {
+      if (
+        !candidateMatchesUrl(candidate, url) ||
+        candidate.protection.kind === 'drm'
+      ) {
+        return candidate;
+      }
+
+      changed = true;
+      updatedCount += 1;
+      const drmSystems = Array.from(
+        new Set([...(candidate.protection.drmSystems ?? []), drmName]),
+      );
+      const updated: MediaCandidate = {
+        ...candidate,
+        status: 'protected',
+        protection: {
+          ...candidate.protection,
+          kind: 'drm',
+          reason: candidate.protection.reason ?? `DRM detected: ${drmName}`,
+          drmSystems,
+        },
+        updatedAt: Date.now(),
+      };
+
+      return { ...updated, preview: previewForCandidate(updated) };
+    });
+
+    if (changed) {
+      dependencies.candidateRegistry.set(tabId, next);
+    }
+  }
+
+  return updatedCount;
 }
 
 function candidateFromDirectUrl(input: Extract<RuntimeRequest, { type: 'INGEST_DIRECT_URL' }>['payload']): MediaCandidate {
@@ -722,19 +814,29 @@ export function createRuntimeRouter(
         case 'DRM_DETECTED': {
           const { drmName, trigger, url } = request.payload;
 
-          if (dependencies.drmDetections) {
-            const existing = dependencies.drmDetections.get(url) ?? [];
-            const alreadyRecorded = existing.some(
-              (record) => record.drmName === drmName,
+          // No sink for the detection means nothing is recorded. Returning
+          // ok:true here would be a false success, so report honestly.
+          if (!dependencies.drmDetections) {
+            return createRuntimeResponse(
+              'DRM_DETECTED_RESULT',
+              { ok: false },
+              request.requestId,
             );
-
-            if (!alreadyRecorded) {
-              dependencies.drmDetections.set(url, [
-                ...existing,
-                { drmName, trigger, url, detectedAt: Date.now() },
-              ]);
-            }
           }
+
+          const existing = dependencies.drmDetections.get(url) ?? [];
+          const alreadyRecorded = existing.some(
+            (record) => record.drmName === drmName,
+          );
+
+          if (!alreadyRecorded) {
+            dependencies.drmDetections.set(url, [
+              ...existing,
+              { drmName, trigger, url, detectedAt: Date.now() },
+            ]);
+          }
+
+          markCandidatesDrmProtected(dependencies, url, drmName);
 
           return createRuntimeResponse(
             'DRM_DETECTED_RESULT',
@@ -1153,8 +1255,14 @@ export function createRuntimeRouter(
         case 'PAUSE_ALL_DOWNLOADS': {
           const pausedIds: string[] = [];
           for (const job of dependencies.jobStore?.list() ?? []) {
-            if (['queued', 'preparing', 'fetching', 'decrypting', 'transmuxing', 'assembling', 'finalizing', 'exporting'].includes(job.phase)) {
-              dependencies.jobStore?.update(job.id, { phase: 'paused' });
+            if (!PAUSEABLE_PHASES.includes(job.phase)) {
+              continue;
+            }
+
+            // Delegate to the queue's real pause: it aborts the in-flight run,
+            // sets phase 'paused', and clears the active set, leaving the job
+            // resumable. Direct jobStore phase writes left downloads running.
+            if (dependencies.downloadQueue?.pause(job.id)) {
               pausedIds.push(job.id);
             }
           }
@@ -1164,6 +1272,26 @@ export function createRuntimeRouter(
             { pausedIds },
             request.requestId,
           );
+        }
+
+        case 'RESUME_ALL_DOWNLOADS': {
+          const resumedIds: string[] = [];
+          for (const job of dependencies.jobStore?.list() ?? []) {
+            if (job.phase !== 'paused') {
+              continue;
+            }
+
+            if (dependencies.downloadQueue?.resume(job.id)) {
+              resumedIds.push(job.id);
+            }
+          }
+          void dependencies.downloadQueue?.drain();
+
+          return createMessageEnvelope(
+            'RESUME_ALL_DOWNLOADS_RESULT',
+            { resumedIds },
+            request.requestId,
+          ) satisfies ResumeAllDownloadsResult;
         }
 
         case 'INGEST_DIRECT_URL': {
@@ -1425,12 +1553,12 @@ export function registerRuntimeRouter(
   ready: Promise<void> = Promise.resolve(),
 ): void {
   runtime.onMessage.addListener((message, sender, sendResponse) => {
-    if (!runtimeRouter.canHandleMessage(message as RuntimeRequest)) {
+    if (!runtimeRouter.canHandleMessage(message as RuntimeRouterRequest)) {
       return undefined;
     }
 
     void ready
-      .then(() => runtimeRouter.handleMessage(message as RuntimeRequest, sender))
+      .then(() => runtimeRouter.handleMessage(message as RuntimeRouterRequest, sender))
       .then(sendResponse)
       .catch((error) => {
         const detail = error instanceof Error
@@ -1445,7 +1573,7 @@ export function registerRuntimeRouter(
           createRuntimeErrorResponse(
             'INTERNAL_ERROR',
             error instanceof Error ? error.message : 'Runtime request failed.',
-            (message as RuntimeRequest).requestId,
+            (message as RuntimeRouterRequest).requestId,
             detail,
           ),
         );

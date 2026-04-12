@@ -32,14 +32,18 @@ export interface RunBrowserDashExportJobInput {
   allowProtected?: boolean;
   concurrency?: number;
   maxConcurrentPerHost?: number;
+  bandwidthBytesPerSecond?: number;
   segmentTimeoutMs?: number;
+  memoryCeilingBytes?: number;
   signal?: AbortSignal;
 }
 
 interface DashRawOutputKind {
-  extension: 'm4s' | 'bin';
-  mimeType: 'video/iso.segment' | 'application/octet-stream';
+  extension: 'mp4' | 'bin';
+  mimeType: 'video/mp4' | 'application/octet-stream';
 }
+
+const DEFAULT_DASH_MEMORY_CEILING_BYTES = 150 * 1024 * 1024;
 
 function isBlockedProtection(candidate: MediaCandidate): boolean {
   return (
@@ -97,7 +101,11 @@ function isMultiTrackPlan(plan: SegmentPlan): boolean {
   return presentTrackTypes(plan).size > 1;
 }
 
-function isConfidentSingleTrackM4s(plan: SegmentPlan): boolean {
+// A single-track DASH representation with an init segment and fMP4 (.m4s) media
+// segments concatenates into a valid fragmented-MP4 file. Such a file plays in
+// browsers and players when given a .mp4 container/extension, so finalize it as
+// MP4 rather than saving a mislabeled .m4s artifact that many players reject.
+function isConfidentSingleTrackFmp4(plan: SegmentPlan): boolean {
   const hasInit = plan.segments.some((segment) => segment.initSegment);
   const mediaSegments = plan.segments.filter((segment) => !segment.initSegment);
 
@@ -110,10 +118,10 @@ function isConfidentSingleTrackM4s(plan: SegmentPlan): boolean {
 }
 
 function dashRawOutputKind(plan: SegmentPlan): DashRawOutputKind {
-  if (isConfidentSingleTrackM4s(plan)) {
+  if (isConfidentSingleTrackFmp4(plan)) {
     return {
-      extension: 'm4s',
-      mimeType: 'video/iso.segment',
+      extension: 'mp4',
+      mimeType: 'video/mp4',
     };
   }
 
@@ -121,6 +129,10 @@ function dashRawOutputKind(plan: SegmentPlan): DashRawOutputKind {
     extension: 'bin',
     mimeType: 'application/octet-stream',
   };
+}
+
+function totalBytes(parts: Uint8Array[]): number {
+  return parts.reduce((sum, part) => sum + part.byteLength, 0);
 }
 
 export async function runBrowserDashExportJob(
@@ -137,6 +149,7 @@ export async function runBrowserDashExportJob(
   }
 
   const fetchBytes = input.fetchBytes ?? defaultFetchBytes;
+  const memoryCeilingBytes = input.memoryCeilingBytes ?? DEFAULT_DASH_MEMORY_CEILING_BYTES;
 
   return runDashJob({
     job: input.job,
@@ -144,6 +157,7 @@ export async function runBrowserDashExportJob(
     allowProtected: input.allowProtected,
     concurrency: input.concurrency,
     maxConcurrentPerHost: input.maxConcurrentPerHost,
+    bandwidthBytesPerSecond: input.bandwidthBytesPerSecond,
     segmentTimeoutMs: input.segmentTimeoutMs,
     signal: input.signal,
     fetchSegment: (segment, _plan, request) =>
@@ -152,6 +166,18 @@ export async function runBrowserDashExportJob(
       if (isMultiTrackPlan(plan)) {
         throw new Error(
           'Browser-only DASH export cannot mux separate audio and video tracks into a playable file; enable native FFmpeg export for this multi-track stream.',
+        );
+      }
+
+      // The browser DASH path concatenates every segment into one in-memory blob.
+      // Refuse oversize single-track downloads that would OOM the worker (mirrors
+      // the HLS in-memory ceiling) and defer them to native FFmpeg. Direct-to-disk
+      // writers stream past the heap, so they are exempt.
+      const outputBytes = totalBytes(parts);
+
+      if (!input.writeFile && outputBytes > memoryCeilingBytes) {
+        throw new Error(
+          `Browser DASH export exceeded the safe in-memory limit (${String(outputBytes)} bytes > ${String(memoryCeilingBytes)} bytes). Enable native FFmpeg or direct-to-disk output for large DASH downloads.`,
         );
       }
 

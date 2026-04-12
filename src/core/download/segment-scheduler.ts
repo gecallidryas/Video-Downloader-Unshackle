@@ -33,6 +33,7 @@ export interface SegmentSchedulerStorage {
   createBucket(jobId: string): Promise<void>;
   listFragmentIndices(jobId: string): Promise<number[]>;
   writeFragment(jobId: string, index: number, data: Uint8Array): Promise<void>;
+  readFragment(jobId: string, index: number): Promise<Uint8Array | null | undefined>;
 }
 
 export interface ScheduleSegmentsOptions {
@@ -306,14 +307,22 @@ export async function scheduleSegments(
   );
   const limiter = createBandwidthLimiter(options.bandwidthBytesPerSecond);
   const initSegmentCache = options.initSegmentCache ?? createInitSegmentCache();
-  const results = new Array<Uint8Array | undefined>(options.segments.length);
+  // A streaming consumer drains each completed segment immediately, so the whole
+  // download must not be retained in the worker heap. Only retain results[] when
+  // no consumer is attached (callers that await the returned parts array).
+  const streamingConsumer = options.onSegmentComplete !== undefined;
+  const results = streamingConsumer
+    ? undefined
+    : new Array<Uint8Array | undefined>(options.segments.length);
   const queue: SegmentDescriptor[] = [];
+  const resumed: SegmentDescriptor[] = [];
   const activeByHost = new Map<string, number>();
   const recoverableFailuresByHost = new Map<string, number>();
   const effectiveHostLimit = (host: string) =>
     (recoverableFailuresByHost.get(host) ?? 0) >= 2 ? 1 : hostLimit;
   let downloaded = 0;
   let failed = 0;
+  let hostWake: (() => void) | undefined;
 
   if (options.storage && options.jobId) {
     await options.storage.createBucket(options.jobId);
@@ -323,7 +332,7 @@ export async function scheduleSegments(
 
     for (const segment of options.segments) {
       if (existing.has(segment.index)) {
-        downloaded += 1;
+        resumed.push(segment);
         continue;
       }
 
@@ -331,6 +340,36 @@ export async function scheduleSegments(
     }
   } else {
     queue.push(...options.segments);
+  }
+
+  // Replay previously stored fragments through the same completion path (in
+  // index order) so resumed downloads are complete, not silently truncated.
+  if (options.storage && options.jobId && resumed.length > 0) {
+    resumed.sort((left, right) => left.index - right.index);
+
+    for (const segment of resumed) {
+      throwIfAborted(options.signal);
+      const stored = await options.storage.readFragment(options.jobId, segment.index);
+
+      if (!stored) {
+        // The index was listed but the bytes are gone; re-fetch it instead of
+        // dropping the segment.
+        queue.push(segment);
+        continue;
+      }
+
+      if (results) {
+        results[segment.index] = stored;
+      }
+
+      await options.onSegmentComplete?.({
+        segment,
+        bytes: stored,
+        isInitSegment: Boolean(segment.initSegment),
+      });
+
+      downloaded += 1;
+    }
   }
 
   options.onProgress?.({ downloaded, failed, total: options.segments.length });
@@ -345,7 +384,13 @@ export async function scheduleSegments(
       });
 
       if (queueIndex === -1) {
-        await new Promise((resolve) => setTimeout(resolve, 0));
+        // Every queued host is saturated. Wait to be woken by a worker freeing a
+        // host slot rather than hot-spinning on a zero-delay timeout.
+        await new Promise<void>((resolve) => {
+          hostWake = resolve;
+          setTimeout(resolve, 25);
+        });
+        hostWake = undefined;
         continue;
       }
 
@@ -397,7 +442,10 @@ export async function scheduleSegments(
         );
         const finalData = await decryptIfNeeded(segment, data, options);
         bytes = finalData.byteLength;
-        results[segment.index] = finalData;
+
+        if (results) {
+          results[segment.index] = finalData;
+        }
 
         if (options.storage && options.jobId) {
           await options.storage.writeFragment(options.jobId, segment.index, finalData);
@@ -443,6 +491,9 @@ export async function scheduleSegments(
           } else {
             activeByHost.set(host, nextCount);
           }
+
+          // A host slot freed up; wake a worker parked on host saturation.
+          hostWake?.();
         }
       }
     }
@@ -453,6 +504,10 @@ export async function scheduleSegments(
       worker(),
     ),
   );
+
+  if (!results) {
+    return [];
+  }
 
   return results.filter((part): part is Uint8Array => part !== undefined);
 }

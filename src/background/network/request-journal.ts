@@ -254,11 +254,21 @@ export function createRequestJournal(
     return evidence.detectedAt ?? options.now?.() ?? Date.now();
   }
 
+  function pruneRecentRequests(now: number): void {
+    for (const [key, ts] of recentRequests) {
+      if (now - ts >= duplicateWindowMs) {
+        recentRequests.delete(key);
+      }
+    }
+  }
+
   function isDuplicate(tabId: number, evidence: NetworkRequestEvidence): boolean {
     const key = `${tabId}|${evidence.url}`;
     const now = getEvidenceTime(evidence);
-    const previous = recentRequests.get(key);
 
+    pruneRecentRequests(now);
+
+    const previous = recentRequests.get(key);
     recentRequests.set(key, now);
 
     if (previous === undefined) {
@@ -307,6 +317,12 @@ export function createRequestJournal(
     },
 
     clear(tabId) {
+      for (const key of recentRequests.keys()) {
+        if (key.startsWith(`${tabId}|`)) {
+          recentRequests.delete(key);
+        }
+      }
+
       if (evidenceByTabId.delete(tabId)) {
         persist();
       }
@@ -343,13 +359,22 @@ function getDefaultWebRequestHost(): WebRequestHostLike | undefined {
   return chrome.webRequest;
 }
 
+export interface PassiveJournalOptions {
+  isCaptureEnabled?: () => boolean;
+}
+
 export function registerPassiveRequestJournal(
   journal: RequestJournal,
   webRequest: WebRequestHostLike | undefined = getDefaultWebRequestHost(),
   headerContext?: HeaderContextStore,
+  options?: PassiveJournalOptions,
 ): void {
   webRequest?.onBeforeSendHeaders?.addListener(
     (details) => {
+      if (options?.isCaptureEnabled?.() === false) {
+        return;
+      }
+
       const requestHeaders = (details as { requestHeaders?: RequestHeaderLike[] })
         .requestHeaders;
 
@@ -373,6 +398,11 @@ export function registerPassiveRequestJournal(
         .responseHeaders;
 
       if (details.tabId < 0) {
+        return;
+      }
+
+      if (options?.isCaptureEnabled?.() === false) {
+        headerContext?.deleteRequest(details.requestId);
         return;
       }
 
