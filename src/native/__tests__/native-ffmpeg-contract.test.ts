@@ -58,6 +58,59 @@ describe('native ffmpeg message contract', () => {
     expect(isNativeFfmpegRequest(request)).toBe(true);
   });
 
+  test('accepts EXPORT_YTDLP requests with a page URL and quality', () => {
+    const request = createNativeRequest(
+      'EXPORT_YTDLP',
+      {
+        jobId: 'job-1',
+        inputUrl: 'https://example.com/watch?v=abc',
+        outputName: 'video.mp4',
+        quality: 'best-mp4',
+        subtitleLanguages: ['en', 'es'],
+        embedSubtitles: true,
+        trim: { startSec: 1, endSec: 4 },
+        headers: { Referer: 'https://example.com/watch', Cookie: 'session=1' },
+      },
+      'req-ytdlp',
+    );
+
+    expect(isNativeFfmpegRequest(request)).toBe(true);
+  });
+
+  test('rejects EXPORT_YTDLP requests with a non-http input URL or unknown quality', () => {
+    expect(
+      isNativeFfmpegRequest({
+        type: 'EXPORT_YTDLP',
+        requestId: 'req-ytdlp-bad-url',
+        payload: { jobId: 'job-1', inputUrl: 'file:///etc/passwd', outputName: 'v.mp4', quality: 'best' },
+      }),
+    ).toBe(false);
+    expect(
+      isNativeFfmpegRequest({
+        type: 'EXPORT_YTDLP',
+        requestId: 'req-ytdlp-bad-quality',
+        payload: { jobId: 'job-1', inputUrl: 'https://example.com/watch', outputName: 'v.mp4', quality: '4k' },
+      }),
+    ).toBe(false);
+  });
+
+  test('accepts PONG responses reporting ytDlpAvailable', () => {
+    expect(
+      isNativeFfmpegResponse({
+        type: 'PONG',
+        requestId: 'req-ping',
+        payload: {
+          version: '0.1.0',
+          ffmpegAvailable: true,
+          ffprobeAvailable: true,
+          ytDlpAvailable: true,
+          platform: 'win32',
+          installKind: 'per-user',
+        },
+      }),
+    ).toBe(true);
+  });
+
   test('accepts EXTRACT_THUMBNAIL requests with candidate and seek details', () => {
     const request = createNativeRequest(
       'EXTRACT_THUMBNAIL',

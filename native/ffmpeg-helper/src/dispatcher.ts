@@ -14,12 +14,19 @@ import {
 import { defaultJobRegistry, type JobRegistry } from './job-registry.js';
 import { ensureHelperOutputDirs, helperOwnedPath, type HelperOutputDirs } from './output-paths.js';
 import { runProcessJob, type ProcessJobResult, type RunProcessJobOptions } from './process-runner.js';
+import {
+  buildYtDlpArgs,
+  extensionForYtDlpQuality,
+  type YtDlpExportPayload,
+} from './ytdlp-command.js';
+import { runYtDlpJob, type RunYtDlpJobOptions, type YtDlpJobResult } from './ytdlp-runner.js';
 
 // Mirror the PROTOCOLS/OUTPUT_KINDS literal sets from src/native/native-ffmpeg-contract.ts.
 // Cannot import across the project boundary (the helper is a standalone Node process),
 // so these are maintained in sync manually — they must match the contract's const arrays.
 const VALID_PROTOCOLS = new Set(['direct', 'hls', 'dash']);
 const VALID_OUTPUT_KINDS = new Set(['original', 'mp4', 'mkv', 'webm', 'audio-only']);
+const VALID_YTDLP_QUALITIES = new Set(['best', 'best-mp4', 'worst', 'audio-only']);
 
 const HELPER_VERSION = '0.1.0';
 
@@ -29,6 +36,7 @@ export type NativeHelperRequest =
   | { type: 'PING'; requestId: string }
   | { type: 'PROBE'; requestId: string; payload: { inputUrl: string } }
   | { type: 'EXPORT_MEDIA'; requestId: string; payload: FfmpegExportPayload }
+  | { type: 'EXPORT_YTDLP'; requestId: string; payload: YtDlpExportPayload }
   | { type: 'EXTRACT_THUMBNAIL'; requestId: string; payload: FfmpegThumbnailPayload }
   | { type: 'EXTRACT_PREVIEW_CLIP'; requestId: string; payload: FfmpegPreviewClipPayload }
   | { type: 'READ_ASSET_BYTES'; requestId: string; payload: { outputPath: string; maxBytes: number; offset?: number } }
@@ -43,6 +51,7 @@ export type NativeHelperResponse =
         version: string;
         ffmpegAvailable: boolean;
         ffprobeAvailable: boolean;
+        ytDlpAvailable: boolean;
         platform: string;
         installKind?: 'dev' | 'per-user' | 'system';
       };
@@ -54,7 +63,7 @@ export type NativeHelperResponse =
       payload: {
         jobId: string;
         progressPct: number;
-        phase: 'exporting' | 'completed';
+        phase: 'fetching' | 'exporting' | 'completed';
         timeSec?: number;
       };
     }
@@ -102,10 +111,12 @@ export type RangedReadResult = {
 };
 
 export type DispatcherDeps = {
-  checkExecutable?: (file: 'ffmpeg' | 'ffprobe') => Promise<boolean>;
+  checkExecutable?: (file: 'ffmpeg' | 'ffprobe' | 'yt-dlp') => Promise<boolean>;
   ensureOutputDirs?: () => Promise<HelperOutputDirs>;
   runProbe?: (plan: FfmpegCommandPlan) => Promise<ProbeResult>;
   runProcessJob?: (options: RunProcessJobOptions) => Promise<ProcessJobResult>;
+  runYtDlpJob?: (options: RunYtDlpJobOptions) => Promise<YtDlpJobResult>;
+  resolveFfmpegLocation?: () => Promise<string | undefined>;
   readAsset?: (outputPath: string) => Promise<Buffer | Uint8Array>;
   readAssetRange?: (outputPath: string, offset: number, length: number) => Promise<RangedReadResult>;
   registry?: JobRegistry;
@@ -134,6 +145,7 @@ export async function dispatchNativeRequest(
             version: HELPER_VERSION,
             ffmpegAvailable: await checkExecutable('ffmpeg', deps),
             ffprobeAvailable: await checkExecutable('ffprobe', deps),
+            ytDlpAvailable: await checkExecutable('yt-dlp', deps),
             platform: process.platform,
             installKind: nativeInstallKind(),
           },
@@ -154,6 +166,12 @@ export async function dispatchNativeRequest(
           return errorResponse(request.requestId, 'FFMPEG_NOT_FOUND', 'ffmpeg was not found on PATH.');
         }
         return dispatchExport(request, deps, emit);
+
+      case 'EXPORT_YTDLP':
+        if (!(await checkExecutable('yt-dlp', deps))) {
+          return errorResponse(request.requestId, 'YTDLP_NOT_FOUND', 'yt-dlp was not found on PATH.');
+        }
+        return dispatchYtDlpExport(request, deps, emit);
 
       case 'EXTRACT_THUMBNAIL':
         if (!(await checkExecutable('ffmpeg', deps))) {
@@ -228,6 +246,69 @@ async function dispatchExport(
   });
 
   return { type: 'COMPLETED', requestId: request.requestId, payload: result };
+}
+
+async function dispatchYtDlpExport(
+  request: Extract<NativeHelperRequest, { type: 'EXPORT_YTDLP' }>,
+  deps: DispatcherDeps,
+  emit?: ProgressEmitter,
+): Promise<NativeHelperResponse> {
+  const dirs = await ensureDirs(deps);
+  const extension = extensionForYtDlpQuality(request.payload.quality);
+  const outputPath = helperOwnedPath(dirs, 'outputs', request.payload.outputName, extension);
+  const ffmpegLocation = await (deps.resolveFfmpegLocation ?? defaultResolveFfmpegLocation)();
+  const plan = buildYtDlpArgs(request.payload, {
+    outputPath,
+    ...(ffmpegLocation ? { ffmpegLocation } : {}),
+  });
+
+  try {
+    const result = await (deps.runYtDlpJob ?? runYtDlpJob)({
+      jobId: request.payload.jobId,
+      plan,
+      mimeType: mimeForYtDlp(request.payload),
+      registry: deps.registry,
+      ...(emit
+        ? {
+            onProgress: (event) =>
+              emit({
+                type: 'PROGRESS',
+                requestId: request.requestId,
+                payload: { ...event.payload },
+              }),
+          }
+        : {}),
+    });
+
+    return { type: 'COMPLETED', requestId: request.requestId, payload: result };
+  } catch (error) {
+    // Map yt-dlp failures to a typed ERROR. Only the error message reaches the
+    // payload — captured stderr (which can echo Cookie/Authorization) never does.
+    const code = isYtDlpRunnerError(error) ? error.code : 'YTDLP_FAILED';
+    const message = error instanceof Error ? error.message : 'yt-dlp export failed.';
+    return errorResponse(request.requestId, code, message);
+  }
+}
+
+function isYtDlpRunnerError(error: unknown): error is { code: string } {
+  return (
+    typeof error === 'object' &&
+    error !== null &&
+    'name' in error &&
+    (error as { name?: unknown }).name === 'YtDlpRunnerError' &&
+    typeof (error as { code?: unknown }).code === 'string'
+  );
+}
+
+// yt-dlp finds ffmpeg on PATH when --ffmpeg-location is omitted, mirroring the
+// PATH-based ffmpeg discovery the ffmpeg export path already relies on. A custom
+// bundled location can be injected via deps.resolveFfmpegLocation.
+function defaultResolveFfmpegLocation(): Promise<string | undefined> {
+  return Promise.resolve(undefined);
+}
+
+function mimeForYtDlp(payload: YtDlpExportPayload): string {
+  return payload.quality === 'audio-only' ? 'audio/mpeg' : 'video/mp4';
 }
 
 async function dispatchThumbnail(
@@ -364,11 +445,22 @@ async function ensureDirs(deps: DispatcherDeps): Promise<HelperOutputDirs> {
   return (deps.ensureOutputDirs ?? ensureHelperOutputDirs)();
 }
 
-async function checkExecutable(file: 'ffmpeg' | 'ffprobe', deps: DispatcherDeps): Promise<boolean> {
+async function checkExecutable(
+  file: 'ffmpeg' | 'ffprobe' | 'yt-dlp',
+  deps: DispatcherDeps,
+): Promise<boolean> {
   return (deps.checkExecutable ?? defaultCheckExecutable)(file);
 }
 
-function defaultCheckExecutable(file: 'ffmpeg' | 'ffprobe'): Promise<boolean> {
+function defaultCheckExecutable(file: 'ffmpeg' | 'ffprobe' | 'yt-dlp'): Promise<boolean> {
+  if (file === 'yt-dlp') {
+    return new Promise((resolve) => {
+      const child = spawn(file, ['--version'], { shell: false, windowsHide: true, stdio: 'ignore' });
+      child.once('error', () => resolve(false));
+      child.once('close', (code) => resolve(code === 0));
+    });
+  }
+
   return new Promise((resolve) => {
     const child = spawn(file, ['-version'], { shell: false, windowsHide: true, stdio: 'ignore' });
     child.once('error', () => resolve(false));
@@ -438,6 +530,15 @@ function isNativeHelperRequest(value: unknown): value is NativeHelperRequest {
         isString(value.payload.outputName) &&
         isString(value.payload.outputKind) &&
         VALID_OUTPUT_KINDS.has(value.payload.outputKind)
+      );
+    case 'EXPORT_YTDLP':
+      return (
+        isRecord(value.payload) &&
+        isString(value.payload.jobId) &&
+        isHttpUrl(value.payload.inputUrl) &&
+        isString(value.payload.outputName) &&
+        isString(value.payload.quality) &&
+        VALID_YTDLP_QUALITIES.has(value.payload.quality)
       );
     case 'EXTRACT_THUMBNAIL':
       return (
@@ -545,6 +646,19 @@ function mimeForPreview(format: string): string {
 
 function isString(value: unknown): value is string {
   return typeof value === 'string' && value.length > 0;
+}
+
+function isHttpUrl(value: unknown): value is string {
+  if (!isString(value) || value.trim() !== value) {
+    return false;
+  }
+
+  try {
+    const parsed = new URL(value);
+    return parsed.protocol === 'http:' || parsed.protocol === 'https:';
+  } catch {
+    return false;
+  }
 }
 
 function isRecord(value: unknown): value is RequestRecord {

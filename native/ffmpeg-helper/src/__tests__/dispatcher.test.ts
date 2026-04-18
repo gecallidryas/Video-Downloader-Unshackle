@@ -27,6 +27,7 @@ describe('native ffmpeg helper dispatcher', () => {
         version: '0.1.0',
         ffmpegAvailable: true,
         ffprobeAvailable: false,
+        ytDlpAvailable: false,
         platform: process.platform,
         installKind: 'dev',
       },
@@ -476,6 +477,117 @@ describe('native ffmpeg helper dispatcher', () => {
         message: expect.stringContaining('Invalid native ffmpeg request'),
       },
     });
+  });
+
+  it('emits framed PROGRESS then COMPLETED for EXPORT_YTDLP', async () => {
+    const runYtDlpJob = vi.fn(async (options: { jobId: string; plan: { outputPath: string }; onProgress?: (event: unknown) => void }) => {
+      options.onProgress?.({ type: 'PROGRESS', payload: { jobId: options.jobId, progressPct: 30, phase: 'fetching' } });
+      options.onProgress?.({ type: 'PROGRESS', payload: { jobId: options.jobId, progressPct: 100, phase: 'completed' } });
+      return { jobId: options.jobId, outputPath: options.plan.outputPath, mimeType: 'video/mp4', sizeBytes: 4096 };
+    });
+    const emitted: unknown[] = [];
+
+    const response = await dispatchNativeRequest(
+      {
+        type: 'EXPORT_YTDLP',
+        requestId: 'req-ytdlp',
+        payload: {
+          jobId: 'job-ytdlp',
+          inputUrl: 'https://example.com/watch?v=abc',
+          outputName: 'clip.mp4',
+          quality: 'best-mp4',
+        },
+      },
+      {
+        checkExecutable: vi.fn().mockResolvedValue(true),
+        ensureOutputDirs: vi.fn().mockResolvedValue(dirs),
+        runYtDlpJob,
+      },
+      (message) => emitted.push(message),
+    );
+
+    expect(runYtDlpJob).toHaveBeenCalledWith(
+      expect.objectContaining({
+        jobId: 'job-ytdlp',
+        plan: expect.objectContaining({
+          file: 'yt-dlp',
+          outputPath: `${dirs.outputsDir}\\clip.mp4`,
+          args: expect.arrayContaining(['--no-playlist', '-o', `${dirs.outputsDir}\\clip.mp4`, '--', 'https://example.com/watch?v=abc']),
+        }),
+      }),
+    );
+    expect(emitted).toEqual([
+      { type: 'PROGRESS', requestId: 'req-ytdlp', payload: { jobId: 'job-ytdlp', progressPct: 30, phase: 'fetching' } },
+      { type: 'PROGRESS', requestId: 'req-ytdlp', payload: { jobId: 'job-ytdlp', progressPct: 100, phase: 'completed' } },
+    ]);
+    expect(response).toEqual({
+      type: 'COMPLETED',
+      requestId: 'req-ytdlp',
+      payload: { jobId: 'job-ytdlp', outputPath: `${dirs.outputsDir}\\clip.mp4`, mimeType: 'video/mp4', sizeBytes: 4096 },
+    });
+  });
+
+  it('returns YTDLP_NOT_FOUND when the yt-dlp binary is missing', async () => {
+    const response = await dispatchNativeRequest(
+      {
+        type: 'EXPORT_YTDLP',
+        requestId: 'req-ytdlp-missing',
+        payload: {
+          jobId: 'job-ytdlp-missing',
+          inputUrl: 'https://example.com/watch',
+          outputName: 'clip.mp4',
+          quality: 'best',
+        },
+      },
+      {
+        checkExecutable: vi.fn(async (file: 'ffmpeg' | 'ffprobe' | 'yt-dlp') => file !== 'yt-dlp'),
+        ensureOutputDirs: vi.fn().mockResolvedValue(dirs),
+      },
+    );
+
+    expect(response).toEqual({
+      type: 'ERROR',
+      requestId: 'req-ytdlp-missing',
+      payload: { code: 'YTDLP_NOT_FOUND', message: expect.stringContaining('yt-dlp') },
+    });
+  });
+
+  it('maps a yt-dlp non-zero exit to a typed ERROR without leaking stderr', async () => {
+    const secretCookie = 'session=leaked-cookie-value';
+    const runYtDlpJob = vi.fn().mockRejectedValue(
+      Object.assign(new Error('yt-dlp exited with code 1.'), {
+        name: 'YtDlpRunnerError',
+        code: 'YTDLP_FAILED',
+        stderr: `ERROR: forbidden\ncookie: ${secretCookie}`,
+      }),
+    );
+
+    const response = await dispatchNativeRequest(
+      {
+        type: 'EXPORT_YTDLP',
+        requestId: 'req-ytdlp-fail',
+        payload: {
+          jobId: 'job-ytdlp-fail',
+          inputUrl: 'https://example.com/watch',
+          outputName: 'clip.mp4',
+          quality: 'best',
+          headers: { Cookie: secretCookie },
+        },
+      },
+      {
+        checkExecutable: vi.fn().mockResolvedValue(true),
+        ensureOutputDirs: vi.fn().mockResolvedValue(dirs),
+        runYtDlpJob,
+      },
+    );
+
+    expect(response.type).toBe('ERROR');
+    expect(response).toEqual({
+      type: 'ERROR',
+      requestId: 'req-ytdlp-fail',
+      payload: { code: 'YTDLP_FAILED', message: 'yt-dlp exited with code 1.' },
+    });
+    expect(JSON.stringify(response)).not.toContain(secretCookie);
   });
 
   it('returns FFMPEG_NOT_FOUND when ffmpeg is missing', async () => {

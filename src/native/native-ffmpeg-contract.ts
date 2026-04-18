@@ -19,6 +19,20 @@ export interface NativeFfmpegExportPayload {
   headers?: Record<string, string>;
 }
 
+export type NativeYtDlpQuality = 'best' | 'best-mp4' | 'worst' | 'audio-only';
+
+export interface NativeYtDlpExportPayload {
+  jobId: string;
+  inputUrl: string;
+  outputName: string;
+  outputPath?: string;
+  quality: NativeYtDlpQuality;
+  subtitleLanguages?: string[];
+  embedSubtitles?: boolean;
+  trim?: NativeFfmpegTrim;
+  headers?: Record<string, string>;
+}
+
 export interface NativeFfmpegProbePayload {
   inputUrl: string;
   headers?: Record<string, string>;
@@ -57,6 +71,7 @@ export interface NativeFfmpegPongPayload {
   version: string;
   ffmpegAvailable: boolean;
   ffprobeAvailable: boolean;
+  ytDlpAvailable?: boolean;
   platform: string;
   installKind?: NativeFfmpegInstallKind;
 }
@@ -65,6 +80,7 @@ export type NativeFfmpegRequest =
   | { type: 'PING'; requestId: string }
   | { type: 'PROBE'; requestId: string; payload: NativeFfmpegProbePayload }
   | { type: 'EXPORT_MEDIA'; requestId: string; payload: NativeFfmpegExportPayload }
+  | { type: 'EXPORT_YTDLP'; requestId: string; payload: NativeYtDlpExportPayload }
   | { type: 'EXTRACT_THUMBNAIL'; requestId: string; payload: NativeFfmpegThumbnailPayload }
   | { type: 'EXTRACT_PREVIEW_CLIP'; requestId: string; payload: NativeFfmpegPreviewClipPayload }
   | { type: 'READ_ASSET_BYTES'; requestId: string; payload: NativeFfmpegReadAssetBytesPayload }
@@ -155,6 +171,7 @@ type NativeFfmpegRequestPayloadMap = {
   PING: undefined;
   PROBE: NativeFfmpegProbePayload;
   EXPORT_MEDIA: NativeFfmpegExportPayload;
+  EXPORT_YTDLP: NativeYtDlpExportPayload;
   EXTRACT_THUMBNAIL: NativeFfmpegThumbnailPayload;
   EXTRACT_PREVIEW_CLIP: NativeFfmpegPreviewClipPayload;
   READ_ASSET_BYTES: NativeFfmpegReadAssetBytesPayload;
@@ -166,6 +183,7 @@ const REQUEST_TYPES = [
   'PING',
   'PROBE',
   'EXPORT_MEDIA',
+  'EXPORT_YTDLP',
   'EXTRACT_THUMBNAIL',
   'EXTRACT_PREVIEW_CLIP',
   'READ_ASSET_BYTES',
@@ -182,6 +200,12 @@ const OUTPUT_KINDS = [
   'audio-only',
 ] as const satisfies readonly NativeFfmpegOutputKind[];
 const PREVIEW_FORMATS = ['webm', 'mp4', 'gif'] as const satisfies readonly NativeFfmpegPreviewFormat[];
+const YTDLP_QUALITIES = [
+  'best',
+  'best-mp4',
+  'worst',
+  'audio-only',
+] as const satisfies readonly NativeYtDlpQuality[];
 const THUMBNAIL_FORMATS = ['jpg', 'png', 'webp'] as const satisfies readonly NativeFfmpegThumbnailFormat[];
 const PROGRESS_PHASES = [
   'preparing',
@@ -233,6 +257,8 @@ export function isNativeFfmpegRequest(value: unknown): value is NativeFfmpegRequ
       return hasOnlyKeys(value, ['type', 'requestId', 'payload']) && isProbePayload(value.payload);
     case 'EXPORT_MEDIA':
       return hasOnlyKeys(value, ['type', 'requestId', 'payload']) && isExportPayload(value.payload);
+    case 'EXPORT_YTDLP':
+      return hasOnlyKeys(value, ['type', 'requestId', 'payload']) && isYtDlpExportPayload(value.payload);
     case 'EXTRACT_THUMBNAIL':
       return hasOnlyKeys(value, ['type', 'requestId', 'payload']) && isThumbnailPayload(value.payload);
     case 'EXTRACT_PREVIEW_CLIP':
@@ -261,12 +287,15 @@ export function isNativeFfmpegResponse(value: unknown): value is NativeFfmpegRes
           'version',
           'ffmpegAvailable',
           'ffprobeAvailable',
+          'ytDlpAvailable',
           'platform',
           'installKind',
         ]) &&
         isString(value.payload.version) &&
         typeof value.payload.ffmpegAvailable === 'boolean' &&
         typeof value.payload.ffprobeAvailable === 'boolean' &&
+        (value.payload.ytDlpAvailable === undefined ||
+          typeof value.payload.ytDlpAvailable === 'boolean') &&
         isString(value.payload.platform) &&
         (value.payload.installKind === undefined ||
           ['dev', 'per-user', 'system'].includes(String(value.payload.installKind)))
@@ -321,6 +350,32 @@ function isExportPayload(value: unknown): value is NativeFfmpegExportPayload {
     isOptionalString(value.outputPath) &&
     isString(value.outputName) &&
     includes(OUTPUT_KINDS, value.outputKind) &&
+    isOptionalTrim(value.trim) &&
+    isOptionalHeaders(value.headers)
+  );
+}
+
+function isYtDlpExportPayload(value: unknown): value is NativeYtDlpExportPayload {
+  return (
+    isRecord(value) &&
+    hasOnlyKeys(value, [
+      'jobId',
+      'inputUrl',
+      'outputName',
+      'outputPath',
+      'quality',
+      'subtitleLanguages',
+      'embedSubtitles',
+      'trim',
+      'headers',
+    ]) &&
+    isString(value.jobId) &&
+    isHttpUrl(value.inputUrl) &&
+    isString(value.outputName) &&
+    includes(YTDLP_QUALITIES, value.quality) &&
+    isOptionalString(value.outputPath) &&
+    isOptionalStringArray(value.subtitleLanguages) &&
+    (value.embedSubtitles === undefined || typeof value.embedSubtitles === 'boolean') &&
     isOptionalTrim(value.trim) &&
     isOptionalHeaders(value.headers)
   );
@@ -466,6 +521,23 @@ function isOptionalTrim(value: unknown): value is NativeFfmpegTrim | undefined {
 
 function isOptionalHeaders(value: unknown): value is Record<string, string> | undefined {
   return value === undefined || (isRecord(value) && Object.values(value).every(isString));
+}
+
+function isOptionalStringArray(value: unknown): value is string[] | undefined {
+  return value === undefined || (Array.isArray(value) && value.every(isString));
+}
+
+function isHttpUrl(value: unknown): value is string {
+  if (!isString(value) || value.trim() !== value) {
+    return false;
+  }
+
+  try {
+    const parsed = new URL(value);
+    return parsed.protocol === 'http:' || parsed.protocol === 'https:';
+  } catch {
+    return false;
+  }
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
