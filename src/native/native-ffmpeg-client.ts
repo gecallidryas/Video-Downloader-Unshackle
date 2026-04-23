@@ -8,6 +8,7 @@ import {
   type NativeFfmpegRequest,
   type NativeFfmpegResponse,
   type NativeFfmpegThumbnailPayload,
+  type NativeYtDlpExportPayload,
 } from './native-ffmpeg-contract';
 
 export const DEFAULT_NATIVE_FFMPEG_HOST = 'com.unshackle.ffmpeg';
@@ -95,6 +96,10 @@ export interface NativeFfmpegClient {
     payload: NativeFfmpegExportPayload,
     options?: NativeExportMediaOptions,
   ): Promise<NativeCompletedPayload>;
+  exportYtDlp(
+    payload: NativeYtDlpExportPayload,
+    options?: NativeExportMediaOptions,
+  ): Promise<NativeCompletedPayload>;
   extractThumbnail(payload: NativeFfmpegThumbnailPayload): Promise<NativeThumbnailPayload>;
   extractPreviewClip(payload: NativeFfmpegPreviewClipPayload): Promise<NativePreviewClipPayload>;
   readAssetBytes(payload: NativeFfmpegReadAssetBytesPayload): Promise<NativeAssetBytesPayload>;
@@ -127,6 +132,16 @@ export function createNativeFfmpegClient(
         await streamAndExpect(
           hostName,
           createNativeRequest('EXPORT_MEDIA', payload),
+          'COMPLETED',
+          withDefaultTimeout(options, DEFAULT_NATIVE_EXPORT_RESPONSE_TIMEOUT_MS),
+          exportOptions?.onProgress,
+        )
+      ).payload as NativeCompletedPayload,
+    exportYtDlp: async (payload, exportOptions) =>
+      (
+        await streamAndExpect(
+          hostName,
+          createNativeRequest('EXPORT_YTDLP', payload),
           'COMPLETED',
           withDefaultTimeout(options, DEFAULT_NATIVE_EXPORT_RESPONSE_TIMEOUT_MS),
           exportOptions?.onProgress,

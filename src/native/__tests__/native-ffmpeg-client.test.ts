@@ -332,6 +332,37 @@ describe('native ffmpeg client', () => {
     expect(exportPort?.disconnected).toBe(true);
   });
 
+  test('exportYtDlp streams PROGRESS over the port and resolves COMPLETED', async () => {
+    const progress: NativeFfmpegProgressPayload[] = [];
+    let seenRequestType: string | undefined;
+    const connectNative: NativeConnectNative = () =>
+      createFakePort((request, port) => {
+        seenRequestType = request.type;
+        port.emit({
+          type: 'PROGRESS',
+          requestId: request.requestId,
+          payload: { jobId: 'job-y', progressPct: 40, phase: 'fetching' },
+        });
+        port.emit({
+          type: 'COMPLETED',
+          requestId: request.requestId,
+          payload: { jobId: 'job-y', outputPath: 'C:\\Temp\\page.mp4', mimeType: 'video/mp4', sizeBytes: 10 },
+        });
+      });
+
+    const client = createNativeFfmpegClient({ connectNative });
+
+    await expect(
+      client.exportYtDlp(
+        { jobId: 'job-y', inputUrl: 'https://example.com/watch', outputName: 'page.mp4', quality: 'best-mp4' },
+        { onProgress: (event) => progress.push(event) },
+      ),
+    ).resolves.toMatchObject({ jobId: 'job-y', outputPath: 'C:\\Temp\\page.mp4' });
+
+    expect(seenRequestType).toBe('EXPORT_YTDLP');
+    expect(progress).toEqual([{ jobId: 'job-y', progressPct: 40, phase: 'fetching' }]);
+  });
+
   test('exportMedia surfaces helper ERROR delivered over the port', async () => {
     const connectNative: NativeConnectNative = () =>
       createFakePort((request, port) => {

@@ -17,6 +17,7 @@ import { parseMpd, type ParsedDashManifest } from '@/src/core/dash/parse-mpd';
 import { runHlsJob } from '@/src/core/hls/run-hls-job';
 import { runDashJob } from '@/src/core/dash/run-dash-job';
 import { isNativeFfmpegUnavailableError } from '@/src/native/native-ffmpeg-client';
+import { shouldRouteToYtDlp } from '@/src/background/jobs/native-export-runner';
 import type {
   DefaultQualityPolicy,
   OutputFormat,
@@ -316,6 +317,13 @@ export function createDownloadController(options: DownloadControllerOptions) {
     const jobSignal = registerSignal(controllerJob.id, startOptions.signal);
 
     try {
+      // Page/site candidates (no raw media URL) go to the yt-dlp native engine.
+      // There is no browser fallback for these, so an unavailable native host
+      // surfaces its error directly rather than silently failing over.
+      if (enableNativeFeatures && options.nativeExport && shouldRouteToYtDlp(candidate)) {
+        return await options.nativeExport({ candidate, job: controllerJob });
+      }
+
       if (candidate.protocol === 'direct') {
         if (
           hasTrim(selection) &&

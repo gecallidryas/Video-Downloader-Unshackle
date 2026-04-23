@@ -11,6 +11,7 @@ function createClient(ping: NativeFfmpegClient['ping']): NativeFfmpegClient {
   return {
     ping,
     exportMedia: unused,
+    exportYtDlp: unused,
     extractThumbnail: unused,
     extractPreviewClip: unused,
     readAssetBytes: unused,

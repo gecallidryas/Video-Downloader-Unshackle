@@ -7,7 +7,11 @@ import type {
 import type {
   NativeFfmpegClient,
 } from '@/src/native/native-ffmpeg-client';
-import type { NativeFfmpegOutputKind, NativeFfmpegProtocol } from '@/src/native/native-ffmpeg-contract';
+import type {
+  NativeFfmpegOutputKind,
+  NativeFfmpegProtocol,
+  NativeYtDlpQuality,
+} from '@/src/native/native-ffmpeg-contract';
 import type { JobStore } from './job-store';
 import { resolveOutputContainer } from '@/src/core/export/output-container';
 import {
@@ -52,6 +56,38 @@ function isProtected(candidate: MediaCandidate): boolean {
     candidate.protection.kind === 'unknown' ||
     candidate.protection.kind === 'sample-aes'
   );
+}
+
+// Routing policy: yt-dlp is the engine for page/site candidates — those with a
+// page URL but no raw media URL we can hand straight to ffmpeg (protocol
+// 'unknown'/'blob', or a candidate carrying only a pageUrl). ffmpeg stays the
+// engine for raw manifest/direct exports (direct/hls/dash with a real source or
+// manifest URL), which it already handles with copy-muxing.
+export function shouldRouteToYtDlp(candidate: MediaCandidate): boolean {
+  if (!candidate.pageUrl) {
+    return false;
+  }
+
+  const hasDirectMediaUrl = Boolean(candidate.sourceUrl || candidate.manifestUrl);
+  const isSiteProtocol = candidate.protocol === 'unknown' || candidate.protocol === 'blob';
+
+  return isSiteProtocol || !hasDirectMediaUrl;
+}
+
+export function mapYtDlpQuality(job: DownloadJob): NativeYtDlpQuality {
+  const outputKind = job.selection.outputKind;
+
+  if (outputKind === 'audio-only') {
+    return 'audio-only';
+  }
+  if (outputKind === 'mp4') {
+    return 'best-mp4';
+  }
+  if (job.selection.mode === 'smallest') {
+    return 'worst';
+  }
+
+  return 'best';
 }
 
 function nativeProtocol(candidate: MediaCandidate): NativeFfmpegProtocol {
@@ -266,6 +302,18 @@ export async function runNativeExportJob({
 
   jobStore?.update(job.id, { phase: 'preparing', progressPct: 5 });
 
+  if (shouldRouteToYtDlp(candidate)) {
+    return runYtDlpExport({
+      candidate,
+      job,
+      nativeClient,
+      jobStore,
+      readFullOutput,
+      deliverOutput,
+      headers,
+    });
+  }
+
   const outputKind = outputKindFor(candidate, job);
   const outputName = outputNameFor(candidate, outputKind);
   const sidecarOutputs = await preStoreSubtitles({
@@ -316,6 +364,75 @@ export async function runNativeExportJob({
     ...(deliveredId !== undefined ? { downloadId: deliveredId } : {}),
     ...(result.sizeBytes !== undefined ? { sizeBytes: result.sizeBytes } : {}),
     ...(sidecarOutputs.length > 0 ? { sidecarOutputs } : {}),
+  };
+}
+
+async function runYtDlpExport(input: {
+  candidate: MediaCandidate;
+  job: DownloadJob;
+  nativeClient: NativeFfmpegClient;
+  jobStore?: JobStore;
+  readFullOutput?: (input: ReadFullNativeOutputInput) => Promise<Blob>;
+  deliverOutput?: DeliverNativeOutput;
+  headers?: Record<string, string>;
+}): Promise<JobOutput> {
+  const { candidate, job, nativeClient, jobStore, readFullOutput, deliverOutput, headers } = input;
+  const quality = mapYtDlpQuality(job);
+  const outputKind: NativeFfmpegOutputKind = quality === 'audio-only' ? 'audio-only' : 'mp4';
+  const outputName = outputNameFor(candidate, outputKind);
+
+  const subtitleTracks = selectedSubtitleTracks(candidate, job);
+  const subtitleLanguages = Array.from(
+    new Set(
+      subtitleTracks
+        .map((track) => track.language)
+        .filter((language): language is string => Boolean(language)),
+    ),
+  );
+  // yt-dlp fetches its own subtitles by language; embed them unless the user
+  // explicitly chose sidecar-only (yt-dlp sidecar files are not delivered here).
+  const embedSubtitles = job.selection.subtitleOutput !== 'sidecar';
+
+  const result = await nativeClient.exportYtDlp(
+    {
+      jobId: job.id,
+      inputUrl: candidate.pageUrl,
+      outputName,
+      quality,
+      ...(subtitleLanguages.length > 0 ? { subtitleLanguages, embedSubtitles } : {}),
+      ...(job.selection.trim ? { trim: job.selection.trim } : {}),
+      ...(headers ? { headers } : {}),
+    },
+    {
+      onProgress: (progress) => {
+        jobStore?.update(job.id, {
+          phase: PROGRESS_PHASE_MAP[progress.phase] ?? 'fetching',
+          progressPct: progress.progressPct,
+        });
+      },
+    },
+  );
+
+  jobStore?.update(job.id, { phase: 'exporting', progressPct: 90 });
+
+  const fileName = fileNameFromPath(result.outputPath);
+  const mimeType = result.mimeType ?? candidate.mimeType ?? 'application/octet-stream';
+
+  const deliveredId = await deliverNativeOutput({
+    outputPath: result.outputPath,
+    fileName,
+    mimeType,
+    ...(result.sizeBytes !== undefined ? { totalBytes: result.sizeBytes } : {}),
+    readFullOutput,
+    deliverOutput: deliverOutput ?? defaultDeliverOutput,
+  });
+
+  return {
+    fileName,
+    mimeType,
+    outputUrl: result.outputPath,
+    ...(deliveredId !== undefined ? { downloadId: deliveredId } : {}),
+    ...(result.sizeBytes !== undefined ? { sizeBytes: result.sizeBytes } : {}),
   };
 }
 

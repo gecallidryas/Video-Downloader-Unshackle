@@ -1,7 +1,7 @@
 import { describe, expect, test, vi } from 'vitest';
 import type { DownloadJob, MediaCandidate } from '@/video_downloader_types_skeleton';
 import { createJobStore } from '../job-store';
-import { runNativeExportJob } from '../native-export-runner';
+import { mapYtDlpQuality, runNativeExportJob, shouldRouteToYtDlp } from '../native-export-runner';
 import type { NativeFfmpegClient } from '@/src/native/native-ffmpeg-client';
 import { createInMemorySubtitleStore } from '@/src/core/storage/subtitle-store';
 
@@ -69,6 +69,12 @@ function nativeClient(): NativeFfmpegClient {
       jobId: 'job-1',
       outputPath: 'C:\\Users\\tester\\AppData\\Local\\VideoDownloaderUnshackle\\outputs\\clip.mp4',
       sizeBytes: 1200,
+      mimeType: 'video/mp4',
+    }),
+    exportYtDlp: vi.fn().mockResolvedValue({
+      jobId: 'job-1',
+      outputPath: 'C:\\Users\\tester\\AppData\\Local\\VideoDownloaderUnshackle\\outputs\\page.mp4',
+      sizeBytes: 2400,
       mimeType: 'video/mp4',
     }),
     extractThumbnail: vi.fn(),
@@ -219,6 +225,67 @@ describe('runNativeExportJob', () => {
       protocol: 'dash',
       outputKind: 'audio-only',
     }), expect.anything());
+  });
+
+  test('routes page/site candidates to the yt-dlp engine using the page URL', async () => {
+    const client = nativeClient();
+    const jobStore = createJobStore(() => 100);
+    const siteCandidate = candidate({
+      id: 'candidate-page',
+      protocol: 'unknown',
+      sourceUrl: undefined,
+      manifestUrl: undefined,
+      pageUrl: 'https://example.com/watch?v=abc',
+      displayName: 'Site video',
+    });
+    const queued = jobStore.create(siteCandidate, { mode: 'best', outputKind: 'mp4' });
+    vi.mocked(client.exportYtDlp).mockImplementationOnce(async (_payload, options) => {
+      options?.onProgress?.({ jobId: queued.id, progressPct: 55, phase: 'fetching' });
+      return {
+        jobId: queued.id,
+        outputPath: 'C:\\Users\\tester\\AppData\\Local\\VideoDownloaderUnshackle\\outputs\\page.mp4',
+        sizeBytes: 2400,
+        mimeType: 'video/mp4',
+      };
+    });
+    const deliverOutput = vi.fn().mockResolvedValue(7);
+
+    const output = await runNativeExportJob({
+      candidate: siteCandidate,
+      job: queued,
+      nativeClient: client,
+      jobStore,
+      headers: { Cookie: 'session=abc' },
+      readFullOutput: stubReadFullOutput(new Uint8Array([9, 9, 9])),
+      deliverOutput,
+    });
+
+    expect(client.exportMedia).not.toHaveBeenCalled();
+    expect(client.exportYtDlp).toHaveBeenCalledWith(
+      expect.objectContaining({
+        jobId: queued.id,
+        inputUrl: 'https://example.com/watch?v=abc',
+        quality: 'best-mp4',
+        headers: { Cookie: 'session=abc' },
+      }),
+      expect.objectContaining({ onProgress: expect.any(Function) }),
+    );
+    expect(jobStore.get(queued.id)).toMatchObject({ phase: 'exporting', progressPct: 90 });
+    expect(deliverOutput).toHaveBeenCalledWith(expect.objectContaining({ fileName: 'page.mp4' }));
+    expect(output).toMatchObject({ fileName: 'page.mp4', downloadId: 7, sizeBytes: 2400 });
+  });
+
+  test('keeps the ffmpeg engine for raw direct/manifest candidates', async () => {
+    expect(shouldRouteToYtDlp(candidate())).toBe(false);
+    expect(
+      shouldRouteToYtDlp(candidate({ protocol: 'hls', sourceUrl: undefined, manifestUrl: 'https://x/master.m3u8' })),
+    ).toBe(false);
+    expect(
+      shouldRouteToYtDlp(candidate({ protocol: 'unknown', sourceUrl: undefined, manifestUrl: undefined })),
+    ).toBe(true);
+    expect(mapYtDlpQuality(job({ selection: { mode: 'best', outputKind: 'audio-only' } }))).toBe('audio-only');
+    expect(mapYtDlpQuality(job({ selection: { mode: 'smallest' } }))).toBe('worst');
+    expect(mapYtDlpQuality(job({ selection: { mode: 'best' } }))).toBe('best');
   });
 
   test('chooses MKV output when selected subtitles are present', async () => {
