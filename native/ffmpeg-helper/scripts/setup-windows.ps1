@@ -9,9 +9,13 @@ param(
 
   [string] $FfmpegPackageId = 'Gyan.FFmpeg',
 
+  [string] $YtDlpPackageId = 'yt-dlp.yt-dlp',
+
   [switch] $AssumeYes,
 
-  [switch] $SkipDependencyInstall
+  [switch] $SkipDependencyInstall,
+
+  [switch] $SkipYtDlpUpdate
 )
 
 $ErrorActionPreference = 'Stop'
@@ -91,17 +95,42 @@ function Invoke-WingetInstall {
   }
 }
 
+function Update-YtDlp {
+  # yt-dlp breaks weekly as sites change; refresh to the latest build so
+  # extractors stay current. Best-effort: a failed self-update must not abort setup.
+  if ($SkipYtDlpUpdate) {
+    return
+  }
+
+  $YtDlp = Get-Command yt-dlp -ErrorAction SilentlyContinue
+  if (-not $YtDlp) {
+    return
+  }
+
+  Write-Host 'yt-dlp -U'
+  try {
+    & $YtDlp.Source -U
+    if ($LASTEXITCODE -ne 0) {
+      Write-Warning "yt-dlp self-update exited with code $LASTEXITCODE; continuing with the installed build."
+    }
+  } catch {
+    Write-Warning "yt-dlp self-update failed: $($_.Exception.Message)"
+  }
+}
+
 function Ensure-Dependencies {
   $NodeReady = Test-Node20
   $FfmpegReady = Test-CommandVersion -Command 'ffmpeg'
   $FfprobeReady = Test-CommandVersion -Command 'ffprobe'
+  $YtDlpReady = Test-CommandVersion -Command 'yt-dlp'
 
-  if ($NodeReady -and $FfmpegReady -and $FfprobeReady) {
+  if ($NodeReady -and $FfmpegReady -and $FfprobeReady -and $YtDlpReady) {
+    Update-YtDlp
     return
   }
 
   if ($SkipDependencyInstall) {
-    throw 'Missing dependencies and -SkipDependencyInstall was provided. Install Node.js 20+, FFmpeg, and FFprobe manually.'
+    throw 'Missing dependencies and -SkipDependencyInstall was provided. Install Node.js 20+, FFmpeg, FFprobe, and yt-dlp manually.'
   }
 
   if (-not $NodeReady) {
@@ -110,6 +139,10 @@ function Ensure-Dependencies {
 
   if (-not $FfmpegReady -or -not $FfprobeReady) {
     Invoke-WingetInstall -PackageId $FfmpegPackageId
+  }
+
+  if (-not $YtDlpReady) {
+    Invoke-WingetInstall -PackageId $YtDlpPackageId
   }
 
   if (-not (Test-Node20)) {
@@ -121,6 +154,11 @@ function Ensure-Dependencies {
   if (-not (Test-CommandVersion -Command 'ffprobe')) {
     throw 'ffprobe is still unavailable after dependency install.'
   }
+  if (-not (Test-CommandVersion -Command 'yt-dlp')) {
+    throw 'yt-dlp is still unavailable after dependency install.'
+  }
+
+  Update-YtDlp
 }
 
 if (-not $env:LOCALAPPDATA) {
