@@ -275,6 +275,58 @@ describe('runNativeExportJob', () => {
     expect(output).toMatchObject({ fileName: 'page.mp4', downloadId: 7, sizeBytes: 2400 });
   });
 
+  test('delivers yt-dlp sidecar subtitles and requests write+all when sidecar chosen', async () => {
+    const client = nativeClient();
+    const jobStore = createJobStore(() => 100);
+    const siteCandidate = candidate({
+      id: 'candidate-subs',
+      protocol: 'unknown',
+      sourceUrl: undefined,
+      manifestUrl: undefined,
+      pageUrl: 'https://example.com/watch?v=subs',
+      displayName: 'Subbed video',
+    });
+    const queued = jobStore.create(siteCandidate, { mode: 'best', subtitleOutput: 'sidecar' });
+    vi.mocked(client.exportYtDlp).mockResolvedValueOnce({
+      jobId: queued.id,
+      outputPath: 'C:\\Users\\tester\\AppData\\Local\\VideoDownloaderUnshackle\\outputs\\page.mp4',
+      sizeBytes: 2400,
+      mimeType: 'video/mp4',
+      sidecarOutputs: [
+        {
+          outputPath: 'C:\\Users\\tester\\AppData\\Local\\VideoDownloaderUnshackle\\outputs\\page.en.vtt',
+          fileName: 'page.en.vtt',
+          mimeType: 'text/vtt',
+          sizeBytes: 50,
+        },
+      ],
+    });
+    const deliverOutput = vi.fn().mockResolvedValue(3);
+
+    const output = await runNativeExportJob({
+      candidate: siteCandidate,
+      job: queued,
+      nativeClient: client,
+      jobStore,
+      readFullOutput: stubReadFullOutput(new Uint8Array([1, 2])),
+      deliverOutput,
+    });
+
+    expect(client.exportYtDlp).toHaveBeenCalledWith(
+      expect.objectContaining({
+        subtitleLanguages: ['all'],
+        writeSubtitles: true,
+        embedSubtitles: false,
+      }),
+      expect.anything(),
+    );
+    expect(deliverOutput).toHaveBeenCalledWith(expect.objectContaining({ fileName: 'page.mp4' }));
+    expect(deliverOutput).toHaveBeenCalledWith(expect.objectContaining({ fileName: 'page.en.vtt' }));
+    expect(output.sidecarOutputs).toEqual([
+      { fileName: 'page.en.vtt', mimeType: 'text/vtt', sizeBytes: 50 },
+    ]);
+  });
+
   test('keeps the ffmpeg engine for raw direct/manifest candidates', async () => {
     expect(shouldRouteToYtDlp(candidate())).toBe(false);
     expect(

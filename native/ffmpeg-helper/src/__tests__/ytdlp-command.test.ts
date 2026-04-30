@@ -79,10 +79,23 @@ describe('buildYtDlpArgs', () => {
     expect(embed.args).toEqual(expect.arrayContaining(['--sub-langs', 'en,es', '--embed-subs']));
 
     const sidecar = buildYtDlpArgs(
-      { jobId: 'j', inputUrl: 'https://example.com/v', outputName: 'c.mp4', quality: 'best', subtitleLanguages: ['en'] },
+      { jobId: 'j', inputUrl: 'https://example.com/v', outputName: 'c.mp4', quality: 'best', subtitleLanguages: ['en'], writeSubtitles: true },
       { outputPath: OUTPUT },
     );
     expect(sidecar.args).toContain('--write-subs');
+    expect(sidecar.args).not.toContain('--embed-subs');
+
+    const both = buildYtDlpArgs(
+      { jobId: 'j', inputUrl: 'https://example.com/v', outputName: 'c.mp4', quality: 'best', subtitleLanguages: ['all'], embedSubtitles: true, writeSubtitles: true },
+      { outputPath: OUTPUT },
+    );
+    expect(both.args).toEqual(expect.arrayContaining(['--sub-langs', 'all', '--write-subs', '--embed-subs']));
+
+    const defaulted = buildYtDlpArgs(
+      { jobId: 'j', inputUrl: 'https://example.com/v', outputName: 'c.mp4', quality: 'best', subtitleLanguages: ['en'] },
+      { outputPath: OUTPUT },
+    );
+    expect(defaulted.args).toContain('--write-subs');
   });
 
   it('adds --ffmpeg-location when provided', () => {

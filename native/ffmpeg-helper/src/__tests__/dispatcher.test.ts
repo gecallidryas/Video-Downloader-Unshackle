@@ -527,6 +527,79 @@ describe('native ffmpeg helper dispatcher', () => {
     });
   });
 
+  it('attaches enumerated sidecar subtitle outputs to COMPLETED when writeSubtitles is set', async () => {
+    const runYtDlpJob = vi.fn(async (options: { jobId: string; plan: { outputPath: string } }) => ({
+      jobId: options.jobId,
+      outputPath: options.plan.outputPath,
+      mimeType: 'video/mp4',
+      sizeBytes: 4096,
+    }));
+    const readSidecarOutputs = vi.fn().mockResolvedValue([
+      { outputPath: `${dirs.outputsDir}\\clip.en.vtt`, fileName: 'clip.en.vtt', mimeType: 'text/vtt', sizeBytes: 12 },
+    ]);
+
+    const response = await dispatchNativeRequest(
+      {
+        type: 'EXPORT_YTDLP',
+        requestId: 'req-ytdlp-subs',
+        payload: {
+          jobId: 'job-subs',
+          inputUrl: 'https://example.com/watch',
+          outputName: 'clip.mp4',
+          quality: 'best',
+          subtitleLanguages: ['en'],
+          writeSubtitles: true,
+        },
+      },
+      {
+        checkExecutable: vi.fn().mockResolvedValue(true),
+        ensureOutputDirs: vi.fn().mockResolvedValue(dirs),
+        runYtDlpJob,
+        readSidecarOutputs,
+      },
+    );
+
+    expect(readSidecarOutputs).toHaveBeenCalledWith(`${dirs.outputsDir}\\clip.mp4`);
+    expect(response).toEqual({
+      type: 'COMPLETED',
+      requestId: 'req-ytdlp-subs',
+      payload: {
+        jobId: 'job-subs',
+        outputPath: `${dirs.outputsDir}\\clip.mp4`,
+        mimeType: 'video/mp4',
+        sizeBytes: 4096,
+        sidecarOutputs: [
+          { outputPath: `${dirs.outputsDir}\\clip.en.vtt`, fileName: 'clip.en.vtt', mimeType: 'text/vtt', sizeBytes: 12 },
+        ],
+      },
+    });
+  });
+
+  it('does not enumerate sidecars when writeSubtitles is absent', async () => {
+    const runYtDlpJob = vi.fn(async (options: { jobId: string; plan: { outputPath: string } }) => ({
+      jobId: options.jobId,
+      outputPath: options.plan.outputPath,
+      mimeType: 'video/mp4',
+    }));
+    const readSidecarOutputs = vi.fn();
+
+    await dispatchNativeRequest(
+      {
+        type: 'EXPORT_YTDLP',
+        requestId: 'req-ytdlp-nosubs',
+        payload: { jobId: 'j', inputUrl: 'https://example.com/watch', outputName: 'clip.mp4', quality: 'best' },
+      },
+      {
+        checkExecutable: vi.fn().mockResolvedValue(true),
+        ensureOutputDirs: vi.fn().mockResolvedValue(dirs),
+        runYtDlpJob,
+        readSidecarOutputs,
+      },
+    );
+
+    expect(readSidecarOutputs).not.toHaveBeenCalled();
+  });
+
   it('returns YTDLP_NOT_FOUND when the yt-dlp binary is missing', async () => {
     const response = await dispatchNativeRequest(
       {

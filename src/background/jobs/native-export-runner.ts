@@ -10,6 +10,7 @@ import type {
 import type {
   NativeFfmpegOutputKind,
   NativeFfmpegProtocol,
+  NativeSidecarOutput,
   NativeYtDlpQuality,
 } from '@/src/native/native-ffmpeg-contract';
 import type { JobStore } from './job-store';
@@ -381,17 +382,23 @@ async function runYtDlpExport(input: {
   const outputKind: NativeFfmpegOutputKind = quality === 'audio-only' ? 'audio-only' : 'mp4';
   const outputName = outputNameFor(candidate, outputKind);
 
-  const subtitleTracks = selectedSubtitleTracks(candidate, job);
-  const subtitleLanguages = Array.from(
+  const subtitleOutput = job.selection.subtitleOutput;
+  const wantsSubtitles =
+    subtitleOutput === 'embed' || subtitleOutput === 'sidecar' || subtitleOutput === 'both';
+  const trackLanguages = Array.from(
     new Set(
-      subtitleTracks
+      selectedSubtitleTracks(candidate, job)
         .map((track) => track.language)
         .filter((language): language is string => Boolean(language)),
     ),
   );
-  // yt-dlp fetches its own subtitles by language; embed them unless the user
-  // explicitly chose sidecar-only (yt-dlp sidecar files are not delivered here).
-  const embedSubtitles = job.selection.subtitleOutput !== 'sidecar';
+  // Known track languages drive the request; for page candidates with no known
+  // tracks, 'all' lets yt-dlp fetch every available subtitle. embed mux + sidecar
+  // file writing are independent so 'both' delivers both.
+  const subtitleLanguages =
+    trackLanguages.length > 0 ? trackLanguages : wantsSubtitles ? ['all'] : [];
+  const embedSubtitles = subtitleOutput !== 'sidecar';
+  const writeSubtitles = subtitleOutput === 'sidecar' || subtitleOutput === 'both';
 
   const result = await nativeClient.exportYtDlp(
     {
@@ -399,7 +406,9 @@ async function runYtDlpExport(input: {
       inputUrl: candidate.pageUrl,
       outputName,
       quality,
-      ...(subtitleLanguages.length > 0 ? { subtitleLanguages, embedSubtitles } : {}),
+      ...(subtitleLanguages.length > 0
+        ? { subtitleLanguages, embedSubtitles, writeSubtitles }
+        : {}),
       ...(job.selection.trim ? { trim: job.selection.trim } : {}),
       ...(headers ? { headers } : {}),
     },
@@ -417,6 +426,7 @@ async function runYtDlpExport(input: {
 
   const fileName = fileNameFromPath(result.outputPath);
   const mimeType = result.mimeType ?? candidate.mimeType ?? 'application/octet-stream';
+  const resolvedDeliver = deliverOutput ?? defaultDeliverOutput;
 
   const deliveredId = await deliverNativeOutput({
     outputPath: result.outputPath,
@@ -424,7 +434,13 @@ async function runYtDlpExport(input: {
     mimeType,
     ...(result.sizeBytes !== undefined ? { totalBytes: result.sizeBytes } : {}),
     readFullOutput,
-    deliverOutput: deliverOutput ?? defaultDeliverOutput,
+    deliverOutput: resolvedDeliver,
+  });
+
+  const sidecarOutputs = await deliverYtDlpSidecars({
+    sidecars: result.sidecarOutputs ?? [],
+    readFullOutput,
+    deliverOutput: resolvedDeliver,
   });
 
   return {
@@ -433,7 +449,35 @@ async function runYtDlpExport(input: {
     outputUrl: result.outputPath,
     ...(deliveredId !== undefined ? { downloadId: deliveredId } : {}),
     ...(result.sizeBytes !== undefined ? { sizeBytes: result.sizeBytes } : {}),
+    ...(sidecarOutputs.length > 0 ? { sidecarOutputs } : {}),
   };
+}
+
+async function deliverYtDlpSidecars(input: {
+  sidecars: NativeSidecarOutput[];
+  readFullOutput?: (input: ReadFullNativeOutputInput) => Promise<Blob>;
+  deliverOutput: DeliverNativeOutput;
+}): Promise<NonNullable<JobOutput['sidecarOutputs']>> {
+  const delivered: NonNullable<JobOutput['sidecarOutputs']> = [];
+
+  for (const sidecar of input.sidecars) {
+    await deliverNativeOutput({
+      outputPath: sidecar.outputPath,
+      fileName: sidecar.fileName,
+      mimeType: sidecar.mimeType,
+      ...(sidecar.sizeBytes !== undefined ? { totalBytes: sidecar.sizeBytes } : {}),
+      readFullOutput: input.readFullOutput,
+      deliverOutput: input.deliverOutput,
+    });
+
+    delivered.push({
+      fileName: sidecar.fileName,
+      mimeType: sidecar.mimeType,
+      ...(sidecar.sizeBytes !== undefined ? { sizeBytes: sidecar.sizeBytes } : {}),
+    });
+  }
+
+  return delivered;
 }
 
 async function deliverNativeOutput(input: {

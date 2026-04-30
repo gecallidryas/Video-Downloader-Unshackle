@@ -15,6 +15,7 @@ export type YtDlpExportPayload = {
   quality: YtDlpQuality;
   subtitleLanguages?: string[];
   embedSubtitles?: boolean;
+  writeSubtitles?: boolean;
   trim?: YtDlpTrim;
   headers?: Record<string, string>;
 };
@@ -61,7 +62,7 @@ export function buildYtDlpArgs(
   ];
 
   addFormatArgs(args, quality);
-  addSubtitleArgs(args, payload.subtitleLanguages, payload.embedSubtitles);
+  addSubtitleArgs(args, payload.subtitleLanguages, payload.embedSubtitles, payload.writeSubtitles);
   addTrimArgs(args, payload.trim);
   addHeaderArgs(args, payload.headers);
 
@@ -99,6 +100,7 @@ function addSubtitleArgs(
   args: string[],
   languages: string[] | undefined,
   embed: boolean | undefined,
+  write: boolean | undefined,
 ): void {
   if (!languages || languages.length === 0) {
     return;
@@ -106,14 +108,25 @@ function addSubtitleArgs(
 
   const cleaned = languages
     .map((lang) => lang.trim())
-    .filter((lang) => /^[a-zA-Z0-9_.-]+$/.test(lang));
+    .filter((lang) => /^[a-zA-Z0-9_.*-]+$/.test(lang));
 
   if (cleaned.length === 0) {
     return;
   }
 
   args.push('--sub-langs', cleaned.join(','));
-  args.push(embed ? '--embed-subs' : '--write-subs');
+
+  if (write) {
+    args.push('--write-subs');
+  }
+  if (embed) {
+    args.push('--embed-subs');
+  }
+  // Default to sidecar files when neither flag is set so requested subs are
+  // never silently dropped.
+  if (!write && !embed) {
+    args.push('--write-subs');
+  }
 }
 
 function addTrimArgs(args: string[], trim: YtDlpTrim | undefined): void {

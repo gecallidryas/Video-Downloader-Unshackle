@@ -20,6 +20,7 @@ import {
   type YtDlpExportPayload,
 } from './ytdlp-command.js';
 import { runYtDlpJob, type RunYtDlpJobOptions, type YtDlpJobResult } from './ytdlp-runner.js';
+import { listYtDlpSidecars, type SidecarOutput } from './ytdlp-sidecars.js';
 
 // Mirror the PROTOCOLS/OUTPUT_KINDS literal sets from src/native/native-ffmpeg-contract.ts.
 // Cannot import across the project boundary (the helper is a standalone Node process),
@@ -67,7 +68,7 @@ export type NativeHelperResponse =
         timeSec?: number;
       };
     }
-  | { type: 'COMPLETED'; requestId: string; payload: ProcessJobResult }
+  | { type: 'COMPLETED'; requestId: string; payload: ProcessJobResult & { sidecarOutputs?: SidecarOutput[] } }
   | { type: 'THUMBNAIL_RESULT'; requestId: string; payload: AssetResultPayload }
   | { type: 'PREVIEW_CLIP_RESULT'; requestId: string; payload: PreviewAssetResultPayload }
   | { type: 'ASSET_BYTES_RESULT'; requestId: string; payload: AssetBytesPayload }
@@ -116,6 +117,7 @@ export type DispatcherDeps = {
   runProbe?: (plan: FfmpegCommandPlan) => Promise<ProbeResult>;
   runProcessJob?: (options: RunProcessJobOptions) => Promise<ProcessJobResult>;
   runYtDlpJob?: (options: RunYtDlpJobOptions) => Promise<YtDlpJobResult>;
+  readSidecarOutputs?: (videoOutputPath: string) => Promise<SidecarOutput[]>;
   resolveFfmpegLocation?: () => Promise<string | undefined>;
   readAsset?: (outputPath: string) => Promise<Buffer | Uint8Array>;
   readAssetRange?: (outputPath: string, offset: number, length: number) => Promise<RangedReadResult>;
@@ -280,7 +282,18 @@ async function dispatchYtDlpExport(
         : {}),
     });
 
-    return { type: 'COMPLETED', requestId: request.requestId, payload: result };
+    const sidecarOutputs = request.payload.writeSubtitles
+      ? await (deps.readSidecarOutputs ?? listYtDlpSidecars)(plan.outputPath)
+      : [];
+
+    return {
+      type: 'COMPLETED',
+      requestId: request.requestId,
+      payload: {
+        ...result,
+        ...(sidecarOutputs.length > 0 ? { sidecarOutputs } : {}),
+      },
+    };
   } catch (error) {
     // Map yt-dlp failures to a typed ERROR. Only the error message reaches the
     // payload — captured stderr (which can echo Cookie/Authorization) never does.

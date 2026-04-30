@@ -29,8 +29,16 @@ export interface NativeYtDlpExportPayload {
   quality: NativeYtDlpQuality;
   subtitleLanguages?: string[];
   embedSubtitles?: boolean;
+  writeSubtitles?: boolean;
   trim?: NativeFfmpegTrim;
   headers?: Record<string, string>;
+}
+
+export interface NativeSidecarOutput {
+  outputPath: string;
+  fileName: string;
+  mimeType: string;
+  sizeBytes?: number;
 }
 
 export interface NativeFfmpegProbePayload {
@@ -146,6 +154,7 @@ export type NativeFfmpegResponse =
         outputPath: string;
         sizeBytes?: number;
         mimeType?: string;
+        sidecarOutputs?: NativeSidecarOutput[];
       };
     }
   | {
@@ -366,6 +375,7 @@ function isYtDlpExportPayload(value: unknown): value is NativeYtDlpExportPayload
       'quality',
       'subtitleLanguages',
       'embedSubtitles',
+      'writeSubtitles',
       'trim',
       'headers',
     ]) &&
@@ -376,6 +386,7 @@ function isYtDlpExportPayload(value: unknown): value is NativeYtDlpExportPayload
     isOptionalString(value.outputPath) &&
     isOptionalStringArray(value.subtitleLanguages) &&
     (value.embedSubtitles === undefined || typeof value.embedSubtitles === 'boolean') &&
+    (value.writeSubtitles === undefined || typeof value.writeSubtitles === 'boolean') &&
     isOptionalTrim(value.trim) &&
     isOptionalHeaders(value.headers)
   );
@@ -446,11 +457,28 @@ function isProgressPayload(value: unknown): boolean {
 function isCompletedPayload(value: unknown): boolean {
   return (
     isRecord(value) &&
-    hasOnlyKeys(value, ['jobId', 'outputPath', 'sizeBytes', 'mimeType']) &&
+    hasOnlyKeys(value, ['jobId', 'outputPath', 'sizeBytes', 'mimeType', 'sidecarOutputs']) &&
     isString(value.jobId) &&
     isString(value.outputPath) &&
     isOptionalNonNegativeNumber(value.sizeBytes) &&
-    isOptionalString(value.mimeType)
+    isOptionalString(value.mimeType) &&
+    isOptionalSidecarOutputs(value.sidecarOutputs)
+  );
+}
+
+function isOptionalSidecarOutputs(value: unknown): value is NativeSidecarOutput[] | undefined {
+  return (
+    value === undefined ||
+    (Array.isArray(value) &&
+      value.every(
+        (item) =>
+          isRecord(item) &&
+          hasOnlyKeys(item, ['outputPath', 'fileName', 'mimeType', 'sizeBytes']) &&
+          isString(item.outputPath) &&
+          isString(item.fileName) &&
+          isString(item.mimeType) &&
+          isOptionalNonNegativeNumber(item.sizeBytes),
+      ))
   );
 }
 
