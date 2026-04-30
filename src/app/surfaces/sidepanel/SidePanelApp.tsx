@@ -689,6 +689,35 @@ function DetectionView({ activeTabId, runtimeClient }: DetectionViewProps) {
     }
   }
 
+  async function ingestCurrentPage() {
+    if (!runtimeClient || activeTabId === undefined) {
+      return;
+    }
+
+    try {
+      const tabs = (await globalThis.chrome?.tabs?.query?.({ active: true, currentWindow: true })) ?? [];
+      const tab = tabs[0];
+      const url = tab?.url;
+
+      if (!url) {
+        setErrorMessage('No active tab URL to hand to yt-dlp.');
+        return;
+      }
+
+      const job = await runtimeClient.ingestPageUrl({
+        tabId: activeTabId,
+        url,
+        ...(tab?.title ? { title: tab.title } : {}),
+      });
+
+      if (job) {
+        upsertQueueJob(job);
+      }
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : 'Unable to send page to yt-dlp');
+    }
+  }
+
   async function loadManualHlsFile(file: File | undefined) {
     if (!file) {
       return;
@@ -962,6 +991,16 @@ function DetectionView({ activeTabId, runtimeClient }: DetectionViewProps) {
               >
                 Ingest HLS
               </button>
+              {enableNativeFeatures && (
+                <button
+                  type="button"
+                  className="manual-hls__button"
+                  onClick={() => void ingestCurrentPage()}
+                  title="Hand the active tab URL to the yt-dlp native engine (1000s of supported sites)"
+                >
+                  Download this page (yt-dlp)
+                </button>
+              )}
               <button type="button" className="manual-hls__button" onClick={addDemoMedia}>
                 Add demo media
               </button>

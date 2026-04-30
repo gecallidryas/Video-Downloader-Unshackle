@@ -485,6 +485,7 @@ export type RuntimeRequest =
   | MessageEnvelope<'CLEAR_COMPLETED_DOWNLOADS', Record<string, never>>
   | MessageEnvelope<'PAUSE_ALL_DOWNLOADS', Record<string, never>>
   | MessageEnvelope<'INGEST_DIRECT_URL', { tabId: number; url: string; filename?: string; referer?: string; origin?: string }>
+  | MessageEnvelope<'INGEST_PAGE_URL', { tabId: number; url: string; title?: string }>
   | MessageEnvelope<'RETRY_HLS_SEGMENT', { jobId: string; segmentIndex: number }>
   | MessageEnvelope<'RETRY_FAILED_HLS_SEGMENTS', { jobId: string }>
   | MessageEnvelope<'EXPORT_PARTIAL_HLS', { jobId: string; range: { start: number; end: number } }>
@@ -520,6 +521,7 @@ export type RuntimeResponse =
   | MessageEnvelope<'CLEAR_COMPLETED_DOWNLOADS_RESULT', { removedIds: string[] }>
   | MessageEnvelope<'PAUSE_ALL_DOWNLOADS_RESULT', { pausedIds: string[] }>
   | MessageEnvelope<'INGEST_DIRECT_URL_RESULT', { candidate: MediaCandidate; job?: DownloadJob }>
+  | MessageEnvelope<'INGEST_PAGE_URL_RESULT', { candidate: MediaCandidate; job?: DownloadJob }>
   | MessageEnvelope<'RETRY_HLS_SEGMENT_RESULT', { job?: DownloadJob; queued: boolean }>
   | MessageEnvelope<'RETRY_FAILED_HLS_SEGMENTS_RESULT', { job?: DownloadJob; queued: boolean }>
   | MessageEnvelope<'EXPORT_PARTIAL_HLS_RESULT', { job?: DownloadJob; queued: boolean }>

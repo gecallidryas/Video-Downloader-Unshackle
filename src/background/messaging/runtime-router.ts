@@ -149,6 +149,7 @@ type RoutedRuntimeRequest = Extract<
       | 'CLEAR_COMPLETED_DOWNLOADS'
       | 'PAUSE_ALL_DOWNLOADS'
       | 'INGEST_DIRECT_URL'
+      | 'INGEST_PAGE_URL'
       // RESUME_ALL_DOWNLOADS is appended to the handled set below.
       | 'RETRY_HLS_SEGMENT'
       | 'RETRY_FAILED_HLS_SEGMENTS'
@@ -187,6 +188,7 @@ const handledRequestTypes = new Set<
   'PAUSE_ALL_DOWNLOADS',
   'RESUME_ALL_DOWNLOADS',
   'INGEST_DIRECT_URL',
+  'INGEST_PAGE_URL',
   'RETRY_HLS_SEGMENT',
   'RETRY_FAILED_HLS_SEGMENTS',
   'EXPORT_PARTIAL_HLS',
@@ -540,6 +542,63 @@ function candidateFromDirectUrl(input: Extract<RuntimeRequest, { type: 'INGEST_D
     preview: { playable: true, adapter: 'native' },
     createdAt: Date.now(),
     updatedAt: Date.now(),
+  };
+}
+
+// Page/site candidate for the yt-dlp native engine: no raw media URL, only the
+// page URL its extractors resolve. Protocol 'unknown' + a pageUrl with no
+// source/manifest URL is exactly what `shouldRouteToYtDlp` matches, so this
+// enters the queue and is downloaded by yt-dlp (gated by native availability).
+function candidateFromPageUrl(
+  input: Extract<RuntimeRequest, { type: 'INGEST_PAGE_URL' }>['payload'],
+): MediaCandidate {
+  let origin = '';
+  try {
+    origin = new URL(input.url).origin;
+  } catch {
+    origin = '';
+  }
+
+  const title = input.title?.trim();
+  const displayName =
+    title ||
+    (() => {
+      try {
+        const parsed = new URL(input.url);
+        return parsed.hostname + parsed.pathname.replace(/\/+$/, '');
+      } catch {
+        return input.url;
+      }
+    })();
+
+  const now = Date.now();
+
+  return {
+    id: `manual-page:${input.tabId}:${input.url}`,
+    tabId: input.tabId,
+    mediaKind: 'video',
+    protocol: 'unknown',
+    status: 'partial',
+    pageUrl: input.url,
+    pageTitle: title,
+    origin,
+    displayName,
+    protection: { kind: 'none' },
+    variants: [],
+    audioTracks: [],
+    subtitleTracks: [],
+    evidence: [
+      {
+        source: 'user',
+        confidence: 0.9,
+        url: input.url,
+        notes: ['manual-ingest:page-url'],
+        createdAt: now,
+      },
+    ],
+    preview: { playable: false, adapter: 'none' },
+    createdAt: now,
+    updatedAt: now,
   };
 }
 
@@ -1315,6 +1374,32 @@ export function createRuntimeRouter(
 
           return createRuntimeResponse(
             'INGEST_DIRECT_URL_RESULT',
+            { candidate, job },
+            request.requestId,
+          );
+        }
+
+        case 'INGEST_PAGE_URL': {
+          if (!dependencies.jobStore || !dependencies.historyStore) {
+            return createRuntimeErrorResponse(
+              'NOT_CONFIGURED',
+              'Download services are not configured.',
+              request.requestId,
+            );
+          }
+
+          const candidate = candidateFromPageUrl(request.payload);
+          const existing = dependencies.candidateRegistry.get(candidate.tabId);
+          const merged = dedupeCandidates([...existing, candidate]);
+          dependencies.candidateRegistry.set(candidate.tabId, merged);
+          recordNewDetections(dependencies, existing, merged);
+          const job = dependencies.downloadQueue
+            ? dependencies.downloadQueue.enqueue(candidate, { mode: 'best' })
+            : undefined;
+          void dependencies.downloadQueue?.drain();
+
+          return createRuntimeResponse(
+            'INGEST_PAGE_URL_RESULT',
             { candidate, job },
             request.requestId,
           );

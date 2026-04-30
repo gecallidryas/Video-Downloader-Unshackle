@@ -106,6 +106,11 @@ export interface RuntimeClient {
     referer?: string;
     origin?: string;
   }): Promise<DownloadJob | undefined>;
+  ingestPageUrl(input: {
+    tabId: number;
+    url: string;
+    title?: string;
+  }): Promise<DownloadJob | undefined>;
   subscribeToUpdates(handlers: RuntimeUpdateHandlers): RuntimeSubscription;
 }
 
@@ -633,6 +638,17 @@ export function createRuntimeClient(
         throw new RuntimeClientError(response.payload.message, response.payload.code, response.payload.detail);
       }
       if (response.type !== 'INGEST_DIRECT_URL_RESULT') {
+        throw new RuntimeClientError(`Unexpected runtime response: ${response.type}`, 'UNEXPECTED_RESPONSE');
+      }
+      return response.payload.job;
+    },
+
+    async ingestPageUrl(input) {
+      const response = await transport(createRuntimeRequest('INGEST_PAGE_URL', input));
+      if (isRuntimeErrorResponse(response)) {
+        throw new RuntimeClientError(response.payload.message, response.payload.code, response.payload.detail);
+      }
+      if (response.type !== 'INGEST_PAGE_URL_RESULT') {
         throw new RuntimeClientError(`Unexpected runtime response: ${response.type}`, 'UNEXPECTED_RESPONSE');
       }
       return response.payload.job;

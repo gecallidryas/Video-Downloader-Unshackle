@@ -108,6 +108,7 @@ function buildRuntimeClient(candidates: MediaCandidate[]): RuntimeClient {
       progressPct: 0,
       bytesDownloaded: 0,
     }),
+    ingestPageUrl: vi.fn().mockResolvedValue(undefined),
     startDownload: vi.fn().mockResolvedValue({
       id: 'job-1',
       candidateId: candidates[0]?.id ?? 'candidate-1',

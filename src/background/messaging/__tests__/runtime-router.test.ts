@@ -6,6 +6,7 @@ import { createTabSnapshotStore } from '@/src/background/state/tab-snapshots';
 import { createRuntimeRequest } from '@/src/shared/contracts/messages';
 import type { MediaCandidate } from '@/video_downloader_types_skeleton';
 import { createRuntimeRouter, registerRuntimeRouter } from '../runtime-router';
+import { shouldRouteToYtDlp } from '@/src/background/jobs/native-export-runner';
 
 const hlsMaster = [
   '#EXTM3U',
@@ -349,6 +350,58 @@ test('GET_JOBS and queue actions expose production download queue operations', a
   await router.handleMessage(createRuntimeRequest('REMOVE_DOWNLOAD', { jobId: job.id }, 'req-remove'));
   expect(jobStore.get(job.id)).toBeUndefined();
   expect(cleanupJobStorage).toHaveBeenCalledWith(job.id);
+});
+
+test('INGEST_PAGE_URL registers a yt-dlp-routable page candidate and enqueues it', async () => {
+  const candidateRegistry = createCandidateRegistry();
+  const jobStore = createJobStore(() => 1);
+  const historyStore = createHistoryStore(() => 1);
+  let enqueued: MediaCandidate | undefined;
+  const downloadQueue = {
+    enqueue: vi.fn((candidate: MediaCandidate) => {
+      enqueued = candidate;
+      return jobStore.create(candidate, { mode: 'best' });
+    }),
+    drain: vi.fn(async () => undefined),
+    stats: vi.fn(),
+    setMaxConcurrent: vi.fn(),
+    retry: vi.fn(),
+    cancel: vi.fn(),
+    pause: vi.fn(),
+    resume: vi.fn(),
+    removeQueued: vi.fn(),
+    clearCompleted: vi.fn(),
+    rehydrate: vi.fn(async () => undefined),
+    flush: vi.fn(async () => undefined),
+  };
+  const router = createRuntimeRouter({
+    candidateRegistry,
+    tabSnapshots: createTabSnapshotStore(),
+    jobStore,
+    historyStore,
+    downloadQueue,
+  });
+
+  const response = await router.handleMessage(
+    createRuntimeRequest(
+      'INGEST_PAGE_URL',
+      { tabId: 11, url: 'https://www.youtube.com/watch?v=abc', title: 'A Video' },
+      'req-page',
+    ),
+  );
+
+  expect(response).toMatchObject({ type: 'INGEST_PAGE_URL_RESULT' });
+  const candidate = (response as { payload: { candidate: MediaCandidate } }).payload.candidate;
+  expect(candidate).toMatchObject({
+    protocol: 'unknown',
+    pageUrl: 'https://www.youtube.com/watch?v=abc',
+    displayName: 'A Video',
+  });
+  expect(candidate.sourceUrl).toBeUndefined();
+  expect(candidate.manifestUrl).toBeUndefined();
+  expect(downloadQueue.enqueue).toHaveBeenCalledWith(candidate, { mode: 'best' });
+  expect(shouldRouteToYtDlp(enqueued as MediaCandidate)).toBe(true);
+  expect(candidateRegistry.get(11)).toHaveLength(1);
 });
 
 test('INGEST_CONTENT_EVIDENCE stores DOM HLS manifests for the sender tab', async () => {
