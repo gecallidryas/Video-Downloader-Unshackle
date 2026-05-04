@@ -404,6 +404,50 @@ test('INGEST_PAGE_URL registers a yt-dlp-routable page candidate and enqueues it
   expect(candidateRegistry.get(11)).toHaveLength(1);
 });
 
+test('INGEST_PAGE_URL forwards the chosen quality/subtitle selection to the queue', async () => {
+  const candidateRegistry = createCandidateRegistry();
+  const jobStore = createJobStore(() => 1);
+  const historyStore = createHistoryStore(() => 1);
+  const downloadQueue = {
+    enqueue: vi.fn((candidate: MediaCandidate) => jobStore.create(candidate, { mode: 'best' })),
+    drain: vi.fn(async () => undefined),
+    stats: vi.fn(),
+    setMaxConcurrent: vi.fn(),
+    retry: vi.fn(),
+    cancel: vi.fn(),
+    pause: vi.fn(),
+    resume: vi.fn(),
+    removeQueued: vi.fn(),
+    clearCompleted: vi.fn(),
+    rehydrate: vi.fn(async () => undefined),
+    flush: vi.fn(async () => undefined),
+  };
+  const router = createRuntimeRouter({
+    candidateRegistry,
+    tabSnapshots: createTabSnapshotStore(),
+    jobStore,
+    historyStore,
+    downloadQueue,
+  });
+
+  await router.handleMessage(
+    createRuntimeRequest(
+      'INGEST_PAGE_URL',
+      {
+        tabId: 12,
+        url: 'https://example.com/v',
+        selection: { mode: 'best', outputKind: 'audio-only', subtitleOutput: 'sidecar' },
+      },
+      'req-page-sel',
+    ),
+  );
+
+  expect(downloadQueue.enqueue).toHaveBeenCalledWith(
+    expect.objectContaining({ protocol: 'unknown' }),
+    { mode: 'best', outputKind: 'audio-only', subtitleOutput: 'sidecar' },
+  );
+});
+
 test('INGEST_CONTENT_EVIDENCE stores DOM HLS manifests for the sender tab', async () => {
   const { router } = buildRouter();
 

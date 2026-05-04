@@ -110,6 +110,7 @@ export interface RuntimeClient {
     tabId: number;
     url: string;
     title?: string;
+    selection?: DownloadSelection;
   }): Promise<DownloadJob | undefined>;
   subscribeToUpdates(handlers: RuntimeUpdateHandlers): RuntimeSubscription;
 }

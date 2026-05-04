@@ -1394,7 +1394,10 @@ export function createRuntimeRouter(
           dependencies.candidateRegistry.set(candidate.tabId, merged);
           recordNewDetections(dependencies, existing, merged);
           const job = dependencies.downloadQueue
-            ? dependencies.downloadQueue.enqueue(candidate, { mode: 'best' })
+            ? dependencies.downloadQueue.enqueue(
+                candidate,
+                request.payload.selection ?? { mode: 'best' },
+              )
             : undefined;
           void dependencies.downloadQueue?.drain();
 

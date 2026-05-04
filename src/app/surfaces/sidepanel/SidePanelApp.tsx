@@ -48,10 +48,30 @@ import type { DetectedMedia } from '@/src/types/media';
 import type {
   DownloadJob,
   DownloadPhase,
+  DownloadSelection,
   MediaAssetKind,
   MediaAssetState,
   MediaCandidate,
 } from '@/video_downloader_types_skeleton';
+
+type PageQuality = 'best-mp4' | 'best' | 'smallest' | 'audio';
+type PageSubtitleMode = 'none' | 'embed' | 'sidecar' | 'both';
+
+function buildPageSelection(quality: PageQuality, subtitles: PageSubtitleMode): DownloadSelection {
+  const selection: DownloadSelection = { mode: quality === 'smallest' ? 'smallest' : 'best' };
+
+  if (quality === 'best-mp4') {
+    selection.outputKind = 'mp4';
+  } else if (quality === 'audio') {
+    selection.outputKind = 'audio-only';
+  }
+
+  if (subtitles !== 'none') {
+    selection.subtitleOutput = subtitles;
+  }
+
+  return selection;
+}
 import './SidePanelApp.css';
 
 type PanelTab = 'downloads' | 'current' | 'settings';
@@ -257,6 +277,8 @@ function DetectionView({ activeTabId, runtimeClient }: DetectionViewProps) {
   const [mediaAssetStates, setMediaAssetStates] = useState<Record<string, MediaAssetState>>({});
   const [manualHlsInput, setManualHlsInput] = useState('');
   const [manualHlsBaseUrl, setManualHlsBaseUrl] = useState('');
+  const [pageQuality, setPageQuality] = useState<PageQuality>('best-mp4');
+  const [pageSubtitles, setPageSubtitles] = useState<PageSubtitleMode>('none');
   const [shareUrl, setShareUrl] = useState<string | null>(null);
   const [resolvedFilenames, setResolvedFilenames] = useState<Record<string, string>>({});
   const [directUrlResults, setDirectUrlResults] = useState<DirectUrlPanelResult[]>([]);
@@ -708,6 +730,7 @@ function DetectionView({ activeTabId, runtimeClient }: DetectionViewProps) {
         tabId: activeTabId,
         url,
         ...(tab?.title ? { title: tab.title } : {}),
+        selection: buildPageSelection(pageQuality, pageSubtitles),
       });
 
       if (job) {
@@ -992,14 +1015,44 @@ function DetectionView({ activeTabId, runtimeClient }: DetectionViewProps) {
                 Ingest HLS
               </button>
               {enableNativeFeatures && (
-                <button
-                  type="button"
-                  className="manual-hls__button"
-                  onClick={() => void ingestCurrentPage()}
-                  title="Hand the active tab URL to the yt-dlp native engine (1000s of supported sites)"
-                >
-                  Download this page (yt-dlp)
-                </button>
+                <>
+                  <label className="manual-hls__field">
+                    <span className="label-xs">Page quality</span>
+                    <select
+                      aria-label="Page download quality"
+                      value={pageQuality}
+                      onChange={(event) => setPageQuality(event.target.value as PageQuality)}
+                      className="manual-hls__input"
+                    >
+                      <option value="best-mp4">Best (MP4)</option>
+                      <option value="best">Best (any format)</option>
+                      <option value="smallest">Smallest</option>
+                      <option value="audio">Audio only (MP3)</option>
+                    </select>
+                  </label>
+                  <label className="manual-hls__field">
+                    <span className="label-xs">Page subtitles</span>
+                    <select
+                      aria-label="Page download subtitles"
+                      value={pageSubtitles}
+                      onChange={(event) => setPageSubtitles(event.target.value as PageSubtitleMode)}
+                      className="manual-hls__input"
+                    >
+                      <option value="none">None</option>
+                      <option value="embed">Embed in video</option>
+                      <option value="sidecar">Sidecar files</option>
+                      <option value="both">Both</option>
+                    </select>
+                  </label>
+                  <button
+                    type="button"
+                    className="manual-hls__button"
+                    onClick={() => void ingestCurrentPage()}
+                    title="Hand the active tab URL to the yt-dlp native engine (1000s of supported sites)"
+                  >
+                    Download this page (yt-dlp)
+                  </button>
+                </>
               )}
               <button type="button" className="manual-hls__button" onClick={addDemoMedia}>
                 Add demo media
