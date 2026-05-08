@@ -5,7 +5,9 @@ param(
 
   [string] $InstallDir = (Join-Path $env:LOCALAPPDATA 'VideoDownloaderUnshackle\native-host'),
 
-  [string] $NodePath = ''
+  [string] $NodePath = '',
+
+  [switch] $SkipRegister
 )
 
 $ErrorActionPreference = 'Stop'
@@ -18,6 +20,20 @@ $HelperRoot = Resolve-Path (Join-Path $PSScriptRoot '..')
 $DistDir = Join-Path $HelperRoot 'dist'
 $EntryPoint = Join-Path $DistDir 'index.js'
 $LauncherTemplatePath = Join-Path $HelperRoot 'launcher\windows\UnshackleFfmpegHelperLauncher.cs'
+$RegistryHelperCandidates = @(
+  (Join-Path $PSScriptRoot '_lib\Register-NativeHost.ps1'),
+  (Join-Path $PSScriptRoot '..\_lib\Register-NativeHost.ps1'),
+  (Join-Path $PSScriptRoot '..\..\..\installers\_lib\Register-NativeHost.ps1')
+)
+$RegistryHelperPath = $RegistryHelperCandidates | Where-Object {
+  Test-Path -LiteralPath $_
+} | Select-Object -First 1
+
+if (-not $RegistryHelperPath) {
+  throw 'Register-NativeHost.ps1 was not found.'
+}
+
+. $RegistryHelperPath
 
 if (-not (Test-Path -LiteralPath $EntryPoint)) {
   throw "Native helper build not found at $EntryPoint. Run 'npm run native:build' first."
@@ -119,24 +135,14 @@ Compile-Launcher `
   -NodeExecutablePath $NodePath `
   -InstalledEntryPoint $InstalledEntryPoint
 
-$ManifestPath = Join-Path $InstallDir 'com.unshackle.ffmpeg.json'
-$Manifest = [ordered]@{
-  name = 'com.unshackle.ffmpeg'
-  description = 'Video Downloader Unshackle native FFmpeg helper'
-  path = $LauncherPath
-  type = 'stdio'
-  allowed_origins = @("chrome-extension://$ExtensionId/")
-}
-$Manifest | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath $ManifestPath -Encoding UTF8
+if (-not $SkipRegister) {
+  $ManifestPath = Join-Path $InstallDir 'com.unshackle.ffmpeg.json'
+  $Registration = Register-NativeHost `
+    -ExtensionId $ExtensionId `
+    -ManifestPath $ManifestPath `
+    -LauncherPath $LauncherPath
 
-$RegistrySubkey = 'Software\Google\Chrome\NativeMessagingHosts\com.unshackle.ffmpeg'
-$RegistryKey = [Microsoft.Win32.Registry]::CurrentUser.CreateSubKey($RegistrySubkey)
-if (-not $RegistryKey) {
-  throw "Could not create HKCU\$RegistrySubkey"
+  Write-Host "Installed native messaging host com.unshackle.ffmpeg"
+  Write-Host "Manifest: $($Registration.ManifestPath)"
+  Write-Host "Registry: $($Registration.RegistryPath)"
 }
-$RegistryKey.SetValue('', $ManifestPath, [Microsoft.Win32.RegistryValueKind]::String)
-$RegistryKey.Close()
-
-Write-Host "Installed native messaging host com.unshackle.ffmpeg"
-Write-Host "Manifest: $ManifestPath"
-Write-Host "Registry: HKCU\$RegistrySubkey"
