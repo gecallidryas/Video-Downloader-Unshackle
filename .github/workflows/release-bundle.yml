@@ -1,0 +1,123 @@
+name: release-bundle
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+permissions:
+  contents: write
+
+jobs:
+  version:
+    runs-on: windows-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - name: Resolve version
+        id: version
+        shell: pwsh
+        run: |
+          $Version = "${{ github.ref_name }}"
+          "version=$Version" >> $env:GITHUB_OUTPUT
+
+  build-extension:
+    needs: version
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+
+      - run: npm run build:chrome
+
+      - name: Package Chrome extension
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path release-assets | Out-Null
+          $ZipPath = "release-assets/video-downloader-unshackle-${{ needs.version.outputs.version }}.zip"
+          Compress-Archive -Path ".output/chrome-mv3/*" -DestinationPath $ZipPath -Force
+          $Hash = (Get-FileHash -LiteralPath $ZipPath -Algorithm SHA256).Hash.ToLowerInvariant()
+          "$Hash  video-downloader-unshackle-${{ needs.version.outputs.version }}.zip" |
+            Set-Content -LiteralPath "$ZipPath.sha256" -Encoding ascii
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: extension-release-assets
+          path: release-assets/*
+
+  build-native-helper:
+    needs: version
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+
+      - run: npm run native:build
+
+      - name: Stage native helper bundle
+        shell: pwsh
+        run: |
+          $Version = "${{ needs.version.outputs.version }}"
+          $Stage = "native-helper-stage"
+          $ScriptsDir = Join-Path $Stage "scripts"
+          $ScriptLibDir = Join-Path $ScriptsDir "_lib"
+          New-Item -ItemType Directory -Force -Path $Stage, $ScriptsDir, $ScriptLibDir, release-assets | Out-Null
+
+          Copy-Item -Path native/ffmpeg-helper/dist -Destination $Stage -Recurse -Force
+          Copy-Item -Path native/ffmpeg-helper/package.json -Destination $Stage -Force
+          Copy-Item -Path native/ffmpeg-helper/launcher -Destination $Stage -Recurse -Force
+          Copy-Item -Path native/ffmpeg-helper/scripts/install-windows.ps1 -Destination $ScriptsDir -Force
+          Copy-Item -Path installers/_lib/Register-NativeHost.ps1 -Destination $ScriptLibDir -Force
+
+          $HelperHash = (Get-FileHash -LiteralPath (Join-Path $Stage "dist/index.js") -Algorithm SHA256).Hash.ToLowerInvariant()
+          @{
+            version = $Version
+            helperHash = $HelperHash
+          } | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath (Join-Path $Stage "bundle-manifest.json") -Encoding utf8
+
+          $ZipPath = "release-assets/native-helper-$Version.zip"
+          Compress-Archive -Path "$Stage/*" -DestinationPath $ZipPath -Force
+          $BundleHash = (Get-FileHash -LiteralPath $ZipPath -Algorithm SHA256).Hash.ToLowerInvariant()
+          "$BundleHash  native-helper-$Version.zip" |
+            Set-Content -LiteralPath "$ZipPath.sha256" -Encoding ascii
+          Copy-Item -Path installers/install-windows.ps1 -Destination release-assets -Force
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: native-helper-release-assets
+          path: release-assets/*
+
+  release:
+    needs:
+      - version
+      - build-extension
+      - build-native-helper
+    runs-on: windows-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: Publish GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          # TODO: replace <OWNER>/<REPO> placeholders in installer links before public release.
+          files: |
+            artifacts/video-downloader-unshackle-${{ needs.version.outputs.version }}.zip
+            artifacts/video-downloader-unshackle-${{ needs.version.outputs.version }}.zip.sha256
+            artifacts/native-helper-${{ needs.version.outputs.version }}.zip
+            artifacts/native-helper-${{ needs.version.outputs.version }}.zip.sha256
+            artifacts/install-windows.ps1
