@@ -19,7 +19,7 @@ export type NativeFfmpegClientErrorCode =
   | 'NATIVE_INVALID_RESPONSE'
   | string;
 
-type NativePongPayload = Extract<NativeFfmpegResponse, { type: 'PONG' }>['payload'];
+export type NativePongPayload = Extract<NativeFfmpegResponse, { type: 'PONG' }>['payload'];
 type NativeCompletedPayload = Extract<NativeFfmpegResponse, { type: 'COMPLETED' }>['payload'];
 type NativeThumbnailPayload = Extract<NativeFfmpegResponse, { type: 'THUMBNAIL_RESULT' }>['payload'];
 type NativePreviewClipPayload = Extract<NativeFfmpegResponse, { type: 'PREVIEW_CLIP_RESULT' }>['payload'];

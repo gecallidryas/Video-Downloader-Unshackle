@@ -24,6 +24,14 @@ import {
   createRuntimeClient,
   type RuntimeClient,
 } from '@/src/lib/runtime/client';
+import {
+  checkNativeHelperReadiness,
+  type NativeHelperDiagnostic,
+} from '@/src/native/native-helper-diagnostics';
+import {
+  NATIVE_HELPER_INSTALL_COMMAND,
+  NATIVE_HELPER_INSTALLER_URL,
+} from '@/src/native/native-helper-installer-url';
 import { createMediaControlBridge } from '@/src/content/media-control-bridge';
 import { createDemoMediaCandidates } from '@/src/debug/demo-flow';
 import { createAria2Client } from '@/src/integrations/aria2-client';
@@ -88,6 +96,11 @@ const MEDIA_DOWNLOADING_PHASES = new Set<DownloadPhase>([
   'assembling',
   'finalizing',
   'exporting',
+]);
+const NATIVE_INSTALL_BANNER_READINESS = new Set<NativeHelperDiagnostic['readiness']>([
+  'permission-needed',
+  'host-missing',
+  'host-forbidden',
 ]);
 
 function mergeCandidatesById(candidates: MediaCandidate[]): MediaCandidate[] {
@@ -174,6 +187,48 @@ function computeStorageLevel(usage: number, quota: number): StorageLevel {
   if (pct >= 80) return 'high';
   if (pct >= 60) return 'moderate';
   return 'ok';
+}
+
+function NativeHelperInstallBanner({ onDismiss }: { onDismiss: () => void }) {
+  const [copied, setCopied] = useState(false);
+
+  const copyInstallCommand = async () => {
+    await copyText(NATIVE_HELPER_INSTALL_COMMAND);
+    setCopied(true);
+  };
+
+  return (
+    <section className="native-helper-install" aria-label="Native helper installer">
+      <div className="native-helper-install__copy">
+        <h2>Install native helper for yt-dlp + ffmpeg</h2>
+        <p>Chrome can't run binaries; install the companion helper to unlock 1000+ sites.</p>
+      </div>
+      <div className="native-helper-install__actions">
+        <a
+          className="native-helper-install__button native-helper-install__button--primary"
+          href={NATIVE_HELPER_INSTALLER_URL}
+          target="_blank"
+          rel="noreferrer"
+        >
+          Open installer
+        </a>
+        <button
+          type="button"
+          className="native-helper-install__button"
+          onClick={() => void copyInstallCommand()}
+        >
+          {copied ? 'Copied' : 'Copy install command'}
+        </button>
+        <button
+          type="button"
+          className="native-helper-install__dismiss"
+          onClick={onDismiss}
+        >
+          Dismiss
+        </button>
+      </div>
+    </section>
+  );
 }
 
 function formatAssetDiagnostic(state?: MediaAssetState): string | undefined {
@@ -1567,6 +1622,10 @@ export function SidePanelApp({
     persistTab(tab);
   };
   const [resolvedActiveTabId, setResolvedActiveTabId] = useState(activeTabId);
+  const enableNativeFeatures = useSettingsStore((s) => s.enableNativeFeatures);
+  const [nativeHelperDiagnostic, setNativeHelperDiagnostic] =
+    useState<NativeHelperDiagnostic | null>(null);
+  const [nativeInstallDismissed, setNativeInstallDismissed] = useState(false);
   const resolvedRuntimeClient = useMemo(
     () => runtimeClient ?? createRuntimeClient(),
     [runtimeClient],
@@ -1579,6 +1638,31 @@ export function SidePanelApp({
 
     void hydrateSettingsStore();
   }, [runtimeClient]);
+
+  useEffect(() => {
+    if (!enableNativeFeatures || nativeInstallDismissed) {
+      setNativeHelperDiagnostic(null);
+      return;
+    }
+
+    let cancelled = false;
+    const options = runtimeClient?.ping
+      ? {
+          hasPermission: async () => true,
+          nativeClient: { ping: runtimeClient.ping },
+        }
+      : {};
+
+    void checkNativeHelperReadiness(options).then((diagnostic) => {
+      if (!cancelled) {
+        setNativeHelperDiagnostic(diagnostic);
+      }
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [enableNativeFeatures, nativeInstallDismissed, runtimeClient]);
 
   useEffect(() => {
     if (activeTabId !== undefined) {
@@ -1616,11 +1700,20 @@ export function SidePanelApp({
     };
   }, [activeTabId]);
 
+  const showNativeInstallBanner =
+    enableNativeFeatures &&
+    !nativeInstallDismissed &&
+    nativeHelperDiagnostic !== null &&
+    NATIVE_INSTALL_BANNER_READINESS.has(nativeHelperDiagnostic.readiness);
+
   return (
     <div className="side-panel">
       <PanelHeader />
 
       <main className="side-panel__body">
+        {showNativeInstallBanner && (
+          <NativeHelperInstallBanner onDismiss={() => setNativeInstallDismissed(true)} />
+        )}
         {activeTab === 'current' && (
           <DetectionView
             activeTabId={resolvedActiveTabId}

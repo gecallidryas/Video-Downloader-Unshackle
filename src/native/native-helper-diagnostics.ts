@@ -34,7 +34,7 @@ export interface NativeHelperDiagnostic {
 
 export async function checkNativeHelperReadiness(input: {
   hasPermission?: () => Promise<boolean>;
-  nativeClient?: NativeFfmpegClient;
+  nativeClient?: Pick<NativeFfmpegClient, 'ping'>;
   now?: () => number;
 } = {}): Promise<NativeHelperDiagnostic> {
   const now = input.now ?? Date.now;

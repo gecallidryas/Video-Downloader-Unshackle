@@ -42,6 +42,64 @@
   box-shadow: var(--control-shadow);
 }
 
+.native-helper-install {
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid var(--outline);
+  border-radius: var(--radius);
+  background: var(--surface-container-lowest);
+  box-shadow: var(--control-shadow);
+}
+
+.native-helper-install__copy {
+  display: grid;
+  gap: 4px;
+}
+
+.native-helper-install__copy h2 {
+  margin: 0;
+  color: var(--on-surface);
+  font-size: 13px;
+  line-height: 1.25;
+}
+
+.native-helper-install__copy p {
+  margin: 0;
+  color: var(--on-surface-variant);
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.native-helper-install__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.native-helper-install__button,
+.native-helper-install__dismiss {
+  min-height: 28px;
+  border: 1px solid var(--outline);
+  border-radius: var(--radius);
+  background: var(--surface-container);
+  color: var(--on-surface);
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 8px;
+}
+
+.native-helper-install__button--primary {
+  border-color: var(--primary);
+  background: var(--primary);
+  color: var(--primary-action-text);
+}
+
 .side-panel__list {
   display: flex;
   flex-direction: column;

@@ -16,6 +16,10 @@ import type {
 import { createRuntimeRequest } from '@/src/shared/contracts/messages';
 import { isRuntimeErrorResponse } from '@/src/shared/contracts/runtime';
 import { UPDATE_PORT_NAME } from '@/src/background/messaging/update-port';
+import {
+  createNativeFfmpegClient,
+  type NativePongPayload,
+} from '@/src/native/native-ffmpeg-client';
 
 type RuntimeTransport = (message: RuntimeRequest) => Promise<RuntimeResponse>;
 
@@ -112,6 +116,7 @@ export interface RuntimeClient {
     title?: string;
     selection?: DownloadSelection;
   }): Promise<DownloadJob | undefined>;
+  ping?: () => Promise<NativePongPayload>;
   subscribeToUpdates(handlers: RuntimeUpdateHandlers): RuntimeSubscription;
 }
 
@@ -126,6 +131,8 @@ export function createRuntimeClient(
   connect: RuntimeUpdateConnect = defaultUpdateConnect,
 ): RuntimeClient {
   return {
+    ping: () => createNativeFfmpegClient().ping(),
+
     subscribeToUpdates(handlers) {
       let closed = false;
       let reconnectTimer: ReturnType<typeof setTimeout> | undefined;

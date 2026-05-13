@@ -5,6 +5,10 @@ import { SidePanelApp } from '../SidePanelApp';
 import { usePanelStore } from '@/src/state/usePanelStore';
 import { useSettingsStore } from '@/src/state/useSettingsStore';
 import type { RuntimeClient } from '@/src/lib/runtime/client';
+import {
+  NativeFfmpegClientError,
+  type NativeFfmpegClient,
+} from '@/src/native/native-ffmpeg-client';
 import type { DetectedMedia } from '@/src/types/media';
 import type {
   DownloadJob,
@@ -147,6 +151,15 @@ function buildRuntimeClientWithAssets(
   return runtimeClient;
 }
 
+function buildRuntimeClientWithPing(
+  ping: NativeFfmpegClient['ping'],
+): RuntimeClient & Pick<NativeFfmpegClient, 'ping'> {
+  return {
+    ...buildRuntimeClient([]),
+    ping,
+  };
+}
+
 beforeEach(() => {
   vi.useRealTimers();
   globalThis.localStorage?.removeItem('unshackle:sidepanel:activeTab');
@@ -257,6 +270,72 @@ test('opens the downloads tab from the bottom nav', async () => {
     screen.getByRole('tablist', { name: /download status/i }),
   ).toBeInTheDocument();
   expect(screen.getByRole('tab', { name: /active 0/i })).toBeInTheDocument();
+});
+
+test('shows native helper installer banner when native helper is unavailable', async () => {
+  const runtimeClient = buildRuntimeClientWithPing(
+    vi.fn<NativeFfmpegClient['ping']>().mockRejectedValue(
+      new NativeFfmpegClientError(
+        'NATIVE_UNAVAILABLE',
+        'Native messaging API is unavailable.',
+      ),
+    ),
+  );
+
+  render(<SidePanelApp runtimeClient={runtimeClient} />);
+
+  expect(
+    await screen.findByText('Install native helper for yt-dlp + ffmpeg'),
+  ).toBeInTheDocument();
+  expect(
+    screen.getByText("Chrome can't run binaries; install the companion helper to unlock 1000+ sites."),
+  ).toBeInTheDocument();
+  expect(screen.getByRole('link', { name: /open installer/i })).toHaveAttribute(
+    'href',
+    'https://github.com/<OWNER>/<REPO>/releases/latest',
+  );
+});
+
+test('hides native helper installer banner when native helper is ready', async () => {
+  const ping = vi.fn<NativeFfmpegClient['ping']>().mockResolvedValue({
+    version: '0.1.0',
+    ffmpegAvailable: true,
+    ffprobeAvailable: true,
+    ytDlpAvailable: true,
+    platform: 'win32',
+  });
+  const runtimeClient = buildRuntimeClientWithPing(ping);
+
+  render(<SidePanelApp runtimeClient={runtimeClient} />);
+
+  await waitFor(() => expect(ping).toHaveBeenCalled());
+  expect(
+    screen.queryByText('Install native helper for yt-dlp + ffmpeg'),
+  ).not.toBeInTheDocument();
+});
+
+test('copies the standalone native helper install command', async () => {
+  const user = userEvent.setup();
+  const writeText = vi.fn().mockResolvedValue(undefined);
+  vi.stubGlobal('navigator', {
+    clipboard: { writeText },
+  });
+  const runtimeClient = buildRuntimeClientWithPing(
+    vi.fn<NativeFfmpegClient['ping']>().mockRejectedValue(
+      new NativeFfmpegClientError(
+        'NATIVE_UNAVAILABLE',
+        'Native messaging API is unavailable.',
+      ),
+    ),
+  );
+
+  render(<SidePanelApp runtimeClient={runtimeClient} />);
+
+  await user.click(await screen.findByRole('button', { name: /copy install command/i }));
+
+  expect(writeText).toHaveBeenCalledWith(
+    'iwr https://github.com/<OWNER>/<REPO>/releases/latest/download/install-windows.ps1 -OutFile install.ps1; powershell -ExecutionPolicy Bypass -File install.ps1',
+  );
 });
 
 test('persists active tab to localStorage', async () => {
