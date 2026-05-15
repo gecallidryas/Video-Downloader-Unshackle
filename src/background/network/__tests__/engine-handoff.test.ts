@@ -72,4 +72,17 @@ describe('buildEngineHandoff — yt-dlp / browser-fetch header contract', () => 
       value: 'https://site/watch',
     });
   });
+
+  test('downloadFromLoggedInSites alone enables credentials without advancedMode', () => {
+    const handoff = buildEngineHandoff(
+      ctx({ cookie: 'sid=secret', authorization: 'Bearer token' }),
+      { downloadFromLoggedInSites: true },
+    );
+
+    expect(handoff.cookie).toBe('sid=secret');
+    expect(handoff.headers).toContainEqual({
+      name: 'Authorization',
+      value: 'Bearer token',
+    });
+  });
 });

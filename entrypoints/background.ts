@@ -21,8 +21,11 @@ import {
 import {
   SETTINGS_STORAGE_KEY,
   createSettingsStore,
+  credentialReplayEnabled,
   type UnifiedSettings,
 } from '@/src/background/settings/settings-store';
+import { createCredentialReplayManager } from '@/src/background/network/credential-replay';
+import { createRestrictionConsentRegistry } from '@/src/core/policy/restriction-consent';
 import { runBrowserDashExportJob } from '@/src/background/jobs/browser-dash-runner';
 import { runBrowserDirectTrimJob } from '@/src/background/jobs/browser-direct-trim-runner';
 import { runBrowserHlsExportJob } from '@/src/background/jobs/browser-hls-runner';
@@ -39,6 +42,7 @@ import {
   buildEngineHandoff,
   createHeaderContextStore,
 } from '@/src/background/network/header-context';
+import { ManifestFetchError } from '@/src/background/network/manifest-fetch-error';
 import type { DrmDetectionRecord } from '@/src/background/messaging/runtime-router';
 import { getDefaultSessionPersistence } from '@/src/background/state/state-persistence';
 import {
@@ -86,6 +90,17 @@ export function initializeBackgroundShell() {
   });
   const requestJournal = createRequestJournal(200, { persistence: statePersistence });
   const headerContext = createHeaderContextStore();
+  const restrictionConsent = createRestrictionConsentRegistry();
+  const credentialReplay = createCredentialReplayManager(
+    globalThis.chrome?.declarativeNetRequest
+      ? {
+          updateSessionRules: (options) =>
+            chrome.declarativeNetRequest.updateSessionRules(
+              options as chrome.declarativeNetRequest.UpdateRuleOptions,
+            ),
+        }
+      : undefined,
+  );
   const settingsStore = createSettingsStore();
   const jobStore = createJobStore(Date.now, {
     persistence: statePersistence,
@@ -139,6 +154,7 @@ export function initializeBackgroundShell() {
     const handoff = buildEngineHandoff(context, {
       advancedMode: settingsStore.get('advancedMode'),
       captureCredentialHeaders: settingsStore.get('captureCredentialHeaders'),
+      downloadFromLoggedInSites: settingsStore.get('downloadFromLoggedInSites'),
     });
     const headers: Record<string, string> = {};
     for (const header of handoff.headers) {
@@ -149,6 +165,50 @@ export function initializeBackgroundShell() {
     }
 
     return Object.keys(headers).length > 0 ? headers : undefined;
+  }
+
+  // Cookie/Authorization captured for a candidate's URL, gated by the same
+  // credential policy as engine handoff. Used to register a DNR replay rule so a
+  // chrome.downloads request to a logged-in host carries the session credentials.
+  function credentialHeadersForCandidate(
+    candidate: MediaCandidate,
+  ): { cookie?: string; authorization?: string } | undefined {
+    if (!credentialReplayEnabled(settingsStore.getAll())) {
+      return undefined;
+    }
+    const inputUrl = candidate.sourceUrl ?? candidate.manifestUrl;
+    if (!inputUrl) return undefined;
+
+    const context = headerContext.getByUrl(inputUrl);
+    if (!context) return undefined;
+
+    const handoff = buildEngineHandoff(context, {
+      advancedMode: settingsStore.get('advancedMode'),
+      captureCredentialHeaders: settingsStore.get('captureCredentialHeaders'),
+      downloadFromLoggedInSites: settingsStore.get('downloadFromLoggedInSites'),
+    });
+    const authorization = handoff.headers.find((h) => h.name === 'Authorization')?.value;
+    if (!handoff.cookie && !authorization) return undefined;
+
+    return {
+      ...(handoff.cookie ? { cookie: handoff.cookie } : {}),
+      ...(authorization ? { authorization } : {}),
+    };
+  }
+
+  // Track DNR replay rules by the download they serve so they can be torn down
+  // once the browser download reaches a terminal state.
+  const replayRuleByDownloadId = new Map<number, number>();
+
+  if (globalThis.chrome?.downloads?.onChanged) {
+    chrome.downloads.onChanged.addListener((delta) => {
+      const state = delta.state?.current;
+      if (state !== 'complete' && state !== 'interrupted') return;
+      const ruleId = replayRuleByDownloadId.get(delta.id);
+      if (ruleId === undefined) return;
+      replayRuleByDownloadId.delete(delta.id);
+      void credentialReplay.release(ruleId);
+    });
   }
 
   function initializeHlsSegmentStatuses(jobId: string, plan: SegmentPlan): void {
@@ -260,7 +320,7 @@ export function initializeBackgroundShell() {
 
   function applyLoadedSettings(settings: UnifiedSettings): void {
     headerContext.updateOptions({
-      captureCredentialHeaders: settings.advancedMode && settings.captureCredentialHeaders,
+      captureCredentialHeaders: credentialReplayEnabled(settings),
     });
     requestJournal.updateCaptureRules({
       customExtensions: settings.captureRuleCustomExtensions,
@@ -278,6 +338,8 @@ export function initializeBackgroundShell() {
       maxConcurrentSegmentsPerHost: settings.maxConcurrentSegmentsPerHost,
       segmentTimeoutMs: settings.segmentTimeoutMs,
       enableBrowserFallbacks: settings.enableBrowserFallbacks,
+      useNativeFfmpeg: settings.useNativeFfmpeg,
+      useNativeYtDlp: settings.useNativeYtDlp,
       browserTransmuxWithMuxJs: settings.browserTransmuxWithMuxJs,
       browserTransmuxMaxBytes: settings.browserTransmuxMaxBytes,
       autoDeleteAfterSave: settings.autoDeleteAfterSave,
@@ -349,11 +411,25 @@ export function initializeBackgroundShell() {
   const downloadController = createDownloadController({
     downloadFile: async (candidate, job) => {
       const probe = probeDirectMedia(candidate);
-      const downloadId = await chrome.downloads.download({
-        url: probe.url,
-        filename: probe.fileName,
-        saveAs: Boolean(job.selection.saveAs),
-      });
+      const credentials = credentialHeadersForCandidate(candidate);
+      const ruleId = credentials
+        ? await credentialReplay.register(probe.url, credentials)
+        : undefined;
+      let downloadId: number;
+      try {
+        downloadId = await chrome.downloads.download({
+          url: probe.url,
+          filename: probe.fileName,
+          saveAs: Boolean(job.selection.saveAs),
+        });
+      } catch (error) {
+        await credentialReplay.release(ruleId);
+        throw error;
+      }
+
+      if (ruleId !== undefined) {
+        replayRuleByDownloadId.set(downloadId, ruleId);
+      }
 
       return {
         fileName: probe.fileName,
@@ -463,6 +539,12 @@ export function initializeBackgroundShell() {
         ...(headersForCandidate(candidate)
           ? { headers: headersForCandidate(candidate) }
           : {}),
+        ...(settingsStore.get('advancedMode')
+          ? {
+              ytDlpBinaryPath: settingsStore.get('ytDlpBinaryPath'),
+              ytDlpCustomArgs: settingsStore.get('ytDlpCustomArgs'),
+            }
+          : {}),
       }),
     browserDirectTrim: ({ candidate, job }) =>
       runBrowserDirectTrimJob({
@@ -502,6 +584,7 @@ export function initializeBackgroundShell() {
       const completedJob = await downloadController.runManaged(candidate, job, {
         jobStore,
         historyStore,
+        grantedConsents: restrictionConsent.list(job.candidateId),
       });
 
       if (!completedJob.output) {
@@ -539,15 +622,24 @@ export function initializeBackgroundShell() {
     downloadQueue,
     requestJournal,
     drmDetections,
+    restrictionConsent,
     fetchManifest: async (url) => {
-      const allowCredentials =
-        settingsStore.get('advancedMode') && settingsStore.get('captureCredentialHeaders');
+      const allowCredentials = credentialReplayEnabled(settingsStore.getAll());
       const response = await fetch(url, {
         credentials: allowCredentials ? 'include' : 'omit',
       });
 
       if (!response.ok) {
-        throw new Error(`Manifest request failed: ${response.status}`);
+        let bodyText: string | undefined;
+        try {
+          bodyText = (await response.text()).slice(0, 2048);
+        } catch {
+          bodyText = undefined;
+        }
+        throw new ManifestFetchError(`Manifest request failed: ${response.status}`, {
+          statusCode: response.status,
+          bodyText,
+        });
       }
 
       return response.text();

@@ -106,6 +106,65 @@ describe('buildYtDlpArgs', () => {
     expect(plan.args).toEqual(expect.arrayContaining(['--ffmpeg-location', 'C:\\tools\\ffmpeg']));
   });
 
+  it('uses a custom binary path when provided and rejects malformed paths', () => {
+    const plan = buildYtDlpArgs(
+      { jobId: 'j', inputUrl: 'https://example.com/v', outputName: 'c.mp4', quality: 'best', binaryPath: 'C:\\tools\\yt-dlp.exe' },
+      { outputPath: OUTPUT },
+    );
+    expect(plan.file).toBe('C:\\tools\\yt-dlp.exe');
+
+    const blank = buildYtDlpArgs(
+      { jobId: 'j', inputUrl: 'https://example.com/v', outputName: 'c.mp4', quality: 'best', binaryPath: '   ' },
+      { outputPath: OUTPUT },
+    );
+    expect(blank.file).toBe('yt-dlp');
+
+    expect(() =>
+      buildYtDlpArgs(
+        { jobId: 'j', inputUrl: 'https://example.com/v', outputName: 'c.mp4', quality: 'best', binaryPath: 'yt-dlp\nrm -rf' },
+        { outputPath: OUTPUT },
+      ),
+    ).toThrow(/Invalid yt-dlp binary path/);
+  });
+
+  it('appends safe extra args before -o and drops dangerous flags', () => {
+    const plan = buildYtDlpArgs(
+      {
+        jobId: 'j',
+        inputUrl: 'https://example.com/v',
+        outputName: 'c.mp4',
+        quality: 'best',
+        extraArgs: [
+          '--limit-rate',
+          '2M',
+          '--exec',
+          'calc.exe',
+          '-o',
+          'C:\\Windows\\evil.mp4',
+          '--config-location',
+          'C:\\evil.conf',
+          '--ffmpeg-location',
+          'C:\\evil\\ffmpeg',
+          '--external-downloader=aria2c',
+          'bad\r\nline',
+        ],
+      },
+      { outputPath: OUTPUT },
+    );
+
+    const joined = plan.args.join(' ');
+    expect(plan.args).toEqual(expect.arrayContaining(['--limit-rate', '2M']));
+    expect(joined).not.toContain('--exec');
+    expect(joined).not.toContain('calc.exe');
+    expect(joined).not.toContain('--config-location');
+    expect(joined).not.toContain('--external-downloader');
+    expect(joined).not.toContain('Injected');
+    // Our helper-owned -o/--/url remain the final, authoritative output spec.
+    expect(plan.args.slice(-4)).toEqual(['-o', OUTPUT, '--', 'https://example.com/v']);
+    // The only -o in the args is the helper-owned one (no injected redirect survived).
+    expect(plan.args.filter((arg) => arg === '-o')).toHaveLength(1);
+  });
+
   it('rejects non-http URLs and output paths outside the helper directory', () => {
     expect(() =>
       buildYtDlpArgs({ jobId: 'j', inputUrl: 'file:///etc/passwd', outputName: 'c.mp4', quality: 'best' }, { outputPath: OUTPUT }),

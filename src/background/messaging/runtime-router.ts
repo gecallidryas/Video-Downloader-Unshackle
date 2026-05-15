@@ -27,6 +27,8 @@ import type {
   RequestJournal,
 } from '@/src/background/network/request-journal';
 import { buildDownloadIntent } from '@/src/core/actions/action-policy';
+import type { RestrictionConsentRegistry } from '@/src/core/policy/restriction-consent';
+import { candidateRestrictionFromError } from '@/src/background/network/manifest-fetch-error';
 import { parseMpd } from '@/src/core/dash/parse-mpd';
 import {
   startDirectDownload,
@@ -99,6 +101,7 @@ export interface RuntimeRouterDependencies {
   requestHostAccess?: (originPattern: string) => Promise<boolean>;
   drmDetections?: Map<string, DrmDetectionRecord[]>;
   recordDetection?: (hostname: string, count: number) => void;
+  restrictionConsent?: RestrictionConsentRegistry;
 }
 
 export interface RuntimeRouter {
@@ -140,6 +143,7 @@ type RoutedRuntimeRequest = Extract<
       | 'QUEUE_MEDIA_ASSET'
       | 'DEBUG_GET_EVIDENCE'
       | 'START_DOWNLOAD'
+      | 'GRANT_DOWNLOAD_CONSENT'
       | 'CANCEL_DOWNLOAD'
       | 'GET_JOB'
       | 'GET_JOBS'
@@ -178,6 +182,7 @@ const handledRequestTypes = new Set<
   'QUEUE_MEDIA_ASSET',
   'DEBUG_GET_EVIDENCE',
   'START_DOWNLOAD',
+  'GRANT_DOWNLOAD_CONSENT',
   'CANCEL_DOWNLOAD',
   'GET_JOB',
   'GET_JOBS',
@@ -330,7 +335,16 @@ async function hydrateManifestCandidate(
 
       return { ...hydrated, preview: previewForCandidate(hydrated) };
     }
-  } catch {
+  } catch (error) {
+    const restriction = candidateRestrictionFromError(error);
+    if (restriction) {
+      const restricted: MediaCandidate = {
+        ...candidate,
+        restriction,
+        status: 'unsupported',
+      };
+      return { ...restricted, preview: previewForCandidate(restricted) };
+    }
     return candidate;
   }
 
@@ -1164,7 +1178,9 @@ export function createRuntimeRouter(
             );
           }
 
-          if (isProtectedCandidateForDownload(candidate)) {
+          const protectedConsent =
+            dependencies.restrictionConsent?.has(candidate.id, 'protected') ?? false;
+          if (isProtectedCandidateForDownload(candidate) && !protectedConsent) {
             return createRuntimeErrorResponse(
               'PROTECTED_MEDIA',
               'Protected media cannot be started through the generic download flow.',
@@ -1220,6 +1236,21 @@ export function createRuntimeRouter(
               request.requestId,
             );
           }
+        }
+
+        case 'GRANT_DOWNLOAD_CONSENT': {
+          const { candidateId, kind } = request.payload;
+          dependencies.restrictionConsent?.grant(candidateId, kind);
+          return createRuntimeResponse(
+            'GRANT_DOWNLOAD_CONSENT_RESULT',
+            {
+              ok: Boolean(dependencies.restrictionConsent),
+              grants: (dependencies.restrictionConsent?.list(candidateId) ?? []) as Array<
+                'protected' | 'geo'
+              >,
+            },
+            request.requestId,
+          );
         }
 
         case 'CANCEL_DOWNLOAD': {

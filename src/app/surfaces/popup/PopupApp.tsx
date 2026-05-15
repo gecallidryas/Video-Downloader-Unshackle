@@ -11,17 +11,23 @@ import {
   type NativeHelperDiagnostic,
   type NativeHelperReadiness,
 } from '@/src/native/native-helper-diagnostics';
-import { getNativeHelperInstallTarget } from '@/src/native/native-helper-links';
+import {
+  downloadNativeHelperInstaller,
+  resolveNativeHelperInstallTarget,
+} from '@/src/native/native-installer-download';
 import {
   hydrateSettingsStore,
   useSettingsStore,
 } from '@/src/state/useSettingsStore';
 import { createRuntimeClient, type RuntimeClient } from '@/src/lib/runtime/client';
-import { NativeHelperOnboarding } from '@/src/ui/onboarding/NativeHelperOnboarding';
 import { NativeHelperStatus } from '@/src/ui/feedback/NativeHelperStatus';
 import { LanguagePicker } from '@/src/ui/shared/LanguagePicker';
 import type { RegexRule } from '@/src/core/capture-rules/regex-classifier';
-import type { ExternalPlayerProfile } from '@/src/background/settings/settings-store';
+import type {
+  ExternalPlayerProfile,
+  YtDlpQualityPreference,
+  YtDlpSubtitlePreference,
+} from '@/src/background/settings/settings-store';
 import type { DownloadJob } from '@/video_downloader_types_skeleton';
 import './PopupApp.css';
 
@@ -68,19 +74,11 @@ function createPopupDiagnostic(
   };
 }
 
-function resolveNativeHelperInstallTarget() {
-  const runtimeId = typeof chrome === 'undefined' ? undefined : chrome.runtime?.id;
-  const platform = typeof navigator === 'undefined' ? undefined : navigator.platform;
-  const setupBaseUrl = import.meta.env.VITE_NATIVE_HELPER_SETUP_BASE_URL as string | undefined;
-
-  return getNativeHelperInstallTarget({
-    platform,
-    setupBaseUrl,
-    extensionId: runtimeId,
+function buildNativeHelperInstallTarget() {
+  return resolveNativeHelperInstallTarget({
+    releaseBaseUrl: import.meta.env.VITE_NATIVE_HELPER_RELEASE_BASE_URL as string | undefined,
   });
 }
-
-const PROJECT_SOURCE_URL = 'https://github.com/gecallidryas/Video-Downloader-Unshackle';
 
 interface SettingsSectionProps {
   title: string;
@@ -107,31 +105,24 @@ function SettingsSection({ title, badge, description, defaultOpen = true, childr
 
 interface SettingsContentProps {
   runtimeClient?: RuntimeClient;
+  onReplayOnboarding?: () => void;
 }
 
-function SettingsContent({ runtimeClient }: SettingsContentProps) {
+function SettingsContent({ runtimeClient, onReplayOnboarding }: SettingsContentProps) {
   const theme = useSettingsStore((s) => s.theme);
   const setTheme = useSettingsStore((s) => s.setTheme);
   const uiLanguage = useSettingsStore((s) => s.uiLanguage);
   const setUiLanguage = useSettingsStore((s) => s.setUiLanguage);
-  const nativeHelperOnboardingDismissed = useSettingsStore(
-    (s) => s.nativeHelperOnboardingDismissed,
-  );
-  const setNativeHelperOnboardingDismissed = useSettingsStore(
-    (s) => s.setNativeHelperOnboardingDismissed,
-  );
   const setNativeHelperPermissionPrompted = useSettingsStore(
     (s) => s.setNativeHelperPermissionPrompted,
   );
   const nativeHelperLastReadiness = useSettingsStore((s) => s.nativeHelperLastReadiness);
   const setNativeHelperLastReadiness = useSettingsStore((s) => s.setNativeHelperLastReadiness);
-  const onboardingCompleted = useSettingsStore((s) => s.onboardingCompleted);
-  const setOnboardingCompleted = useSettingsStore((s) => s.setOnboardingCompleted);
   const [nativeHelperDiagnostic, setNativeHelperDiagnostic] =
     useState<NativeHelperDiagnostic>(() => createPopupDiagnostic(nativeHelperLastReadiness));
   const [nativeHelperBusy, setNativeHelperBusy] = useState(false);
   const mountedRef = useRef(false);
-  const nativeHelperInstallTarget = resolveNativeHelperInstallTarget();
+  const nativeHelperInstallTarget = buildNativeHelperInstallTarget();
   const autoDetect = useSettingsStore((s) => s.autoDetectEnabled);
   const toggleAutoDetect = useSettingsStore((s) => s.toggleAutoDetect);
   const autoScanEnabled = useSettingsStore((s) => s.autoScanEnabled);
@@ -162,8 +153,24 @@ function SettingsContent({ runtimeClient }: SettingsContentProps) {
   const toggleContextMenu = useSettingsStore((s) => s.toggleContextMenu);
   const advancedMode = useSettingsStore((s) => s.advancedMode);
   const setAdvancedMode = useSettingsStore((s) => s.setAdvancedMode);
+  const downloadFromLoggedInSites = useSettingsStore((s) => s.downloadFromLoggedInSites);
+  const setDownloadFromLoggedInSites = useSettingsStore(
+    (s) => s.setDownloadFromLoggedInSites,
+  );
   const enableNativeFeatures = useSettingsStore((s) => s.enableNativeFeatures);
   const setEnableNativeFeatures = useSettingsStore((s) => s.setEnableNativeFeatures);
+  const useNativeFfmpeg = useSettingsStore((s) => s.useNativeFfmpeg);
+  const setUseNativeFfmpeg = useSettingsStore((s) => s.setUseNativeFfmpeg);
+  const useNativeYtDlp = useSettingsStore((s) => s.useNativeYtDlp);
+  const setUseNativeYtDlp = useSettingsStore((s) => s.setUseNativeYtDlp);
+  const ytDlpDefaultQuality = useSettingsStore((s) => s.ytDlpDefaultQuality);
+  const setYtDlpDefaultQuality = useSettingsStore((s) => s.setYtDlpDefaultQuality);
+  const ytDlpDefaultSubtitles = useSettingsStore((s) => s.ytDlpDefaultSubtitles);
+  const setYtDlpDefaultSubtitles = useSettingsStore((s) => s.setYtDlpDefaultSubtitles);
+  const ytDlpBinaryPath = useSettingsStore((s) => s.ytDlpBinaryPath);
+  const setYtDlpBinaryPath = useSettingsStore((s) => s.setYtDlpBinaryPath);
+  const ytDlpCustomArgs = useSettingsStore((s) => s.ytDlpCustomArgs);
+  const setYtDlpCustomArgs = useSettingsStore((s) => s.setYtDlpCustomArgs);
   const enableBrowserFallbacks = useSettingsStore((s) => s.enableBrowserFallbacks);
   const setEnableBrowserFallbacks = useSettingsStore((s) => s.setEnableBrowserFallbacks);
   const browserTransmuxWithMuxJs = useSettingsStore((s) => s.browserTransmuxWithMuxJs);
@@ -222,7 +229,6 @@ function SettingsContent({ runtimeClient }: SettingsContentProps) {
   const [externalPlayerProfilesDraft, setExternalPlayerProfilesDraft] = useState(
     JSON.stringify(externalPlayerProfiles, null, 2),
   );
-  const [showSettingsOnboarding, setShowSettingsOnboarding] = useState(false);
   const [storageCleanupBusy, setStorageCleanupBusy] = useState(false);
   const [storageCleanupMessage, setStorageCleanupMessage] = useState<string | null>(null);
 
@@ -272,11 +278,10 @@ function SettingsContent({ runtimeClient }: SettingsContentProps) {
   }
 
   function openNativeHelperSetup() {
-    window.open(nativeHelperInstallTarget.href, '_blank', 'noopener,noreferrer');
-  }
-
-  function openProjectSource() {
-    window.open(PROJECT_SOURCE_URL, '_blank', 'noopener,noreferrer');
+    const target = nativeHelperInstallTarget;
+    if (!downloadNativeHelperInstaller(target) && target.kind === 'docs') {
+      window.open(target.href, '_blank', 'noopener,noreferrer');
+    }
   }
 
   async function chooseOutputFolder() {
@@ -325,15 +330,6 @@ function SettingsContent({ runtimeClient }: SettingsContentProps) {
         setStorageCleanupBusy(false);
       }
     }
-  }
-
-  function dismissOnboarding() {
-    setNativeHelperOnboardingDismissed(true);
-  }
-
-  function completeOnboarding() {
-    setOnboardingCompleted(true);
-    setNativeHelperOnboardingDismissed(true);
   }
 
   useEffect(() => {
@@ -446,47 +442,6 @@ function SettingsContent({ runtimeClient }: SettingsContentProps) {
 
   return (
     <>
-      {!onboardingCompleted && !nativeHelperOnboardingDismissed ? (
-        <NativeHelperOnboarding
-          diagnostic={nativeHelperDiagnostic}
-          variant="first-run"
-          theme={theme}
-          language={uiLanguage}
-          busy={nativeHelperBusy}
-          onThemeChange={setTheme}
-          onLanguageChange={setUiLanguage}
-          onRequestPermission={() => void enableNativeHelper()}
-          onCheckAgain={() => void refreshNativeHelperDiagnostic()}
-          onOpenSetup={openNativeHelperSetup}
-          onOpenSource={openProjectSource}
-          onDismiss={dismissOnboarding}
-          onComplete={completeOnboarding}
-          nativeFeaturesEnabled={enableNativeFeatures}
-          onNativeFeaturesChange={setEnableNativeFeatures}
-          installTarget={nativeHelperInstallTarget}
-        />
-      ) : null}
-
-      {showSettingsOnboarding ? (
-        <NativeHelperOnboarding
-          diagnostic={nativeHelperDiagnostic}
-          variant="settings"
-          theme={theme}
-          language={uiLanguage}
-          busy={nativeHelperBusy}
-          onThemeChange={setTheme}
-          onLanguageChange={setUiLanguage}
-          onRequestPermission={() => void enableNativeHelper()}
-          onCheckAgain={() => void refreshNativeHelperDiagnostic()}
-          onOpenSetup={openNativeHelperSetup}
-          onOpenSource={openProjectSource}
-          onDismiss={() => setShowSettingsOnboarding(false)}
-          nativeFeaturesEnabled={enableNativeFeatures}
-          onNativeFeaturesChange={setEnableNativeFeatures}
-          installTarget={nativeHelperInstallTarget}
-        />
-      ) : null}
-
       {/* â”€â”€ Appearance â”€â”€ */}
       <SettingsSection title="Appearance">
         <label className="popup__row">
@@ -607,11 +562,110 @@ function SettingsContent({ runtimeClient }: SettingsContentProps) {
       </SettingsSection>
 
       {/* â”€â”€ Native Helper â”€â”€ */}
-      <SettingsSection title="Native Helper" description="Local FFmpeg integration for merged HLS/DASH output, trims, and exports.">
-        <label className="popup__row">
-          <span className="popup__label">Enable native FFmpeg features</span>
-          <input type="checkbox" role="checkbox" aria-label="Native FFmpeg features" checked={enableNativeFeatures} onChange={(event) => setEnableNativeFeatures(event.target.checked)} className="popup__toggle" />
+      <SettingsSection title="Native Helper" description="Local FFmpeg + yt-dlp integration for merged HLS/DASH output, trims, exports, and page downloads from 1000s of sites.">
+        <label className="popup__row popup__row--with-help">
+          <span>
+            <span className="popup__label">Enable native FFmpeg + yt-dlp features</span>
+            <span className="popup__help">Powers merged HLS/DASH exports (FFmpeg) and full-page downloads (yt-dlp).</span>
+          </span>
+          <input type="checkbox" role="checkbox" aria-label="Native FFmpeg and yt-dlp features" checked={enableNativeFeatures} onChange={(event) => setEnableNativeFeatures(event.target.checked)} className="popup__toggle" />
         </label>
+        {enableNativeFeatures ? (
+          <>
+            <label className="popup__row popup__row--with-help">
+              <span>
+                <span className="popup__label">Use FFmpeg engine</span>
+                <span className="popup__help">Merges and remuxes detected HLS/DASH/direct streams. Preferred over browser fallbacks.</span>
+              </span>
+              <input
+                type="checkbox"
+                role="checkbox"
+                aria-label="Use native FFmpeg engine"
+                checked={useNativeFfmpeg}
+                onChange={(event) => setUseNativeFfmpeg(event.target.checked)}
+                className="popup__toggle"
+              />
+            </label>
+            <label className="popup__row popup__row--with-help">
+              <span>
+                <span className="popup__label">Use yt-dlp engine</span>
+                <span className="popup__help">Downloads full pages and sites with no sniffable stream (1000s of sites). Turn off to disable page downloads.</span>
+              </span>
+              <input
+                type="checkbox"
+                role="checkbox"
+                aria-label="Use native yt-dlp engine"
+                checked={useNativeYtDlp}
+                onChange={(event) => setUseNativeYtDlp(event.target.checked)}
+                className="popup__toggle"
+              />
+            </label>
+            {useNativeYtDlp ? (
+              <>
+            <label className="popup__row">
+              <span className="popup__label">Default page quality (yt-dlp)</span>
+              <select
+                aria-label="Default yt-dlp page quality"
+                value={ytDlpDefaultQuality}
+                onChange={(event) => setYtDlpDefaultQuality(event.target.value as YtDlpQualityPreference)}
+                className="popup__input"
+              >
+                <option value="best-mp4">Best (MP4)</option>
+                <option value="best">Best (any format)</option>
+                <option value="smallest">Smallest</option>
+                <option value="audio">Audio only (MP3)</option>
+              </select>
+            </label>
+            <label className="popup__row">
+              <span className="popup__label">Default page subtitles (yt-dlp)</span>
+              <select
+                aria-label="Default yt-dlp page subtitles"
+                value={ytDlpDefaultSubtitles}
+                onChange={(event) => setYtDlpDefaultSubtitles(event.target.value as YtDlpSubtitlePreference)}
+                className="popup__input"
+              >
+                <option value="none">None</option>
+                <option value="embed">Embed in video</option>
+                <option value="sidecar">Sidecar files</option>
+                <option value="both">Both</option>
+              </select>
+            </label>
+            {advancedMode ? (
+              <>
+                <label className="popup__row popup__row--with-help">
+                  <span>
+                    <span className="popup__label">yt-dlp binary path</span>
+                    <span className="popup__help">Absolute path to a custom yt-dlp executable. Leave blank to use the one on PATH.</span>
+                  </span>
+                  <input
+                    type="text"
+                    aria-label="yt-dlp binary path"
+                    value={ytDlpBinaryPath}
+                    placeholder="yt-dlp"
+                    onChange={(event) => setYtDlpBinaryPath(event.target.value)}
+                    className="popup__input"
+                  />
+                </label>
+                <label className="popup__row popup__row--with-help">
+                  <span>
+                    <span className="popup__label">yt-dlp extra arguments</span>
+                    <span className="popup__help">Appended to every page download. Output, exec, config-loading, and downloader flags are blocked for safety.</span>
+                  </span>
+                  <input
+                    type="text"
+                    aria-label="yt-dlp extra arguments"
+                    value={ytDlpCustomArgs}
+                    placeholder="--limit-rate 2M --sleep-requests 1"
+                    onChange={(event) => setYtDlpCustomArgs(event.target.value)}
+                    className="popup__input"
+                  />
+                </label>
+              </>
+            ) : null}
+              </>
+            ) : null}
+          </>
+        ) : null}
         <NativeHelperStatus
           diagnostic={nativeHelperDiagnostic}
           onCheck={() => void refreshNativeHelperDiagnostic()}
@@ -619,9 +673,11 @@ function SettingsContent({ runtimeClient }: SettingsContentProps) {
           onOpenSetup={openNativeHelperSetup}
           busy={nativeHelperBusy}
         />
-        <button type="button" className="settings-section__rerun-btn" onClick={() => setShowSettingsOnboarding(true)}>
-          Run native setup wizard
-        </button>
+        {onReplayOnboarding ? (
+          <button type="button" className="settings-section__rerun-btn" onClick={onReplayOnboarding}>
+            Replay setup &amp; health check
+          </button>
+        ) : null}
       </SettingsSection>
 
       {/* â”€â”€ Storage & Output â”€â”€ */}
@@ -660,6 +716,27 @@ function SettingsContent({ runtimeClient }: SettingsContentProps) {
             <p className="popup__storage-cleanup-status" role="status">{storageCleanupMessage}</p>
           ) : null}
         </div>
+      </SettingsSection>
+
+      {/* â”€â”€ Privacy & Access (always visible) â”€â”€ */}
+      <SettingsSection title="Privacy & Access">
+        <label className="popup__row popup__row--with-help">
+          <span>
+            <span className="popup__label">Download from logged-in sites</span>
+            <span className="popup__help">
+              Reuses your existing session cookies so downloads from sites you are
+              signed into work. Credentials never appear in copied commands or logs.
+            </span>
+          </span>
+          <input
+            type="checkbox"
+            role="checkbox"
+            aria-label="Download from logged-in sites"
+            checked={downloadFromLoggedInSites}
+            onChange={(event) => setDownloadFromLoggedInSites(event.target.checked)}
+            className="popup__toggle"
+          />
+        </label>
       </SettingsSection>
 
       {/* â”€â”€ Advanced mode toggle (always visible) â”€â”€ */}
@@ -804,6 +881,7 @@ interface PopupAppProps {
   jobs?: PopupJob[];
   runtimeClient?: RuntimeClient;
   loadRuntimeJobs?: boolean;
+  onReplayOnboarding?: () => void;
 }
 
 function KeyboardHintFooter(): ReactNode {
@@ -922,6 +1000,7 @@ export function PopupApp({
   jobs,
   runtimeClient,
   loadRuntimeJobs = false,
+  onReplayOnboarding,
 }: PopupAppProps) {
   const [selectedJobId, setSelectedJobId] = useState<string | null>(null);
   const [runtimeJobs, setRuntimeJobs] = useState<PopupJob[] | null>(null);
@@ -975,7 +1054,7 @@ export function PopupApp({
           <span className="heading-caps">Settings</span>
         </div>
         <div className="popup__body">
-          <SettingsContent runtimeClient={runtimeClient} />
+          <SettingsContent runtimeClient={runtimeClient} onReplayOnboarding={onReplayOnboarding} />
         </div>
         <div className="popup__footer">
           <span className="popup__version">Video Downloader â€” Unshackle v0.1.0</span>

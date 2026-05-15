@@ -165,6 +165,26 @@
   font-size: 11px;
 }
 
+.manual-hls__ytdlp-required {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px;
+  border: 1px dashed var(--outline, var(--primary));
+  border-radius: var(--radius);
+  background: var(--surface-variant, transparent);
+}
+
+.manual-hls__ytdlp-required p {
+  margin: 0;
+  color: var(--on-surface-variant);
+}
+
+.manual-hls__button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 .manual-hls__button {
   height: 28px;
   border: 1px solid var(--primary);

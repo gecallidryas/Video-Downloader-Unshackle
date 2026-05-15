@@ -4,6 +4,6 @@
   "path": "C:\\Users\\USERNAME\\AppData\\Local\\VideoDownloaderUnshackle\\native-host\\unshackle-ffmpeg-helper.cmd",
   "type": "stdio",
   "allowed_origins": [
-    "chrome-extension://gljdakohnaibpophgamklloippklkdol/"
+    "chrome-extension://EXTENSION_ID_GENERATED_AT_INSTALL/"
   ]
 }

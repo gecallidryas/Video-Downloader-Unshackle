@@ -551,7 +551,9 @@ function isNativeHelperRequest(value: unknown): value is NativeHelperRequest {
         isHttpUrl(value.payload.inputUrl) &&
         isString(value.payload.outputName) &&
         isString(value.payload.quality) &&
-        VALID_YTDLP_QUALITIES.has(value.payload.quality)
+        VALID_YTDLP_QUALITIES.has(value.payload.quality) &&
+        (value.payload.binaryPath === undefined || typeof value.payload.binaryPath === 'string') &&
+        (value.payload.extraArgs === undefined || isStringArray(value.payload.extraArgs))
       );
     case 'EXTRACT_THUMBNAIL':
       return (
@@ -659,6 +661,10 @@ function mimeForPreview(format: string): string {
 
 function isString(value: unknown): value is string {
   return typeof value === 'string' && value.length > 0;
+}
+
+function isStringArray(value: unknown): value is string[] {
+  return Array.isArray(value) && value.every((item) => typeof item === 'string');
 }
 
 function isHttpUrl(value: unknown): value is string {

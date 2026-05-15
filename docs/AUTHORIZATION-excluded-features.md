@@ -205,6 +205,19 @@ including any region-aware routing logic.
 
 ---
 
+## Implementation Status (updated 2026-06-01)
+
+| Feature | Status | Notes |
+|---|---|---|
+| 2 — Protected-content suppression | **implemented (per-candidate)** | Inline "Download anyway" on the media card grants per-candidate consent (`restriction-consent.ts`) — no settings deep-dive. Applies to DRM/SAMPLE-AES/unknown; consent threads through `getCandidateActionPolicy`, `download-controller`, and the `GRANT_DOWNLOAD_CONSENT` runtime message. The legacy global `suppressProtectedDownloads=false` override still works. **Note:** true Widevine/PlayReady streams still fail at decrypt (no key handling); consent only lifts the refusal gate. |
+| 12 — Credential capture & replay | **implemented (one toggle + DNR)** | Single user-facing `downloadFromLoggedInSites` toggle (Privacy & Access section) drives both capture and replay; no `advancedMode` required. Browser replay re-attaches captured Cookie/Authorization to download requests via short-lived `declarativeNetRequest` session rules (`credential-replay.ts`), torn down on terminal download state. Engine handoff (`buildEngineHandoff`) honors the same gate. Credentials never appear in copied commands/logs. |
+| 13 — Geo-restriction handling | **detection + proceed-anyway (no proxy)** | `classifyRestriction` detects geo beyond HTTP 451 (playability status, region-block body phrases) and marks it `overridable`. **Producer wired:** manifest hydration (`hydrateManifestCandidate`) catches a `ManifestFetchError` (status + bounded body), runs `candidateRestrictionFromError`, and stamps `candidate.restriction = {code:'geo-restricted', overridable:true}` + `status:'unsupported'` — so HLS/DASH geo blocks surface a "Download anyway" button before the user tries. A `geo` consent kind unblocks it; `buildRegionNeutralInit` shapes a region-neutral retry. No proxy/VPN routing (deferred). Remaining edge: direct (non-manifest) files that return 451 only at download time are not yet stamped. |
+| 5 — YouTube signature cipher | **delegated to yt-dlp (not hand-built)** | Signature/nsig decryption is **always delegated to the integrated yt-dlp native engine** rather than reimplemented (yt-dlp is the maintained source against YouTube's churn). Routing: YouTube page URL → `INGEST_PAGE_URL` → yt-dlp (`shouldRouteToYtDlp`). UI (`ytdlp-delegation.ts` + side panel): the "Download this page (yt-dlp)" action is always shown; when yt-dlp is unavailable it renders a disabled state + `YTDLP_REQUIRED_NOTICE` + an "Install yt-dlp helper" CTA, so users without yt-dlp know they cannot use it and how to enable it. The in-extension YouTube detector points its signature-required message at the yt-dlp action instead of dead-ending. **Native-only:** browser-only users (no helper) cannot download signature-protected YouTube. |
+
+Remaining authorized-but-not-built: Features 1/3/4 remain DRM detection-only by design (and yt-dlp cannot decrypt DRM either).
+
+---
+
 ## Reference Documents
 
 | Document | Description |

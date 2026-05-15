@@ -23,6 +23,7 @@ import type {
   OutputFormat,
 } from '@/src/background/settings/settings-store';
 import { isNonRetryableError } from '@/src/core/download/error-classification';
+import type { RestrictionConsentKind } from '@/src/core/policy/restriction-consent';
 
 export interface DownloadControllerSettings {
   defaultOutputFormat?: OutputFormat;
@@ -32,6 +33,8 @@ export interface DownloadControllerSettings {
   maxBandwidthPerHostKBps?: number;
   segmentTimeoutMs?: number;
   enableNativeFeatures?: boolean;
+  useNativeFfmpeg?: boolean;
+  useNativeYtDlp?: boolean;
   enableBrowserFallbacks?: boolean;
   directRangeMinBytes?: number;
   browserTransmuxWithMuxJs?: boolean;
@@ -43,6 +46,8 @@ export interface DownloadControllerStartOptions {
   selection?: DownloadSelection;
   settings?: DownloadControllerSettings;
   signal?: AbortSignal;
+  /** Per-candidate user overrides that unblock protected/geo-restricted media. */
+  grantedConsents?: readonly RestrictionConsentKind[];
 }
 
 export type RunHlsControllerJob = (input: {
@@ -112,6 +117,8 @@ export interface DownloadControllerOptions {
   now?: () => number;
   suppressProtectedDownloads?: boolean;
   enableNativeFeatures?: boolean;
+  useNativeFfmpeg?: boolean;
+  useNativeYtDlp?: boolean;
   enableBrowserFallbacks?: boolean;
 }
 
@@ -257,6 +264,12 @@ export function createDownloadController(options: DownloadControllerOptions) {
     ...(options.enableNativeFeatures !== undefined
       ? { enableNativeFeatures: options.enableNativeFeatures }
       : {}),
+    ...(options.useNativeFfmpeg !== undefined
+      ? { useNativeFfmpeg: options.useNativeFfmpeg }
+      : {}),
+    ...(options.useNativeYtDlp !== undefined
+      ? { useNativeYtDlp: options.useNativeYtDlp }
+      : {}),
     ...(options.enableBrowserFallbacks !== undefined
       ? { enableBrowserFallbacks: options.enableBrowserFallbacks }
       : {}),
@@ -294,7 +307,8 @@ export function createDownloadController(options: DownloadControllerOptions) {
     job: DownloadJob,
     startOptions: DownloadControllerStartOptions = {},
   ): Promise<JobOutput> {
-    const allowProtected = suppressProtectedDownloads === false;
+    const protectedConsent = startOptions.grantedConsents?.includes('protected') ?? false;
+    const allowProtected = suppressProtectedDownloads === false || protectedConsent;
 
     if (!allowProtected && isProtected(candidate)) {
       throw new Error('Protected media cannot be downloaded by the generic pipeline.');
@@ -306,6 +320,11 @@ export function createDownloadController(options: DownloadControllerOptions) {
     };
     const enableNativeFeatures = settings.enableNativeFeatures ?? true;
     const enableBrowserFallbacks = settings.enableBrowserFallbacks ?? true;
+    // Per-engine gates under the native master toggle. Default on so existing
+    // behavior is unchanged; turning one off forces the other engine (or the
+    // browser fallback) to handle the job.
+    const useNativeYtDlp = enableNativeFeatures && (settings.useNativeYtDlp ?? true);
+    const useNativeFfmpeg = enableNativeFeatures && (settings.useNativeFfmpeg ?? true);
     const selection = selectionForJob(job, {
       ...startOptions,
       settings,
@@ -318,10 +337,15 @@ export function createDownloadController(options: DownloadControllerOptions) {
 
     try {
       // Page/site candidates (no raw media URL) go to the yt-dlp native engine.
-      // There is no browser fallback for these, so an unavailable native host
-      // surfaces its error directly rather than silently failing over.
-      if (enableNativeFeatures && options.nativeExport && shouldRouteToYtDlp(candidate)) {
-        return await options.nativeExport({ candidate, job: controllerJob });
+      // There is no browser fallback for these, so a disabled/unavailable engine
+      // surfaces a clear error directly rather than silently failing over.
+      if (shouldRouteToYtDlp(candidate)) {
+        if (useNativeYtDlp && options.nativeExport) {
+          return await options.nativeExport({ candidate, job: controllerJob });
+        }
+        throw new Error(
+          'This page needs the yt-dlp engine, which is disabled or unavailable. Enable native features and the yt-dlp engine in settings.',
+        );
       }
 
       if (candidate.protocol === 'direct') {
@@ -334,7 +358,7 @@ export function createDownloadController(options: DownloadControllerOptions) {
           return await options.browserDirectTrim({ candidate, job: controllerJob });
         }
 
-        if (hasTrim(selection) && enableNativeFeatures && options.nativeExport) {
+        if (hasTrim(selection) && useNativeFfmpeg && options.nativeExport) {
           try {
             return await options.nativeExport({ candidate, job: controllerJob });
           } catch (error) {
@@ -388,7 +412,7 @@ export function createDownloadController(options: DownloadControllerOptions) {
         throw new Error('Missing manifest URL.');
       }
 
-      if (enableNativeFeatures && options.nativeExport) {
+      if (useNativeFfmpeg && options.nativeExport) {
         try {
           return await options.nativeExport({ candidate, job: controllerJob });
         } catch (error) {
@@ -602,6 +626,12 @@ export function createDownloadController(options: DownloadControllerOptions) {
         : {}),
       ...(patch.enableNativeFeatures !== undefined
         ? { enableNativeFeatures: patch.enableNativeFeatures }
+        : {}),
+      ...(patch.useNativeFfmpeg !== undefined
+        ? { useNativeFfmpeg: patch.useNativeFfmpeg }
+        : {}),
+      ...(patch.useNativeYtDlp !== undefined
+        ? { useNativeYtDlp: patch.useNativeYtDlp }
         : {}),
       ...(patch.enableBrowserFallbacks !== undefined
         ? { enableBrowserFallbacks: patch.enableBrowserFallbacks }

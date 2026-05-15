@@ -88,6 +88,10 @@ export interface RuntimeClient {
     options?: { priority?: MediaAssetPriority },
   ): Promise<MediaAssetState>;
   startDownload(candidateId: string, selection: DownloadSelection): Promise<DownloadJob>;
+  grantDownloadConsent(
+    candidateId: string,
+    kind: 'protected' | 'geo',
+  ): Promise<Array<'protected' | 'geo'>>;
   cancelDownload(jobId: string): Promise<{ cancelled: boolean; downloadId?: number }>;
   retrySegment(jobId: string, segmentIndex: number): Promise<DownloadJob | undefined>;
   retryFailedSegments(jobId: string): Promise<DownloadJob | undefined>;
@@ -464,6 +468,29 @@ export function createRuntimeClient(
       }
 
       return response.payload.job;
+    },
+
+    async grantDownloadConsent(candidateId, kind) {
+      const response = await transport(
+        createRuntimeRequest('GRANT_DOWNLOAD_CONSENT', { candidateId, kind }),
+      );
+
+      if (isRuntimeErrorResponse(response)) {
+        throw new RuntimeClientError(
+          response.payload.message,
+          response.payload.code,
+          response.payload.detail,
+        );
+      }
+
+      if (response.type !== 'GRANT_DOWNLOAD_CONSENT_RESULT') {
+        throw new RuntimeClientError(
+          `Unexpected runtime response: ${response.type}`,
+          'UNEXPECTED_RESPONSE',
+        );
+      }
+
+      return response.payload.grants;
     },
 
     async cancelDownload(jobId) {

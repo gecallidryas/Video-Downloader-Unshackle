@@ -10,11 +10,20 @@ import {
   type NativeFfmpegClient,
 } from '@/src/native/native-ffmpeg-client';
 import type { DetectedMedia } from '@/src/types/media';
+import {
+  downloadNativeHelperInstaller,
+  resolveNativeHelperInstallTarget,
+} from '@/src/native/native-installer-download';
 import type {
   DownloadJob,
   MediaAssetState,
   MediaCandidate,
 } from '@/video_downloader_types_skeleton';
+
+vi.mock('@/src/native/native-installer-download', () => ({
+  resolveNativeHelperInstallTarget: vi.fn(),
+  downloadNativeHelperInstaller: vi.fn(),
+}));
 
 function buildCandidate(
   overrides: Partial<MediaCandidate> = {},
@@ -124,6 +133,7 @@ function buildRuntimeClient(candidates: MediaCandidate[]): RuntimeClient {
       progressPct: 0,
       bytesDownloaded: 0,
     }),
+    grantDownloadConsent: vi.fn().mockResolvedValue(['protected']),
   };
 }
 
@@ -173,12 +183,52 @@ beforeEach(() => {
   useSettingsStore.setState({
     enableNativeFeatures: true,
     enableBrowserFallbacks: true,
+    onboardingCompleted: true,
+  });
+  vi.mocked(resolveNativeHelperInstallTarget).mockReturnValue({
+    kind: 'docs',
+    href: 'native-helper.html',
   });
 });
 
 afterEach(() => {
   vi.useRealTimers();
   vi.unstubAllGlobals();
+});
+
+test('shows the full-screen onboarding overlay on first run', async () => {
+  useSettingsStore.setState({ onboardingCompleted: false });
+
+  render(<SidePanelApp />);
+
+  expect(
+    await screen.findByRole('heading', { name: /welcome to unshackle/i }),
+  ).toBeInTheDocument();
+});
+
+test('skipping onboarding hides the overlay and marks it complete', async () => {
+  useSettingsStore.setState({ onboardingCompleted: false });
+  const user = userEvent.setup();
+
+  render(<SidePanelApp />);
+  await screen.findByRole('heading', { name: /welcome to unshackle/i });
+  await user.click(screen.getByRole('button', { name: /skip/i }));
+
+  expect(screen.queryByRole('heading', { name: /welcome to unshackle/i })).not.toBeInTheDocument();
+  expect(useSettingsStore.getState().onboardingCompleted).toBe(true);
+});
+
+test('replays onboarding from the settings panel', async () => {
+  useSettingsStore.setState({ onboardingCompleted: true });
+  const user = userEvent.setup();
+
+  render(<SidePanelApp />);
+  await user.click(screen.getByRole('button', { name: /settings/i }));
+  await user.click(await screen.findByRole('button', { name: /replay setup/i }));
+
+  expect(
+    await screen.findByRole('heading', { name: /welcome to unshackle/i }),
+  ).toBeInTheDocument();
 });
 
 test('renders the panel header with title', () => {
@@ -290,10 +340,9 @@ test('shows native helper installer banner when native helper is unavailable', a
   expect(
     screen.getByText("Chrome can't run binaries; install the companion helper to unlock 1000+ sites."),
   ).toBeInTheDocument();
-  expect(screen.getByRole('link', { name: /open installer/i })).toHaveAttribute(
-    'href',
-    'https://github.com/<OWNER>/<REPO>/releases/latest',
-  );
+  expect(
+    screen.getByRole('button', { name: /download installer/i }),
+  ).toBeInTheDocument();
 });
 
 test('hides native helper installer banner when native helper is ready', async () => {
@@ -314,12 +363,19 @@ test('hides native helper installer banner when native helper is ready', async (
   ).not.toBeInTheDocument();
 });
 
-test('copies the standalone native helper install command', async () => {
+test('downloads a generated native helper installer for the live extension id', async () => {
   const user = userEvent.setup();
-  const writeText = vi.fn().mockResolvedValue(undefined);
-  vi.stubGlobal('navigator', {
-    clipboard: { writeText },
-  });
+  const target = {
+    kind: 'windows-bat' as const,
+    extensionId: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+    browser: 'chrome' as const,
+    version: 'latest',
+    releaseBaseUrl: 'https://github.com/acme/repo/releases',
+    fileName: 'unshackle-native-helper-setup.bat',
+  };
+  vi.mocked(resolveNativeHelperInstallTarget).mockReturnValue(target);
+  vi.mocked(downloadNativeHelperInstaller).mockReturnValue(true);
+
   const runtimeClient = buildRuntimeClientWithPing(
     vi.fn<NativeFfmpegClient['ping']>().mockRejectedValue(
       new NativeFfmpegClientError(
@@ -331,11 +387,9 @@ test('copies the standalone native helper install command', async () => {
 
   render(<SidePanelApp runtimeClient={runtimeClient} />);
 
-  await user.click(await screen.findByRole('button', { name: /copy install command/i }));
+  await user.click(await screen.findByRole('button', { name: /download installer/i }));
 
-  expect(writeText).toHaveBeenCalledWith(
-    'iwr https://github.com/<OWNER>/<REPO>/releases/latest/download/install-windows.ps1 -OutFile install.ps1; powershell -ExecutionPolicy Bypass -File install.ps1',
-  );
+  expect(downloadNativeHelperInstaller).toHaveBeenCalledWith(target);
 });
 
 test('persists active tab to localStorage', async () => {

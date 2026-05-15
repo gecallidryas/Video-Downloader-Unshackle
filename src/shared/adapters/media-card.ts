@@ -22,6 +22,7 @@ import {
   streamCategoryMessageKey,
   type StreamCategory,
 } from '@/src/i18n/stream-categories';
+import { getCandidateActionPolicy } from '@/src/core/policy/action-policy';
 
 function formatDuration(durationSec?: number): string {
   if (durationSec == null || Number.isNaN(durationSec)) {
@@ -216,13 +217,17 @@ function streamCategory(candidate: MediaCandidate): StreamCategory {
 function getPrimaryAction(
   candidate: MediaCandidate,
 ): MediaPrimaryAction {
-  const isBlocked = candidate.status === 'protected' || candidate.protection.kind === 'drm';
+  const policy = getCandidateActionPolicy(candidate);
 
-  if (isBlocked) {
+  if (!policy.canDownload) {
+    const isGeo = policy.reasonCode === 'geo-restricted';
     return {
       kind: 'blocked',
-      label: 'Protected Media',
-      reason: candidate.protection.reason,
+      label: isGeo ? 'Region-locked' : 'Protected Media',
+      reason: policy.message ?? candidate.protection.reason,
+      ...(policy.overridable
+        ? { overridable: true, consentKind: policy.consentKind }
+        : {}),
     };
   }
 

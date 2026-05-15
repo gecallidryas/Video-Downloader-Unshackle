@@ -9,6 +9,12 @@ export type MediaKind = 'video' | 'audio' | 'subtitle' | 'image';
 export type StreamProtocol = 'direct' | 'hls' | 'dash' | 'hds' | 'mss' | 'blob' | 'unknown';
 export type ProtectionKind = 'none' | 'aes-128' | 'sample-aes' | 'drm' | 'unknown';
 export type CandidateStatus = 'ready' | 'partial' | 'protected' | 'unsupported' | 'error';
+export type CandidateRestrictionCode =
+  | 'blocked-site'
+  | 'geo-restricted'
+  | 'access-restricted'
+  | 'rate-limited'
+  | 'unknown-restriction';
 export type DetectionSource = 'dom' | 'network' | 'player-config' | 'blob-correlation' | 'user';
 export type DownloadPhase =
   | 'queued'
@@ -81,6 +87,14 @@ export interface ProtectionInfo {
   drmSystems?: string[];
 }
 
+// Region/access restriction detected for a candidate. `overridable` marks a
+// restriction the user may choose to bypass with explicit consent (e.g. geo).
+export interface CandidateRestriction {
+  code: CandidateRestrictionCode;
+  message?: string;
+  overridable?: boolean;
+}
+
 export interface DetectionEvidence {
   source: DetectionSource;
   confidence: number;
@@ -129,6 +143,7 @@ export interface MediaCandidate {
   codecs?: string[];
   sizeEstimateBytes?: number;
   protection: ProtectionInfo;
+  restriction?: CandidateRestriction;
   variants: MediaVariant[];
   audioTracks: AudioTrack[];
   subtitleTracks: SubtitleTrack[];
@@ -474,6 +489,7 @@ export type RuntimeRequest =
   | MessageEnvelope<'GET_MEDIA_ASSET_STATE', { candidateId: string }>
   | MessageEnvelope<'QUEUE_MEDIA_ASSET', { candidateId: string; kind: MediaAssetKind; priority?: MediaAssetPriority }>
   | MessageEnvelope<'START_DOWNLOAD', { candidateId: string; selection: DownloadSelection }>
+  | MessageEnvelope<'GRANT_DOWNLOAD_CONSENT', { candidateId: string; kind: 'protected' | 'geo' }>
   | MessageEnvelope<'PAUSE_DOWNLOAD', { jobId: string }>
   | MessageEnvelope<'RESUME_DOWNLOAD', { jobId: string }>
   | MessageEnvelope<'CANCEL_DOWNLOAD', { jobId: string }>
@@ -512,6 +528,7 @@ export type RuntimeResponse =
   | MessageEnvelope<'GET_MEDIA_ASSET_STATE_RESULT', { states: MediaAssetState[] }>
   | MessageEnvelope<'QUEUE_MEDIA_ASSET_RESULT', { state: MediaAssetState }>
   | MessageEnvelope<'START_DOWNLOAD_RESULT', { job: DownloadJob }>
+  | MessageEnvelope<'GRANT_DOWNLOAD_CONSENT_RESULT', { ok: boolean; grants: Array<'protected' | 'geo'> }>
   | MessageEnvelope<'CANCEL_DOWNLOAD_RESULT', { cancelled: boolean; downloadId?: number }>
   | MessageEnvelope<'GET_JOB_RESULT', { job?: DownloadJob }>
   | MessageEnvelope<'GET_JOBS_RESULT', { jobs: DownloadJob[] }>

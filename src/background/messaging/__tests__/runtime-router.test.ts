@@ -7,6 +7,8 @@ import { createRuntimeRequest } from '@/src/shared/contracts/messages';
 import type { MediaCandidate } from '@/video_downloader_types_skeleton';
 import { createRuntimeRouter, registerRuntimeRouter } from '../runtime-router';
 import { shouldRouteToYtDlp } from '@/src/background/jobs/native-export-runner';
+import { createRestrictionConsentRegistry } from '@/src/core/policy/restriction-consent';
+import { ManifestFetchError } from '@/src/background/network/manifest-fetch-error';
 
 const hlsMaster = [
   '#EXTM3U',
@@ -629,6 +631,125 @@ test('START_DOWNLOAD can find a candidate loaded for the side panel without send
   );
 
   expect(response.type).toBe('START_DOWNLOAD_RESULT');
+});
+
+test('GET_CANDIDATES stamps an overridable geo restriction when manifest hydration hits 451', async () => {
+  const candidateRegistry = createCandidateRegistry();
+  const requestJournal = createRequestJournal();
+  const router = createRuntimeRouter({
+    candidateRegistry,
+    tabSnapshots: createTabSnapshotStore(),
+    requestJournal,
+    fetchManifest: vi.fn(async () => {
+      throw new ManifestFetchError('Manifest request failed: 451', {
+        statusCode: 451,
+      });
+    }),
+  });
+
+  requestJournal.addRequest(11, {
+    url: 'http://127.0.0.1:4173/geo/master.m3u8',
+    initiator: 'http://127.0.0.1:4173/index.html',
+    responseHeaders: [
+      { name: 'content-type', value: 'application/vnd.apple.mpegurl' },
+    ],
+    timeStamp: 1,
+  });
+
+  const response = await router.handleMessage(
+    createRuntimeRequest('GET_CANDIDATES', { tabId: 11 }, 'req-geo'),
+  );
+
+  expect(response.type).toBe('GET_CANDIDATES_RESULT');
+  if (response.type !== 'GET_CANDIDATES_RESULT') {
+    return;
+  }
+
+  const hls = response.payload.candidates.find(
+    (candidate) => candidate.protocol === 'hls',
+  );
+  expect(hls?.status).toBe('unsupported');
+  expect(hls?.restriction).toEqual({
+    code: 'geo-restricted',
+    message: expect.any(String),
+    overridable: true,
+  });
+});
+
+test('protected START_DOWNLOAD is refused until GRANT_DOWNLOAD_CONSENT is granted', async () => {
+  const candidateRegistry = createCandidateRegistry();
+  const restrictionConsent = createRestrictionConsentRegistry();
+  const enqueue = vi.fn((candidate) => ({
+    id: 'job-drm',
+    tabId: candidate.tabId,
+    candidateId: candidate.id,
+    phase: 'queued' as const,
+    createdAt: 1,
+    updatedAt: 1,
+    selection: { mode: 'best' as const },
+    progressPct: 0,
+    bytesDownloaded: 0,
+  }));
+  const router = createRuntimeRouter({
+    candidateRegistry,
+    tabSnapshots: createTabSnapshotStore(),
+    jobStore: createJobStore(() => 1),
+    historyStore: createHistoryStore(() => 1),
+    restrictionConsent,
+    downloadQueue: {
+      enqueue,
+      drain: vi.fn(async () => undefined),
+    } as never,
+  });
+  candidateRegistry.set(9, [
+    {
+      id: 'drm-1',
+      tabId: 9,
+      mediaKind: 'video',
+      protocol: 'direct',
+      status: 'protected',
+      pageUrl: 'http://127.0.0.1:4173/index.html',
+      origin: 'http://127.0.0.1:4173',
+      displayName: 'protected.mp4',
+      sourceUrl: 'http://127.0.0.1:4173/media/protected.mp4',
+      protection: { kind: 'drm', drmSystems: ['widevine'] },
+      variants: [],
+      audioTracks: [],
+      subtitleTracks: [],
+      evidence: [],
+      preview: { playable: false, adapter: 'none' },
+      createdAt: 1,
+      updatedAt: 1,
+    },
+  ]);
+
+  const blocked = await router.handleMessage(
+    createRuntimeRequest(
+      'START_DOWNLOAD',
+      { candidateId: 'drm-1', selection: { mode: 'best' } },
+      'req-blocked',
+    ),
+  );
+  expect(blocked.type).toBe('ERROR');
+
+  const consent = await router.handleMessage(
+    createRuntimeRequest(
+      'GRANT_DOWNLOAD_CONSENT',
+      { candidateId: 'drm-1', kind: 'protected' },
+      'req-consent',
+    ),
+  );
+  expect(consent.type).toBe('GRANT_DOWNLOAD_CONSENT_RESULT');
+  expect(restrictionConsent.has('drm-1', 'protected')).toBe(true);
+
+  const allowed = await router.handleMessage(
+    createRuntimeRequest(
+      'START_DOWNLOAD',
+      { candidateId: 'drm-1', selection: { mode: 'best' } },
+      'req-allowed',
+    ),
+  );
+  expect(allowed.type).toBe('START_DOWNLOAD_RESULT');
 });
 
 test('CANCEL_DOWNLOAD delegates to the configured runtime cancellation path', async () => {

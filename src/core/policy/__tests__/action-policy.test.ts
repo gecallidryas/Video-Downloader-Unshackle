@@ -52,6 +52,53 @@ describe('getCandidateActionPolicy', () => {
       reasonCode: 'unsupported',
     });
   });
+
+  test('marks protected media overridable and unblocks with per-candidate consent', () => {
+    const drm = candidate({
+      status: 'protected',
+      protection: { kind: 'drm', drmSystems: ['widevine'] },
+    });
+
+    expect(getCandidateActionPolicy(drm)).toMatchObject({
+      canDownload: false,
+      reasonCode: 'protected-media',
+      overridable: true,
+      consentKind: 'protected',
+    });
+
+    expect(
+      getCandidateActionPolicy(drm, { grantedConsents: ['protected'] }),
+    ).toMatchObject({ canDownload: true });
+  });
+
+  test('legacy global suppression-off unblocks protected media', () => {
+    const sampleAes = candidate({
+      status: 'protected',
+      protection: { kind: 'sample-aes' },
+    });
+
+    expect(
+      getCandidateActionPolicy(sampleAes, { suppressProtectedDownloads: false }),
+    ).toMatchObject({ canDownload: true });
+  });
+
+  test('geo-restricted candidate is overridable and unblocks with geo consent', () => {
+    const geo = candidate({
+      status: 'unsupported',
+      restriction: { code: 'geo-restricted', overridable: true },
+    });
+
+    expect(getCandidateActionPolicy(geo)).toMatchObject({
+      canDownload: false,
+      reasonCode: 'geo-restricted',
+      overridable: true,
+      consentKind: 'geo',
+    });
+
+    expect(
+      getCandidateActionPolicy(geo, { grantedConsents: ['geo'] }),
+    ).toMatchObject({ canDownload: true });
+  });
 });
 
 describe('evaluateScanPermission', () => {

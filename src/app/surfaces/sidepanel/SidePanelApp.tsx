@@ -29,9 +29,15 @@ import {
   type NativeHelperDiagnostic,
 } from '@/src/native/native-helper-diagnostics';
 import {
-  NATIVE_HELPER_INSTALL_COMMAND,
-  NATIVE_HELPER_INSTALLER_URL,
-} from '@/src/native/native-helper-installer-url';
+  downloadNativeHelperInstaller,
+  resolveNativeHelperInstallTarget,
+} from '@/src/native/native-installer-download';
+import { requestNativeMessagingPermission } from '@/src/native/native-permissions';
+import { OnboardingFlow } from '@/src/ui/onboarding/OnboardingFlow';
+import {
+  isYtDlpAvailable,
+  YTDLP_REQUIRED_NOTICE,
+} from '@/src/core/policy/ytdlp-delegation';
 import { createMediaControlBridge } from '@/src/content/media-control-bridge';
 import { createDemoMediaCandidates } from '@/src/debug/demo-flow';
 import { createAria2Client } from '@/src/integrations/aria2-client';
@@ -102,6 +108,8 @@ const NATIVE_INSTALL_BANNER_READINESS = new Set<NativeHelperDiagnostic['readines
   'host-missing',
   'host-forbidden',
 ]);
+const PROJECT_SOURCE_URL = 'https://github.com/gecallidryas/Video-Downloader-Unshackle';
+const DONATE_URL = 'https://scernix.com/donate';
 
 function mergeCandidatesById(candidates: MediaCandidate[]): MediaCandidate[] {
   return Array.from(new Map(candidates.map((candidate) => [candidate.id, candidate])).values());
@@ -189,14 +197,16 @@ function computeStorageLevel(usage: number, quota: number): StorageLevel {
   return 'ok';
 }
 
+function startNativeHelperInstall() {
+  const target = resolveNativeHelperInstallTarget({
+    releaseBaseUrl: import.meta.env.VITE_NATIVE_HELPER_RELEASE_BASE_URL as string | undefined,
+  });
+  if (!downloadNativeHelperInstaller(target) && target.kind === 'docs') {
+    window.open(target.href, '_blank', 'noopener,noreferrer');
+  }
+}
+
 function NativeHelperInstallBanner({ onDismiss }: { onDismiss: () => void }) {
-  const [copied, setCopied] = useState(false);
-
-  const copyInstallCommand = async () => {
-    await copyText(NATIVE_HELPER_INSTALL_COMMAND);
-    setCopied(true);
-  };
-
   return (
     <section className="native-helper-install" aria-label="Native helper installer">
       <div className="native-helper-install__copy">
@@ -204,20 +214,12 @@ function NativeHelperInstallBanner({ onDismiss }: { onDismiss: () => void }) {
         <p>Chrome can't run binaries; install the companion helper to unlock 1000+ sites.</p>
       </div>
       <div className="native-helper-install__actions">
-        <a
-          className="native-helper-install__button native-helper-install__button--primary"
-          href={NATIVE_HELPER_INSTALLER_URL}
-          target="_blank"
-          rel="noreferrer"
-        >
-          Open installer
-        </a>
         <button
           type="button"
-          className="native-helper-install__button"
-          onClick={() => void copyInstallCommand()}
+          className="native-helper-install__button native-helper-install__button--primary"
+          onClick={startNativeHelperInstall}
         >
-          {copied ? 'Copied' : 'Copy install command'}
+          Download installer
         </button>
         <button
           type="button"
@@ -332,8 +334,13 @@ function DetectionView({ activeTabId, runtimeClient }: DetectionViewProps) {
   const [mediaAssetStates, setMediaAssetStates] = useState<Record<string, MediaAssetState>>({});
   const [manualHlsInput, setManualHlsInput] = useState('');
   const [manualHlsBaseUrl, setManualHlsBaseUrl] = useState('');
-  const [pageQuality, setPageQuality] = useState<PageQuality>('best-mp4');
-  const [pageSubtitles, setPageSubtitles] = useState<PageSubtitleMode>('none');
+  const [pageQuality, setPageQuality] = useState<PageQuality>(
+    () => useSettingsStore.getState().ytDlpDefaultQuality,
+  );
+  const [pageSubtitles, setPageSubtitles] = useState<PageSubtitleMode>(
+    () => useSettingsStore.getState().ytDlpDefaultSubtitles,
+  );
+  const pageSelectionTouched = useRef(false);
   const [shareUrl, setShareUrl] = useState<string | null>(null);
   const [resolvedFilenames, setResolvedFilenames] = useState<Record<string, string>>({});
   const [directUrlResults, setDirectUrlResults] = useState<DirectUrlPanelResult[]>([]);
@@ -354,7 +361,19 @@ function DetectionView({ activeTabId, runtimeClient }: DetectionViewProps) {
   const autoDownloadBlacklist = useSettingsStore((s) => s.autoDownloadBlacklist);
   const enableNativeFeatures = useSettingsStore((s) => s.enableNativeFeatures);
   const enableBrowserFallbacks = useSettingsStore((s) => s.enableBrowserFallbacks);
+  const ytDlpDefaultQuality = useSettingsStore((s) => s.ytDlpDefaultQuality);
+  const ytDlpDefaultSubtitles = useSettingsStore((s) => s.ytDlpDefaultSubtitles);
+  const useNativeYtDlp = useSettingsStore((s) => s.useNativeYtDlp);
+  const ytDlpReady = isYtDlpAvailable({ enableNativeFeatures, useNativeYtDlp });
   const [toolPanelOpen, setToolPanelOpen] = useState(false);
+
+  useEffect(() => {
+    if (pageSelectionTouched.current) {
+      return;
+    }
+    setPageQuality(ytDlpDefaultQuality);
+    setPageSubtitles(ytDlpDefaultSubtitles);
+  }, [ytDlpDefaultQuality, ytDlpDefaultSubtitles]);
 
   const mediaControlBridge = useMemo(
     () =>
@@ -576,6 +595,21 @@ function DetectionView({ activeTabId, runtimeClient }: DetectionViewProps) {
       const job = await runtimeClient.startDownload(id, selection);
       upsertQueueJob(job);
       downloadItem(id);
+    } catch (error) {
+      setErrorMessage(
+        error instanceof Error ? error.message : 'Unable to start download',
+      );
+    }
+  }
+
+  async function overrideDownload(id: string, kind: 'protected' | 'geo') {
+    if (!runtimeClient) {
+      return;
+    }
+
+    try {
+      await runtimeClient.grantDownloadConsent(id, kind);
+      await startDownload(id);
     } catch (error) {
       setErrorMessage(
         error instanceof Error ? error.message : 'Unable to start download',
@@ -1069,14 +1103,17 @@ function DetectionView({ activeTabId, runtimeClient }: DetectionViewProps) {
               >
                 Ingest HLS
               </button>
-              {enableNativeFeatures && (
+              {ytDlpReady ? (
                 <>
                   <label className="manual-hls__field">
                     <span className="label-xs">Page quality</span>
                     <select
                       aria-label="Page download quality"
                       value={pageQuality}
-                      onChange={(event) => setPageQuality(event.target.value as PageQuality)}
+                      onChange={(event) => {
+                        pageSelectionTouched.current = true;
+                        setPageQuality(event.target.value as PageQuality);
+                      }}
                       className="manual-hls__input"
                     >
                       <option value="best-mp4">Best (MP4)</option>
@@ -1090,7 +1127,10 @@ function DetectionView({ activeTabId, runtimeClient }: DetectionViewProps) {
                     <select
                       aria-label="Page download subtitles"
                       value={pageSubtitles}
-                      onChange={(event) => setPageSubtitles(event.target.value as PageSubtitleMode)}
+                      onChange={(event) => {
+                        pageSelectionTouched.current = true;
+                        setPageSubtitles(event.target.value as PageSubtitleMode);
+                      }}
                       className="manual-hls__input"
                     >
                       <option value="none">None</option>
@@ -1103,11 +1143,37 @@ function DetectionView({ activeTabId, runtimeClient }: DetectionViewProps) {
                     type="button"
                     className="manual-hls__button"
                     onClick={() => void ingestCurrentPage()}
-                    title="Hand the active tab URL to the yt-dlp native engine (1000s of supported sites)"
+                    title="Hand the active tab URL to the yt-dlp native engine (1000s of supported sites incl. YouTube)"
                   >
                     Download this page (yt-dlp)
                   </button>
                 </>
+              ) : (
+                <div
+                  className="manual-hls__ytdlp-required"
+                  role="note"
+                  data-testid="ytdlp-required-notice"
+                >
+                  <p className="label-xs">{YTDLP_REQUIRED_NOTICE}</p>
+                  <div className="manual-hls__actions">
+                    <button
+                      type="button"
+                      className="manual-hls__button"
+                      onClick={() => void ingestCurrentPage()}
+                      disabled
+                      title="Enable native features and install the yt-dlp helper to use this"
+                    >
+                      Download this page (yt-dlp)
+                    </button>
+                    <button
+                      type="button"
+                      className="manual-hls__button"
+                      onClick={startNativeHelperInstall}
+                    >
+                      Install yt-dlp helper
+                    </button>
+                  </div>
+                </div>
               )}
               <button type="button" className="manual-hls__button" onClick={addDemoMedia}>
                 Add demo media
@@ -1179,6 +1245,7 @@ function DetectionView({ activeTabId, runtimeClient }: DetectionViewProps) {
               onPreviewHover={() => void queueMediaAsset(item.id, 'hoverClip', 'hover')}
               onRemove={() => removeItem(item.id)}
               onDownload={() => void startDownload(item.id)}
+              onOverrideDownload={(kind) => void overrideDownload(item.id, kind)}
               onCopyUrl={(url) => void copyText(url).catch((error: unknown) => {
                 setErrorMessage(error instanceof Error ? error.message : 'Unable to copy URL');
               })}
@@ -1623,13 +1690,72 @@ export function SidePanelApp({
   };
   const [resolvedActiveTabId, setResolvedActiveTabId] = useState(activeTabId);
   const enableNativeFeatures = useSettingsStore((s) => s.enableNativeFeatures);
+  const setEnableNativeFeatures = useSettingsStore((s) => s.setEnableNativeFeatures);
+  const theme = useSettingsStore((s) => s.theme);
+  const setTheme = useSettingsStore((s) => s.setTheme);
+  const uiLanguage = useSettingsStore((s) => s.uiLanguage);
+  const setUiLanguage = useSettingsStore((s) => s.setUiLanguage);
+  const onboardingCompleted = useSettingsStore((s) => s.onboardingCompleted);
+  const setOnboardingCompleted = useSettingsStore((s) => s.setOnboardingCompleted);
+  const setNativeHelperPermissionPrompted = useSettingsStore(
+    (s) => s.setNativeHelperPermissionPrompted,
+  );
+  const setNativeHelperLastReadiness = useSettingsStore((s) => s.setNativeHelperLastReadiness);
   const [nativeHelperDiagnostic, setNativeHelperDiagnostic] =
     useState<NativeHelperDiagnostic | null>(null);
   const [nativeInstallDismissed, setNativeInstallDismissed] = useState(false);
+  const [onboardingOpen, setOnboardingOpen] = useState(!onboardingCompleted);
+  const [onboardingDiagnostic, setOnboardingDiagnostic] =
+    useState<NativeHelperDiagnostic | null>(null);
+  const [onboardingBusy, setOnboardingBusy] = useState(false);
   const resolvedRuntimeClient = useMemo(
     () => runtimeClient ?? createRuntimeClient(),
     [runtimeClient],
   );
+
+  const onboardingInstallTarget = useMemo(
+    () =>
+      resolveNativeHelperInstallTarget({
+        releaseBaseUrl: import.meta.env.VITE_NATIVE_HELPER_RELEASE_BASE_URL as string | undefined,
+      }),
+    [],
+  );
+
+  async function runOnboardingHealthCheck() {
+    setOnboardingBusy(true);
+    try {
+      const options = resolvedRuntimeClient?.ping
+        ? { hasPermission: async () => true, nativeClient: { ping: resolvedRuntimeClient.ping } }
+        : {};
+      const diagnostic = await checkNativeHelperReadiness(options);
+      setOnboardingDiagnostic(diagnostic);
+      setNativeHelperLastReadiness(diagnostic.readiness);
+    } finally {
+      setOnboardingBusy(false);
+    }
+  }
+
+  async function requestOnboardingPermission() {
+    const granted = await requestNativeMessagingPermission();
+    setNativeHelperPermissionPrompted(true);
+    if (granted) {
+      await runOnboardingHealthCheck();
+    }
+  }
+
+  function downloadOnboardingInstaller() {
+    if (
+      !downloadNativeHelperInstaller(onboardingInstallTarget) &&
+      onboardingInstallTarget.kind === 'docs'
+    ) {
+      window.open(onboardingInstallTarget.href, '_blank', 'noopener,noreferrer');
+    }
+  }
+
+  function finishOnboarding() {
+    setOnboardingCompleted(true);
+    setOnboardingOpen(false);
+  }
 
   useEffect(() => {
     if (runtimeClient) {
@@ -1721,7 +1847,9 @@ export function SidePanelApp({
           />
         )}
         {activeTab === 'downloads' && <DownloadsPanel runtimeClient={resolvedRuntimeClient} />}
-        {activeTab === 'settings' && <PopupApp embedded />}
+        {activeTab === 'settings' && (
+          <PopupApp embedded onReplayOnboarding={() => setOnboardingOpen(true)} />
+        )}
       </main>
 
       <BottomNav
@@ -1730,6 +1858,29 @@ export function SidePanelApp({
         onCurrentClick={() => setActiveTab('current')}
         onSettingsClick={() => setActiveTab('settings')}
       />
+
+      {onboardingOpen && (
+        <OnboardingFlow
+          theme={theme}
+          language={uiLanguage}
+          nativeFeaturesEnabled={enableNativeFeatures}
+          diagnostic={onboardingDiagnostic}
+          installTarget={onboardingInstallTarget}
+          busy={onboardingBusy}
+          onThemeChange={setTheme}
+          onLanguageChange={setUiLanguage}
+          onNativeFeaturesChange={setEnableNativeFeatures}
+          onRequestPermission={() => void requestOnboardingPermission()}
+          onCheckHealth={() => void runOnboardingHealthCheck()}
+          onDownloadInstaller={downloadOnboardingInstaller}
+          onOpenSource={() =>
+            window.open(PROJECT_SOURCE_URL, '_blank', 'noopener,noreferrer')
+          }
+          onOpenDonate={() => window.open(DONATE_URL, '_blank', 'noopener,noreferrer')}
+          onComplete={finishOnboarding}
+          onSkip={finishOnboarding}
+        />
+      )}
     </div>
   );
 }

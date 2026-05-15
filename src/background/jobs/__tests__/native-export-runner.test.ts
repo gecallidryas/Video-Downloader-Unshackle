@@ -1,7 +1,12 @@
 import { describe, expect, test, vi } from 'vitest';
 import type { DownloadJob, MediaCandidate } from '@/video_downloader_types_skeleton';
 import { createJobStore } from '../job-store';
-import { mapYtDlpQuality, runNativeExportJob, shouldRouteToYtDlp } from '../native-export-runner';
+import {
+  mapYtDlpQuality,
+  parseYtDlpCustomArgs,
+  runNativeExportJob,
+  shouldRouteToYtDlp,
+} from '../native-export-runner';
 import type { NativeFfmpegClient } from '@/src/native/native-ffmpeg-client';
 import { createInMemorySubtitleStore } from '@/src/core/storage/subtitle-store';
 
@@ -327,6 +332,78 @@ describe('runNativeExportJob', () => {
     ]);
   });
 
+  test('forwards advanced yt-dlp binary path and tokenized custom args', async () => {
+    const client = nativeClient();
+    const jobStore = createJobStore(() => 100);
+    const siteCandidate = candidate({
+      id: 'candidate-advanced',
+      protocol: 'unknown',
+      sourceUrl: undefined,
+      manifestUrl: undefined,
+      pageUrl: 'https://example.com/watch?v=adv',
+      displayName: 'Advanced video',
+    });
+    const queued = jobStore.create(siteCandidate, { mode: 'best', outputKind: 'mp4' });
+    vi.mocked(client.exportYtDlp).mockResolvedValueOnce({
+      jobId: queued.id,
+      outputPath: 'C:\\Users\\tester\\AppData\\Local\\VideoDownloaderUnshackle\\outputs\\page.mp4',
+      sizeBytes: 10,
+      mimeType: 'video/mp4',
+    });
+
+    await runNativeExportJob({
+      candidate: siteCandidate,
+      job: queued,
+      nativeClient: client,
+      jobStore,
+      readFullOutput: stubReadFullOutput(new Uint8Array([1])),
+      deliverOutput: vi.fn().mockResolvedValue(1),
+      ytDlpBinaryPath: 'C:\\tools\\yt-dlp.exe',
+      ytDlpCustomArgs: '--limit-rate 2M --user-agent "Mozilla 5.0"',
+    });
+
+    expect(client.exportYtDlp).toHaveBeenCalledWith(
+      expect.objectContaining({
+        binaryPath: 'C:\\tools\\yt-dlp.exe',
+        extraArgs: ['--limit-rate', '2M', '--user-agent', 'Mozilla 5.0'],
+      }),
+      expect.anything(),
+    );
+  });
+
+  test('omits yt-dlp overrides when none are supplied', async () => {
+    const client = nativeClient();
+    const jobStore = createJobStore(() => 100);
+    const siteCandidate = candidate({
+      id: 'candidate-plain',
+      protocol: 'unknown',
+      sourceUrl: undefined,
+      manifestUrl: undefined,
+      pageUrl: 'https://example.com/watch?v=plain',
+      displayName: 'Plain video',
+    });
+    const queued = jobStore.create(siteCandidate, { mode: 'best', outputKind: 'mp4' });
+    vi.mocked(client.exportYtDlp).mockResolvedValueOnce({
+      jobId: queued.id,
+      outputPath: 'C:\\Users\\tester\\AppData\\Local\\VideoDownloaderUnshackle\\outputs\\page.mp4',
+      sizeBytes: 10,
+      mimeType: 'video/mp4',
+    });
+
+    await runNativeExportJob({
+      candidate: siteCandidate,
+      job: queued,
+      nativeClient: client,
+      jobStore,
+      readFullOutput: stubReadFullOutput(new Uint8Array([1])),
+      deliverOutput: vi.fn().mockResolvedValue(1),
+    });
+
+    const payload = vi.mocked(client.exportYtDlp).mock.calls[0]?.[0];
+    expect(payload).not.toHaveProperty('binaryPath');
+    expect(payload).not.toHaveProperty('extraArgs');
+  });
+
   test('keeps the ffmpeg engine for raw direct/manifest candidates', async () => {
     expect(shouldRouteToYtDlp(candidate())).toBe(false);
     expect(
@@ -510,5 +587,27 @@ describe('runNativeExportJob', () => {
         deliverOutput: vi.fn().mockRejectedValue(new Error('downloads API failed')),
       }),
     ).rejects.toThrow('downloads API failed');
+  });
+});
+
+describe('parseYtDlpCustomArgs', () => {
+  test('returns empty for blank/undefined input', () => {
+    expect(parseYtDlpCustomArgs(undefined)).toEqual([]);
+    expect(parseYtDlpCustomArgs('')).toEqual([]);
+    expect(parseYtDlpCustomArgs('   ')).toEqual([]);
+  });
+
+  test('tokenizes on whitespace and honors quotes', () => {
+    expect(parseYtDlpCustomArgs('--limit-rate 2M --user-agent "Mozilla 5.0"')).toEqual([
+      '--limit-rate',
+      '2M',
+      '--user-agent',
+      'Mozilla 5.0',
+    ]);
+    expect(parseYtDlpCustomArgs("--add-header 'X-Test: 1'")).toEqual(['--add-header', 'X-Test: 1']);
+  });
+
+  test('drops tokens containing control characters', () => {
+    expect(parseYtDlpCustomArgs('--ok value')).toEqual(['--ok', 'value']);
   });
 });

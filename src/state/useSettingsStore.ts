@@ -10,6 +10,8 @@ import type {
   UiLanguage,
   UiMode,
   ExternalPlayerProfile,
+  YtDlpQualityPreference,
+  YtDlpSubtitlePreference,
 } from '@/src/background/settings/settings-store';
 import type { RegexRule } from '@/src/core/capture-rules/regex-classifier';
 import {
@@ -62,6 +64,7 @@ export interface SettingsState {
   autoDownloadBlacklist: string[];
   customCommandTemplate: string;
   advancedMode: boolean;
+  downloadFromLoggedInSites: boolean;
   aria2Enabled: boolean;
   aria2RpcUrl: string;
   aria2Secret: string;
@@ -70,6 +73,12 @@ export interface SettingsState {
   externalPlayerProfiles: ExternalPlayerProfile[];
   previousSessionLimit: number;
   enableNativeFeatures: boolean;
+  useNativeFfmpeg: boolean;
+  useNativeYtDlp: boolean;
+  ytDlpDefaultQuality: YtDlpQualityPreference;
+  ytDlpDefaultSubtitles: YtDlpSubtitlePreference;
+  ytDlpBinaryPath: string;
+  ytDlpCustomArgs: string;
   enableBrowserFallbacks: boolean;
   browserTransmuxWithMuxJs: boolean;
   browserTransmuxMaxBytes: number;
@@ -82,8 +91,15 @@ export interface SettingsState {
   onboardingCompleted: boolean;
   uiLanguage: UiLanguage;
   setAdvancedMode: (enabled: boolean) => void;
+  setDownloadFromLoggedInSites: (enabled: boolean) => void;
   setPreviousSessionLimit: (limit: number) => void;
   setEnableNativeFeatures: (enabled: boolean) => void;
+  setUseNativeFfmpeg: (enabled: boolean) => void;
+  setUseNativeYtDlp: (enabled: boolean) => void;
+  setYtDlpDefaultQuality: (value: YtDlpQualityPreference) => void;
+  setYtDlpDefaultSubtitles: (value: YtDlpSubtitlePreference) => void;
+  setYtDlpBinaryPath: (value: string) => void;
+  setYtDlpCustomArgs: (value: string) => void;
   setEnableBrowserFallbacks: (enabled: boolean) => void;
   setBrowserTransmuxWithMuxJs: (enabled: boolean) => void;
   setBrowserTransmuxMaxBytes: (value: number) => void;
@@ -272,9 +288,17 @@ export const useSettingsStore = create<SettingsState>((set, get) => {
     setExternalPlayerProfiles: (profiles) =>
       setPersisted({ externalPlayerProfiles: profiles.map((profile) => ({ ...profile })) }),
     setAdvancedMode: (enabled) => setPersisted({ advancedMode: enabled }),
+    setDownloadFromLoggedInSites: (enabled) =>
+      setPersisted({ downloadFromLoggedInSites: enabled }),
     setPreviousSessionLimit: (limit) =>
       setPersisted({ previousSessionLimit: Math.max(0, Math.floor(limit)) }),
     setEnableNativeFeatures: (enabled) => setPersisted({ enableNativeFeatures: enabled }),
+    setUseNativeFfmpeg: (enabled) => setPersisted({ useNativeFfmpeg: enabled }),
+    setUseNativeYtDlp: (enabled) => setPersisted({ useNativeYtDlp: enabled }),
+    setYtDlpDefaultQuality: (value) => setPersisted({ ytDlpDefaultQuality: value }),
+    setYtDlpDefaultSubtitles: (value) => setPersisted({ ytDlpDefaultSubtitles: value }),
+    setYtDlpBinaryPath: (value) => setPersisted({ ytDlpBinaryPath: value.trim() }),
+    setYtDlpCustomArgs: (value) => setPersisted({ ytDlpCustomArgs: value }),
     setEnableBrowserFallbacks: (enabled) => setPersisted({ enableBrowserFallbacks: enabled }),
     setBrowserTransmuxWithMuxJs: (enabled) => setPersisted({ browserTransmuxWithMuxJs: enabled }),
     setBrowserTransmuxMaxBytes: (value) =>

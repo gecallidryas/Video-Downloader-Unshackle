@@ -32,6 +32,11 @@ export interface NativeYtDlpExportPayload {
   writeSubtitles?: boolean;
   trim?: NativeFfmpegTrim;
   headers?: Record<string, string>;
+  // Power-user overrides (advancedMode-gated upstream). The native helper is the
+  // trust boundary: it re-validates the binary path and denylists dangerous flags
+  // before spawning, so these never bypass the helper-owned-output/no-exec invariants.
+  binaryPath?: string;
+  extraArgs?: string[];
 }
 
 export interface NativeSidecarOutput {
@@ -378,6 +383,8 @@ function isYtDlpExportPayload(value: unknown): value is NativeYtDlpExportPayload
       'writeSubtitles',
       'trim',
       'headers',
+      'binaryPath',
+      'extraArgs',
     ]) &&
     isString(value.jobId) &&
     isHttpUrl(value.inputUrl) &&
@@ -388,7 +395,9 @@ function isYtDlpExportPayload(value: unknown): value is NativeYtDlpExportPayload
     (value.embedSubtitles === undefined || typeof value.embedSubtitles === 'boolean') &&
     (value.writeSubtitles === undefined || typeof value.writeSubtitles === 'boolean') &&
     isOptionalTrim(value.trim) &&
-    isOptionalHeaders(value.headers)
+    isOptionalHeaders(value.headers) &&
+    isOptionalString(value.binaryPath) &&
+    isOptionalStringArray(value.extraArgs)
   );
 }
 

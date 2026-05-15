@@ -3,8 +3,11 @@ import { defineConfig } from 'wxt';
 export default defineConfig({
   modules: ['@wxt-dev/module-react'],
   manifest: {
-    // Pins a deterministic extension ID (gljdakohnaibpophgamklloippklkdol) so the
-    // native messaging host manifest's allowed_origins stays valid across installs.
+    // Pins a deterministic extension ID (gljdakohnaibpophgamklloippklkdol) for
+    // unpacked/self-hosted builds only. The Chrome Web Store assigns its own ID and
+    // ignores this key, so native messaging no longer relies on it: the installer is
+    // generated from the live chrome.runtime.id at setup time (see
+    // src/native/generate-installer-bat.ts). This key just keeps the dev ID stable.
     key: 'MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAqavQuZ6CyD2gHgAImc79yLUVMErhDK2Mi1/EtjYcVqitps1ptBOpjdNLgRNG36kgMJAV9E0wtXf+u/G8cK9PC6Rd4++D9TY9KKQZx+EZvOWNMgtEJ3IwvhRvGqSg6ZXcN2m9Uk7xbOkLDd3OXFoHCnAT6CZ8aKNkquXTlSuMPZcAYtK9mzJ9KUqCLS2o/xfWcsakeV00LrLrTjBAukmELNMf+RXidv7J3q/gAYaLEiDzMKuopuJ7eVQVWo4Bin6IwbGpti8Qm8uuRI6TNGPzEgEmZRul+L7RrZAcfvtrxCD5NLKrpnT4b3ph7VgHMwweTHNwhJBiJMdk0cw/MlpzqwIDAQAB',
     name: 'Video Downloader - Unshackle',
     description: 'Detect and download HLS, DASH, and direct video/audio streams with a side-panel UI, queue management, and native FFmpeg export.',
@@ -30,6 +33,7 @@ export default defineConfig({
       'declarativeContent',
       'alarms',
       'notifications',
+      'declarativeNetRequest',
     ],
     host_permissions: ['<all_urls>'],
     optional_permissions: ['nativeMessaging'],

@@ -38,6 +38,7 @@ interface MediaCardProps {
   onProtectedProceed?: (
     policy: Extract<ProviderPolicyResult, { kind: 'authorized-workflow' }>,
   ) => void;
+  onOverrideDownload?: (kind: 'protected' | 'geo') => void;
   isDownloading?: boolean;
   showAssetDiagnostics?: boolean;
   posterDiagnostic?: string;
@@ -110,6 +111,7 @@ export function MediaCard({
   outputFilename,
   providerPolicy,
   onProtectedProceed,
+  onOverrideDownload,
   isDownloading = false,
   showAssetDiagnostics = false,
   posterDiagnostic,
@@ -465,6 +467,20 @@ export function MediaCard({
           >
             {downloadLabel}
           </button>
+          {isBlocked && primaryAction.overridable && onOverrideDownload ? (
+            <button
+              type="button"
+              className="media-card__override-btn"
+              onClick={() => onOverrideDownload(primaryAction.consentKind ?? 'protected')}
+              title={
+                primaryAction.consentKind === 'geo'
+                  ? 'Attempt this region-locked download anyway'
+                  : 'Download this protected media anyway'
+              }
+            >
+              Download anyway
+            </button>
+          ) : null}
         </div>
       </div>
       {showAssetDiagnostics && (posterDiagnostic || hoverDiagnostic) ? (

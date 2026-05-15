@@ -1,7 +1,11 @@
 [CmdletBinding()]
 param(
+  [Parameter(Mandatory = $true)]
   [ValidatePattern('^[a-p]{32}$')]
-  [string] $ExtensionId = 'gljdakohnaibpophgamklloippklkdol',
+  [string] $ExtensionId,
+
+  [ValidateSet('chrome', 'edge', 'brave', 'chromium')]
+  [string] $Browser = 'chrome',
 
   [string] $InstallDir = (Join-Path $env:LOCALAPPDATA 'VideoDownloaderUnshackle\native-host'),
 
@@ -140,7 +144,8 @@ if (-not $SkipRegister) {
   $Registration = Register-NativeHost `
     -ExtensionId $ExtensionId `
     -ManifestPath $ManifestPath `
-    -LauncherPath $LauncherPath
+    -LauncherPath $LauncherPath `
+    -Browser $Browser
 
   Write-Host "Installed native messaging host com.unshackle.ffmpeg"
   Write-Host "Manifest: $($Registration.ManifestPath)"

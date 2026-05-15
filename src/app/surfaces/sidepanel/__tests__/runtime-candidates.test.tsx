@@ -123,6 +123,7 @@ function buildRuntimeClient(candidates: MediaCandidate[]): RuntimeClient {
       progressPct: 0,
       bytesDownloaded: 0,
     }),
+    grantDownloadConsent: vi.fn().mockResolvedValue(['protected']),
   };
 }
 

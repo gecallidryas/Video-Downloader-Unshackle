@@ -314,6 +314,91 @@ describe('download controller decision flow', () => {
     expect(runHls).not.toHaveBeenCalled();
   });
 
+  test('routes page/site candidates to the yt-dlp engine when enabled', async () => {
+    const nativeExport = vi.fn().mockResolvedValue({ fileName: 'page.mp4', mimeType: 'video/mp4' });
+    const controller = createDownloadController({
+      downloadFile: vi.fn(),
+      runHls: vi.fn(),
+      runDash: vi.fn(),
+      nativeExport,
+    });
+
+    await controller.start(
+      candidate({ protocol: 'unknown', sourceUrl: undefined, manifestUrl: undefined, pageUrl: 'https://site.example/watch' }),
+      job(),
+      { selection: { mode: 'best' } },
+    );
+
+    expect(nativeExport).toHaveBeenCalledTimes(1);
+  });
+
+  test('errors clearly for page candidates when the yt-dlp engine is disabled', async () => {
+    const nativeExport = vi.fn();
+    const controller = createDownloadController({
+      downloadFile: vi.fn(),
+      runHls: vi.fn(),
+      runDash: vi.fn(),
+      nativeExport,
+      useNativeYtDlp: false,
+    });
+
+    await expect(
+      controller.start(
+        candidate({ protocol: 'unknown', sourceUrl: undefined, manifestUrl: undefined, pageUrl: 'https://site.example/watch' }),
+        job(),
+        { selection: { mode: 'best' } },
+      ),
+    ).rejects.toThrow(/yt-dlp engine/);
+
+    expect(nativeExport).not.toHaveBeenCalled();
+  });
+
+  test('skips the native ffmpeg engine for HLS when it is disabled, preferring the browser runner', async () => {
+    const nativeExport = vi.fn();
+    const runHls = vi.fn().mockResolvedValue({ fileName: 'hls.mp4', mimeType: 'video/mp4' });
+    const fetchText = vi.fn().mockResolvedValue('#EXTM3U\n#EXTINF:1,\nseg.ts\n#EXT-X-ENDLIST');
+    const controller = createDownloadController({
+      downloadFile: vi.fn(),
+      runHls,
+      runDash: vi.fn(),
+      fetchText,
+      nativeExport,
+      useNativeFfmpeg: false,
+    });
+
+    await controller.start(
+      candidate({ protocol: 'hls', sourceUrl: undefined, manifestUrl: 'https://cdn.example.com/master.m3u8' }),
+      job(),
+      { selection: { mode: 'best' } },
+    );
+
+    expect(nativeExport).not.toHaveBeenCalled();
+    expect(runHls).toHaveBeenCalledTimes(1);
+  });
+
+  test('errors for page candidates when the yt-dlp engine is disabled even with browser fallbacks on', async () => {
+    const nativeExport = vi.fn();
+    const runHls = vi.fn();
+    const controller = createDownloadController({
+      downloadFile: vi.fn(),
+      runHls,
+      runDash: vi.fn(),
+      nativeExport,
+      useNativeYtDlp: false,
+      enableBrowserFallbacks: true,
+    });
+
+    await expect(
+      controller.start(
+        candidate({ protocol: 'blob', sourceUrl: undefined, manifestUrl: undefined, pageUrl: 'https://site.example/v' }),
+        job(),
+        { selection: { mode: 'best' } },
+      ),
+    ).rejects.toThrow(/yt-dlp engine/);
+
+    expect(runHls).not.toHaveBeenCalled();
+  });
+
   test('skips native export when native features are disabled', async () => {
     const nativeExport = vi.fn();
     const runHls = vi.fn().mockResolvedValue({ fileName: 'hls.ts', mimeType: 'video/mp2t' });

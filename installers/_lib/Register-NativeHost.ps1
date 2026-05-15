@@ -1,3 +1,20 @@
+function Get-NativeHostRegistrySubkey {
+  [CmdletBinding()]
+  param(
+    [ValidateSet('chrome', 'edge', 'brave', 'chromium')]
+    [string] $Browser = 'chrome'
+  )
+
+  $HiveSubkeys = @{
+    chrome   = 'Software\Google\Chrome\NativeMessagingHosts\com.unshackle.ffmpeg'
+    edge     = 'Software\Microsoft\Edge\NativeMessagingHosts\com.unshackle.ffmpeg'
+    brave    = 'Software\BraveSoftware\Brave-Browser\NativeMessagingHosts\com.unshackle.ffmpeg'
+    chromium = 'Software\Chromium\NativeMessagingHosts\com.unshackle.ffmpeg'
+  }
+
+  return $HiveSubkeys[$Browser]
+}
+
 function Register-NativeHost {
   [CmdletBinding()]
   param(
@@ -6,7 +23,10 @@ function Register-NativeHost {
 
     [string] $ManifestPath,
 
-    [string] $LauncherPath
+    [string] $LauncherPath,
+
+    [ValidateSet('chrome', 'edge', 'brave', 'chromium')]
+    [string] $Browser = 'chrome'
   )
 
   $ManifestDir = Split-Path -Parent $ManifestPath
@@ -23,8 +43,8 @@ function Register-NativeHost {
   }
   $Manifest | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath $ManifestPath -Encoding UTF8
 
-  $RegistryPath = 'HKCU:\Software\Google\Chrome\NativeMessagingHosts\com.unshackle.ffmpeg'
-  $RegistrySubkey = 'Software\Google\Chrome\NativeMessagingHosts\com.unshackle.ffmpeg'
+  $RegistrySubkey = Get-NativeHostRegistrySubkey -Browser $Browser
+  $RegistryPath = "HKCU:\$RegistrySubkey"
   $RegistryKey = [Microsoft.Win32.Registry]::CurrentUser.CreateSubKey($RegistrySubkey)
   if (-not $RegistryKey) {
     throw "Could not create $RegistryPath"
@@ -39,5 +59,6 @@ function Register-NativeHost {
   return [pscustomobject]@{
     ManifestPath = $ManifestPath
     RegistryPath = $RegistryPath
+    Browser = $Browser
   }
 }

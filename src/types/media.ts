@@ -37,6 +37,10 @@ export interface MediaPrimaryAction {
   kind: 'download' | 'blocked';
   label: string;
   reason?: string;
+  /** When true, the block can be lifted with an explicit inline consent. */
+  overridable?: boolean;
+  /** Consent kind to grant before retrying the download. */
+  consentKind?: 'protected' | 'geo';
 }
 
 export interface DetectedMedia {

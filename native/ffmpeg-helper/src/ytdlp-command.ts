@@ -18,10 +18,12 @@ export type YtDlpExportPayload = {
   writeSubtitles?: boolean;
   trim?: YtDlpTrim;
   headers?: Record<string, string>;
+  binaryPath?: string;
+  extraArgs?: string[];
 };
 
 export type YtDlpCommandPlan = {
-  file: 'yt-dlp';
+  file: string;
   args: string[];
   outputPath: string;
 };
@@ -38,6 +40,30 @@ export const YTDLP_PROGRESS_PREFIX = '[unshackle-progress]';
 
 const QUALITIES = new Set<YtDlpQuality>(['best', 'best-mp4', 'worst', 'audio-only']);
 const HELPER_DIR_NAME = 'VideoDownloaderUnshackle';
+
+// Flags rejected from user-supplied extra args. These would either break the
+// helper-owned-output invariant (output redirection) or allow arbitrary command
+// execution / loading attacker-controlled config, so they are stripped at the
+// trust boundary regardless of what the extension sends.
+const DENIED_EXTRA_FLAGS = new Set<string>([
+  '-o',
+  '--output',
+  '-p',
+  '--paths',
+  '--exec',
+  '--exec-before-download',
+  '--config-location',
+  '--config',
+  '--batch-file',
+  '-a',
+  '--load-info-json',
+  '--load-info',
+  '--ffmpeg-location',
+  '--external-downloader',
+  '--downloader',
+  '--postprocessor-args',
+  '--ppa',
+]);
 
 export function extensionForYtDlpQuality(quality: YtDlpQuality): string {
   return quality === 'audio-only' ? 'mp3' : 'mp4';
@@ -70,11 +96,64 @@ export function buildYtDlpArgs(
     args.push('--ffmpeg-location', options.ffmpegLocation);
   }
 
+  // Extra args are appended before our `-o`/`--`, so even a sanitizer miss cannot
+  // displace the helper-owned output (last `-o` wins) or be parsed as the URL.
+  args.push(...sanitizeExtraArgs(payload.extraArgs));
+
   args.push('-o', output);
   // `--` stops option parsing so a URL beginning with `-` cannot be read as a flag.
   args.push('--', input);
 
-  return { file: 'yt-dlp', args, outputPath: output };
+  return { file: resolveBinary(payload.binaryPath), args, outputPath: output };
+}
+
+function resolveBinary(binaryPath: string | undefined): string {
+  if (binaryPath === undefined) {
+    return 'yt-dlp';
+  }
+
+  const trimmed = binaryPath.trim();
+  if (trimmed.length === 0) {
+    return 'yt-dlp';
+  }
+
+  if (trimmed !== binaryPath || /[\r\n\0]/.test(trimmed)) {
+    throw new Error('Invalid yt-dlp binary path.');
+  }
+
+  return trimmed;
+}
+
+function sanitizeExtraArgs(extraArgs: string[] | undefined): string[] {
+  if (!extraArgs || extraArgs.length === 0) {
+    return [];
+  }
+
+  const cleaned: string[] = [];
+  for (let i = 0; i < extraArgs.length; i += 1) {
+    const arg = extraArgs[i];
+    if (typeof arg !== 'string' || arg.length === 0 || /[\r\n\0]/.test(arg)) {
+      continue;
+    }
+
+    // Match both `--flag` and `--flag=value` forms against the denylist.
+    const hasInlineValue = arg.startsWith('-') && arg.includes('=');
+    const flagName = arg.startsWith('-') ? arg.split('=', 1)[0].toLowerCase() : '';
+    if (flagName.length > 0 && DENIED_EXTRA_FLAGS.has(flagName)) {
+      // Every denied flag takes a value. In separate-token form (`--exec X`),
+      // also drop the following token so its value can't leak through as a bare
+      // positional (which yt-dlp would treat as an extra input). The `--flag=value`
+      // form carries its value inline, so only the single token is dropped.
+      if (!hasInlineValue) {
+        i += 1;
+      }
+      continue;
+    }
+
+    cleaned.push(arg);
+  }
+
+  return cleaned;
 }
 
 function addFormatArgs(args: string[], quality: YtDlpQuality): void {

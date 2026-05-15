@@ -38,6 +38,30 @@ export interface NativeExportRunnerInput {
   readFullOutput?: (input: ReadFullNativeOutputInput) => Promise<Blob>;
   deliverOutput?: DeliverNativeOutput;
   headers?: Record<string, string>;
+  // Advanced-mode yt-dlp overrides. The native helper re-validates and denylists
+  // these, so they are forwarded as-is and only apply to page (yt-dlp) exports.
+  ytDlpBinaryPath?: string;
+  ytDlpCustomArgs?: string;
+}
+
+export function parseYtDlpCustomArgs(raw: string | undefined): string[] {
+  if (!raw) {
+    return [];
+  }
+
+  const tokens: string[] = [];
+  // Split on whitespace while honoring single/double quotes so values like
+  // --user-agent "Mozilla/5.0 ..." survive as one argument.
+  const pattern = /"([^"]*)"|'([^']*)'|(\S+)/g;
+  let match: RegExpExecArray | null;
+  while ((match = pattern.exec(raw)) !== null) {
+    const token = match[1] ?? match[2] ?? match[3] ?? '';
+    if (token.length > 0 && !/[\r\n\0]/.test(token)) {
+      tokens.push(token);
+    }
+  }
+
+  return tokens;
 }
 
 const PROGRESS_PHASE_MAP: Record<string, DownloadJob['phase']> = {
@@ -296,6 +320,8 @@ export async function runNativeExportJob({
   readFullOutput,
   deliverOutput,
   headers,
+  ytDlpBinaryPath,
+  ytDlpCustomArgs,
 }: NativeExportRunnerInput): Promise<JobOutput> {
   if (isProtected(candidate)) {
     throw new Error('Protected media cannot be exported by the native helper.');
@@ -312,6 +338,8 @@ export async function runNativeExportJob({
       readFullOutput,
       deliverOutput,
       headers,
+      ytDlpBinaryPath,
+      ytDlpCustomArgs,
     });
   }
 
@@ -376,9 +404,23 @@ async function runYtDlpExport(input: {
   readFullOutput?: (input: ReadFullNativeOutputInput) => Promise<Blob>;
   deliverOutput?: DeliverNativeOutput;
   headers?: Record<string, string>;
+  ytDlpBinaryPath?: string;
+  ytDlpCustomArgs?: string;
 }): Promise<JobOutput> {
-  const { candidate, job, nativeClient, jobStore, readFullOutput, deliverOutput, headers } = input;
+  const {
+    candidate,
+    job,
+    nativeClient,
+    jobStore,
+    readFullOutput,
+    deliverOutput,
+    headers,
+    ytDlpBinaryPath,
+    ytDlpCustomArgs,
+  } = input;
   const quality = mapYtDlpQuality(job);
+  const binaryPath = ytDlpBinaryPath?.trim();
+  const extraArgs = parseYtDlpCustomArgs(ytDlpCustomArgs);
   const outputKind: NativeFfmpegOutputKind = quality === 'audio-only' ? 'audio-only' : 'mp4';
   const outputName = outputNameFor(candidate, outputKind);
 
@@ -411,6 +453,8 @@ async function runYtDlpExport(input: {
         : {}),
       ...(job.selection.trim ? { trim: job.selection.trim } : {}),
       ...(headers ? { headers } : {}),
+      ...(binaryPath ? { binaryPath } : {}),
+      ...(extraArgs.length > 0 ? { extraArgs } : {}),
     },
     {
       onProgress: (progress) => {

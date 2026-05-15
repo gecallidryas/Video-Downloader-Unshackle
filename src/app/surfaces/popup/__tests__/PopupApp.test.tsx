@@ -142,7 +142,7 @@ test('renders source-equivalent download settings in the sectioned settings surf
   );
   expect(screen.getByRole('combobox', { name: /preview mode/i })).toHaveValue('image');
   expect(screen.getByRole('combobox', { name: /preview format/i })).toHaveValue('webm');
-  expect(screen.getByRole('checkbox', { name: /native ffmpeg features/i })).toBeChecked();
+  expect(screen.getByRole('checkbox', { name: /native ffmpeg and yt-dlp features/i })).toBeChecked();
   expect(screen.getByRole('checkbox', { name: /use direct-to-disk when available/i })).not.toBeChecked();
   expect(screen.getByRole('checkbox', { name: /remember output folder/i })).not.toBeChecked();
   expect(screen.getByRole('button', { name: /choose output folder/i })).toBeInTheDocument();
@@ -231,25 +231,12 @@ test('theme selection persists to the settings store and document token hook', a
   expect(document.documentElement).toHaveAttribute('data-theme', 'light');
 });
 
-test('popup shows first-run onboarding before settings rows when helper is not ready', async () => {
-  const user = userEvent.setup();
-  render(<PopupApp />);
-  const onboarding = await screen.findByLabelText(/welcome to unshackle/i);
-
-  expect(onboarding).toBeInTheDocument();
-  expect(screen.getByText(/find downloadable video and audio/i)).toBeInTheDocument();
-  await user.click(within(onboarding).getByRole('button', { name: /next/i }));
-  expect(within(onboarding).getByRole('button', { name: /view on github/i })).toBeInTheDocument();
-  await user.click(within(onboarding).getByRole('button', { name: /next/i }));
-  expect(within(onboarding).getByRole('radio', { name: /dark/i })).toBeInTheDocument();
-});
-
 test('settings toggles native features and browser fallbacks independently', async () => {
   useSettingsStore.setState({ advancedMode: true });
   const user = userEvent.setup();
   render(<PopupApp />);
 
-  await user.click(screen.getByRole('checkbox', { name: /native ffmpeg features/i }));
+  await user.click(screen.getByRole('checkbox', { name: /native ffmpeg and yt-dlp features/i }));
   await user.click(screen.getByRole('checkbox', { name: /browser fallbacks/i }));
 
   expect(useSettingsStore.getState().enableNativeFeatures).toBe(false);
@@ -290,89 +277,21 @@ test('settings cleanup button clears browser extension media storage', async () 
   expect(await screen.findByText(/cleaned 2 orphaned fragment buckets and 2 cached detection records/i)).toBeInTheDocument();
 });
 
-test('popup onboarding lets the user choose theme', async () => {
+test('settings exposes a replay setup button only when embedded with a replay handler', async () => {
   const user = userEvent.setup();
-  render(<PopupApp />);
+  const onReplayOnboarding = vi.fn();
+  render(<PopupApp embedded onReplayOnboarding={onReplayOnboarding} />);
 
-  await user.click(await screen.findByRole('button', { name: /next/i }));
-  await user.click(await screen.findByRole('button', { name: /next/i }));
-  await user.click(await screen.findByRole('radio', { name: /light/i }));
+  await user.click(await screen.findByRole('button', { name: /replay setup/i }));
 
-  expect(useSettingsStore.getState().theme).toBe('light');
+  expect(onReplayOnboarding).toHaveBeenCalledTimes(1);
 });
 
-test('completing onboarding stores onboardingCompleted', async () => {
-  nativeMocks.checkNativeHelperReadiness.mockResolvedValue(diagnostic('ready'));
-  const user = userEvent.setup();
-  render(<PopupApp />);
-
-  for (let index = 0; index < 6; index += 1) {
-    await user.click(await screen.findByRole('button', { name: /next/i }));
-  }
-  await user.click(await screen.findByRole('button', { name: /finish/i }));
-
-  expect(useSettingsStore.getState().onboardingCompleted).toBe(true);
-});
-
-test('Enable native helper requests optional permission and rechecks readiness after grant', async () => {
-  nativeMocks.requestNativeMessagingPermission.mockResolvedValue(true);
-  nativeMocks.checkNativeHelperReadiness
-    .mockResolvedValueOnce(diagnostic('permission-needed'))
-    .mockResolvedValueOnce(diagnostic('host-missing'));
-  const user = userEvent.setup();
-  render(<PopupApp />);
-  const onboarding = await screen.findByLabelText(/welcome to unshackle/i);
-  for (let index = 0; index < 5; index += 1) {
-    await user.click(within(onboarding).getByRole('button', { name: /next/i }));
-  }
-  const enableButton = await within(onboarding).findByRole('button', {
-    name: /allow native messaging/i,
-  });
-
-  await user.click(enableButton);
-
-  expect(nativeMocks.requestNativeMessagingPermission).toHaveBeenCalledTimes(1);
-  expect(nativeMocks.checkNativeHelperReadiness).toHaveBeenCalledTimes(2);
-  expect(useSettingsStore.getState().nativeHelperPermissionPrompted).toBe(true);
-});
-
-test('host-missing state shows PowerShell setup action without implying silent install', async () => {
-  nativeMocks.checkNativeHelperReadiness.mockResolvedValue(diagnostic('host-missing'));
-  const user = userEvent.setup();
-  render(<PopupApp />);
-  const onboarding = await screen.findByLabelText(/welcome to unshackle/i);
-  for (let index = 0; index < 6; index += 1) {
-    await user.click(within(onboarding).getByRole('button', { name: /next/i }));
-  }
-
-  expect(await screen.findByText(/setup page explains helper registration/i)).toBeInTheDocument();
-  expect(await within(onboarding).findByRole('button', { name: /open setup/i })).toBeInTheDocument();
-  expect(screen.queryByText(/installed automatically/i)).not.toBeInTheDocument();
-});
-
-test('open-source screen uses the repository github url', async () => {
-  const user = userEvent.setup();
-  render(<PopupApp />);
-
-  await user.click(await screen.findByRole('button', { name: /next/i }));
-  await user.click(await screen.findByRole('button', { name: /view on github/i }));
-
-  expect(window.open).toHaveBeenCalledWith(
-    'https://github.com/gecallidryas/Video-Downloader-Unshackle',
-    '_blank',
-    'noopener,noreferrer',
-  );
-});
-
-test('dismissed onboarding does not render on next popup open', async () => {
-  const user = userEvent.setup();
-  const { unmount } = render(<PopupApp />);
-
-  await user.click(await screen.findByRole('button', { name: /close onboarding/i }));
-  unmount();
+test('standalone popup does not render onboarding or a replay button', () => {
   render(<PopupApp />);
 
   expect(screen.queryByText(/welcome to unshackle/i)).not.toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: /replay setup/i })).not.toBeInTheDocument();
 });
 
 test('edits, exports, imports, and resets capture rules', async () => {

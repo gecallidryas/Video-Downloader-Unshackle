@@ -3,7 +3,45 @@ import {
   DEFAULT_SETTINGS,
   SETTINGS_STORAGE_KEY,
   createSettingsStore,
+  credentialReplayEnabled,
+  normalizeSettings,
 } from '../settings-store';
+
+describe('credentialReplayEnabled', () => {
+  test('off by default; enabled by the single toggle or the legacy advanced pair', () => {
+    expect(
+      credentialReplayEnabled({
+        downloadFromLoggedInSites: false,
+        advancedMode: false,
+        captureCredentialHeaders: false,
+      }),
+    ).toBe(false);
+
+    expect(
+      credentialReplayEnabled({
+        downloadFromLoggedInSites: true,
+        advancedMode: false,
+        captureCredentialHeaders: false,
+      }),
+    ).toBe(true);
+
+    expect(
+      credentialReplayEnabled({
+        downloadFromLoggedInSites: false,
+        advancedMode: true,
+        captureCredentialHeaders: true,
+      }),
+    ).toBe(true);
+
+    expect(
+      credentialReplayEnabled({
+        downloadFromLoggedInSites: false,
+        advancedMode: true,
+        captureCredentialHeaders: false,
+      }),
+    ).toBe(false);
+  });
+});
 
 describe('background settings store', () => {
   test('loads source-compatible defaults for downloader services', async () => {
@@ -56,6 +94,12 @@ describe('background settings store', () => {
       previousSessionLimit: 50,
       externalPlayerProfiles: [],
       enableNativeFeatures: true,
+      useNativeFfmpeg: true,
+      useNativeYtDlp: true,
+      ytDlpDefaultQuality: 'best-mp4',
+      ytDlpDefaultSubtitles: 'none',
+      ytDlpBinaryPath: '',
+      ytDlpCustomArgs: '',
       enableBrowserFallbacks: true,
       browserTransmuxWithMuxJs: true,
       browserTransmuxMaxBytes: 157_286_400,
@@ -67,7 +111,7 @@ describe('background settings store', () => {
       nativeHelperLastReadiness: 'not-checked',
       onboardingCompleted: false,
       uiLanguage: 'en',
-      _schemaVersion: 14,
+      _schemaVersion: 18,
     });
   });
 
@@ -248,7 +292,25 @@ describe('background settings store', () => {
       autoDeleteAfterSave: false,
       onboardingCompleted: false,
       uiLanguage: 'en',
-      _schemaVersion: 14,
+      _schemaVersion: 18,
+    });
+  });
+
+  test('yt-dlp page defaults normalize invalid values back to defaults', () => {
+    expect(
+      normalizeSettings({ ytDlpDefaultQuality: 'bogus', ytDlpDefaultSubtitles: 42 }),
+    ).toMatchObject({
+      ytDlpDefaultQuality: 'best-mp4',
+      ytDlpDefaultSubtitles: 'none',
+    });
+  });
+
+  test('yt-dlp page defaults preserve valid stored values', () => {
+    expect(
+      normalizeSettings({ ytDlpDefaultQuality: 'audio', ytDlpDefaultSubtitles: 'both' }),
+    ).toMatchObject({
+      ytDlpDefaultQuality: 'audio',
+      ytDlpDefaultSubtitles: 'both',
     });
   });
 });

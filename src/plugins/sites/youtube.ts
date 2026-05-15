@@ -130,7 +130,7 @@ export function createYouTubeDetector(): DetectorPlugin {
             status: 'unsupported',
             code: 'signature-required',
             message:
-              'YouTube streams require signature decryption; no clear formats available.',
+              'YouTube streams are signature-protected. Use "Download this page (yt-dlp)" — the yt-dlp engine handles signature decryption. Requires the native helper.',
             sourcePluginId: pluginId,
             details: { title, encryptedCount: encryptedFormats.length },
           }),

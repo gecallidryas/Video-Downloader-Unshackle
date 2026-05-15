@@ -77,6 +77,39 @@ describe('native ffmpeg message contract', () => {
     expect(isNativeFfmpegRequest(request)).toBe(true);
   });
 
+  test('accepts EXPORT_YTDLP requests with binary path and extra args overrides', () => {
+    const request = createNativeRequest(
+      'EXPORT_YTDLP',
+      {
+        jobId: 'job-1',
+        inputUrl: 'https://example.com/watch?v=abc',
+        outputName: 'video.mp4',
+        quality: 'best',
+        binaryPath: 'C:\\tools\\yt-dlp.exe',
+        extraArgs: ['--limit-rate', '2M'],
+      },
+      'req-ytdlp-overrides',
+    );
+
+    expect(isNativeFfmpegRequest(request)).toBe(true);
+  });
+
+  test('rejects EXPORT_YTDLP requests with non-string extra args', () => {
+    expect(
+      isNativeFfmpegRequest({
+        type: 'EXPORT_YTDLP',
+        requestId: 'req-ytdlp-bad-args',
+        payload: {
+          jobId: 'job-1',
+          inputUrl: 'https://example.com/watch',
+          outputName: 'v.mp4',
+          quality: 'best',
+          extraArgs: ['--ok', 5],
+        },
+      }),
+    ).toBe(false);
+  });
+
   test('rejects EXPORT_YTDLP requests with a non-http input URL or unknown quality', () => {
     expect(
       isNativeFfmpegRequest({

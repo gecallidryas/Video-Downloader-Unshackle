@@ -92,7 +92,6 @@ jobs:
           $BundleHash = (Get-FileHash -LiteralPath $ZipPath -Algorithm SHA256).Hash.ToLowerInvariant()
           "$BundleHash  native-helper-$Version.zip" |
             Set-Content -LiteralPath "$ZipPath.sha256" -Encoding ascii
-          Copy-Item -Path installers/install-windows.ps1 -Destination release-assets -Force
 
       - uses: actions/upload-artifact@v4
         with:
@@ -120,4 +119,3 @@ jobs:
             artifacts/video-downloader-unshackle-${{ needs.version.outputs.version }}.zip.sha256
             artifacts/native-helper-${{ needs.version.outputs.version }}.zip
             artifacts/native-helper-${{ needs.version.outputs.version }}.zip.sha256
-            artifacts/install-windows.ps1

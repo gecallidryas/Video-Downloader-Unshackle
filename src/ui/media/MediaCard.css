@@ -318,6 +318,21 @@
   border-color: var(--error);
 }
 
+.media-card__override-btn {
+  font-size: 12px;
+  padding: 4px 10px;
+  border-radius: 6px;
+  color: var(--on-error-container);
+  background: transparent;
+  border: 1px solid var(--error);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.media-card__override-btn:hover {
+  background: var(--error-container);
+}
+
 .media-card__controls {
   display: grid;
   grid-template-columns: 1fr;

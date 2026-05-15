@@ -83,6 +83,8 @@ export interface EngineHandoff {
 export interface EngineHandoffPolicy {
   advancedMode?: boolean;
   captureCredentialHeaders?: boolean;
+  /** Single front-door toggle; when true it allows credentials regardless of advancedMode. */
+  downloadFromLoggedInSites?: boolean;
 }
 
 // Pure builder — does NOT call any native/yt-dlp path. Referer/Origin are always
@@ -102,7 +104,8 @@ export function buildEngineHandoff(
   }
 
   const credentialsAllowed =
-    policy.advancedMode === true && policy.captureCredentialHeaders === true;
+    policy.downloadFromLoggedInSites === true ||
+    (policy.advancedMode === true && policy.captureCredentialHeaders === true);
 
   if (!credentialsAllowed) {
     return { url: context.url, headers };

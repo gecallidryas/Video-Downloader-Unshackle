@@ -25,6 +25,8 @@ export type DefaultDownloadAction =
   | 'record_live';
 export type NotificationMode = 'each' | 'batched' | 'off';
 export type UiLanguage = 'en';
+export type YtDlpQualityPreference = 'best-mp4' | 'best' | 'smallest' | 'audio';
+export type YtDlpSubtitlePreference = 'none' | 'embed' | 'sidecar' | 'both';
 
 export interface ProviderDefaultSettings {
   quality: PreferredQuality;
@@ -72,6 +74,10 @@ export interface UnifiedSettings {
   previewFormat: PreviewFormat;
   suppressProtectedDownloads: boolean;
   captureCredentialHeaders: boolean;
+  // Single user-facing front door for credential capture + replay. When true,
+  // captured Cookie/Authorization are reused on downloads from logged-in sites
+  // (browser DNR header replay + engine handoff), without requiring advancedMode.
+  downloadFromLoggedInSites: boolean;
   captureRuleCustomExtensions: string[];
   captureRuleCustomContentTypes: string[];
   captureRuleUrlBlacklist: string[];
@@ -91,6 +97,12 @@ export interface UnifiedSettings {
   previousSessionLimit: number;
   externalPlayerProfiles: ExternalPlayerProfile[];
   enableNativeFeatures: boolean;
+  useNativeFfmpeg: boolean;
+  useNativeYtDlp: boolean;
+  ytDlpDefaultQuality: YtDlpQualityPreference;
+  ytDlpDefaultSubtitles: YtDlpSubtitlePreference;
+  ytDlpBinaryPath: string;
+  ytDlpCustomArgs: string;
   enableBrowserFallbacks: boolean;
   browserTransmuxWithMuxJs: boolean;
   browserTransmuxMaxBytes: number;
@@ -138,6 +150,7 @@ export const DEFAULT_SETTINGS: UnifiedSettings = {
   previewFormat: 'webm',
   suppressProtectedDownloads: true,
   captureCredentialHeaders: false,
+  downloadFromLoggedInSites: false,
   captureRuleCustomExtensions: [],
   captureRuleCustomContentTypes: [],
   captureRuleUrlBlacklist: [],
@@ -157,6 +170,12 @@ export const DEFAULT_SETTINGS: UnifiedSettings = {
   previousSessionLimit: 50,
   externalPlayerProfiles: [],
   enableNativeFeatures: true,
+  useNativeFfmpeg: true,
+  useNativeYtDlp: true,
+  ytDlpDefaultQuality: 'best-mp4',
+  ytDlpDefaultSubtitles: 'none',
+  ytDlpBinaryPath: '',
+  ytDlpCustomArgs: '',
   enableBrowserFallbacks: true,
   browserTransmuxWithMuxJs: true,
   browserTransmuxMaxBytes: 150 * 1024 * 1024,
@@ -168,7 +187,7 @@ export const DEFAULT_SETTINGS: UnifiedSettings = {
   nativeHelperLastReadiness: 'not-checked',
   onboardingCompleted: false,
   uiLanguage: 'en',
-  _schemaVersion: 14,
+  _schemaVersion: 18,
 };
 
 const nativeHelperReadinessValues = new Set<NativeHelperReadiness>([
@@ -384,6 +403,32 @@ export function normalizeSettings(value: unknown): UnifiedSettings {
       typeof incoming.enableNativeFeatures === 'boolean'
         ? incoming.enableNativeFeatures
         : DEFAULT_SETTINGS.enableNativeFeatures,
+    useNativeFfmpeg:
+      typeof incoming.useNativeFfmpeg === 'boolean'
+        ? incoming.useNativeFfmpeg
+        : DEFAULT_SETTINGS.useNativeFfmpeg,
+    useNativeYtDlp:
+      typeof incoming.useNativeYtDlp === 'boolean'
+        ? incoming.useNativeYtDlp
+        : DEFAULT_SETTINGS.useNativeYtDlp,
+    ytDlpDefaultQuality: ['best-mp4', 'best', 'smallest', 'audio'].includes(
+      String(incoming.ytDlpDefaultQuality),
+    )
+      ? (incoming.ytDlpDefaultQuality as YtDlpQualityPreference)
+      : DEFAULT_SETTINGS.ytDlpDefaultQuality,
+    ytDlpDefaultSubtitles: ['none', 'embed', 'sidecar', 'both'].includes(
+      String(incoming.ytDlpDefaultSubtitles),
+    )
+      ? (incoming.ytDlpDefaultSubtitles as YtDlpSubtitlePreference)
+      : DEFAULT_SETTINGS.ytDlpDefaultSubtitles,
+    ytDlpBinaryPath:
+      typeof incoming.ytDlpBinaryPath === 'string' && !/[\r\n\0]/.test(incoming.ytDlpBinaryPath)
+        ? incoming.ytDlpBinaryPath.trim()
+        : DEFAULT_SETTINGS.ytDlpBinaryPath,
+    ytDlpCustomArgs:
+      typeof incoming.ytDlpCustomArgs === 'string' && !/[\r\n\0]/.test(incoming.ytDlpCustomArgs)
+        ? incoming.ytDlpCustomArgs
+        : DEFAULT_SETTINGS.ytDlpCustomArgs,
     enableBrowserFallbacks:
       typeof incoming.enableBrowserFallbacks === 'boolean'
         ? incoming.enableBrowserFallbacks
@@ -429,6 +474,21 @@ export function normalizeSettings(value: unknown): UnifiedSettings {
     uiLanguage: incoming.uiLanguage === 'en' ? 'en' : DEFAULT_SETTINGS.uiLanguage,
     _schemaVersion: DEFAULT_SETTINGS._schemaVersion,
   };
+}
+
+// Effective credential capture/replay gate. The single `downloadFromLoggedInSites`
+// toggle is the user-facing front door; the legacy advancedMode + captureCredentialHeaders
+// combination still works for power users who configured it directly.
+export function credentialReplayEnabled(
+  settings: Pick<
+    UnifiedSettings,
+    'downloadFromLoggedInSites' | 'advancedMode' | 'captureCredentialHeaders'
+  >,
+): boolean {
+  return (
+    settings.downloadFromLoggedInSites === true ||
+    (settings.advancedMode === true && settings.captureCredentialHeaders === true)
+  );
 }
 
 function defaultStorage(): SettingsStorageAdapter | undefined {
