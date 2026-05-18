@@ -21,6 +21,8 @@ jobs:
           $Version = "${{ github.ref_name }}"
           "version=$Version" >> $env:GITHUB_OUTPUT
 
+  # Sideload / GitHub-channel extension zip (load-unpacked). The Chrome Web Store
+  # build is uploaded to the CWS dashboard separately and does not use this asset.
   build-extension:
     needs: version
     runs-on: windows-latest
@@ -113,7 +115,26 @@ jobs:
       - name: Publish GitHub release
         uses: softprops/action-gh-release@v2
         with:
-          # TODO: replace <OWNER>/<REPO> placeholders in installer links before public release.
+          body: |
+            ## Video Downloader — Unshackle ${{ needs.version.outputs.version }}
+
+            ### Most users: install from the Chrome Web Store
+            The Web Store build auto-updates and does **not** use the assets below
+            for the extension itself. You only need the **native helper** (optional,
+            for local FFmpeg + yt-dlp) — and the extension downloads & installs that
+            for you from this release. Nothing to grab here manually.
+
+            ### Sideload / GitHub build (no Web Store)
+            - **`video-downloader-unshackle-${{ needs.version.outputs.version }}.zip`** — the
+              extension itself, for `chrome://extensions` → *Load unpacked* (unzip first).
+              Web Store users can ignore this.
+
+            ### Native helper bundle (both channels)
+            - **`native-helper-${{ needs.version.outputs.version }}.zip`** — compiled FFmpeg/yt-dlp
+              native messaging helper. **Do not download manually** — the extension's
+              "Download installer" button generates a setup script that fetches and
+              verifies this for your exact extension ID. Listed here for transparency.
+            - `*.sha256` — checksums the installer verifies automatically.
           files: |
             artifacts/video-downloader-unshackle-${{ needs.version.outputs.version }}.zip
             artifacts/video-downloader-unshackle-${{ needs.version.outputs.version }}.zip.sha256
