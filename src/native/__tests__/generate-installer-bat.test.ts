@@ -100,6 +100,14 @@ describe('generateNativeHostInstallerBat', () => {
     expect(bat).not.toContain('-MaximumRedirection 0');
   });
 
+  it('extracts the bundle to a staging dir, never the install dir', () => {
+    const bat = build();
+    // The bundle script copies its own dist/ into -InstallDir; extracting into the
+    // install dir would make source == destination ("overwrite item with itself").
+    expect(bat).toContain("Join-Path $StageDir 'scripts\\install-windows.ps1'");
+    expect(bat).not.toContain('Expand-NativeHelperBundle -ZipPath $ZipPath -Destination $InstallDir');
+  });
+
   it('is robust on Windows PowerShell 5.1 (TLS 1.2 + basic parsing)', () => {
     const bat = build();
     expect(bat).toContain('Tls12');
