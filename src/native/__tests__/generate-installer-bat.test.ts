@@ -88,4 +88,26 @@ describe('generateNativeHostInstallerBat', () => {
     expect(bat).toContain("Get-CommandVersionLine -Command 'ffmpeg'");
     expect(bat).toContain("Get-CommandVersionLine -Command 'yt-dlp'");
   });
+
+  it('resolves the latest version via the GitHub API rather than redirect parsing', () => {
+    const bat = build();
+    // Derives owner/repo from the release base URL and queries the JSON API.
+    expect(bat).toContain('https://api.github.com/repos/');
+    expect(bat).toContain('Invoke-RestMethod');
+    expect(bat).toContain('$Release.tag_name');
+    expect(bat).toContain("'User-Agent'");
+    // The fragile PS 5.1 redirect-parsing path must be gone.
+    expect(bat).not.toContain('-MaximumRedirection 0');
+  });
+
+  it('is robust on Windows PowerShell 5.1 (TLS 1.2 + basic parsing)', () => {
+    const bat = build();
+    expect(bat).toContain('Tls12');
+    // Every web fetch must avoid the legacy IE DOM parser.
+    const fetches = bat.match(/Invoke-WebRequest[^\r\n]*/g) ?? [];
+    expect(fetches.length).toBeGreaterThan(0);
+    for (const call of fetches) {
+      expect(call).toContain('-UseBasicParsing');
+    }
+  });
 });
