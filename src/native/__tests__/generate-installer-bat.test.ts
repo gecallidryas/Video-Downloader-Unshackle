@@ -108,6 +108,14 @@ describe('generateNativeHostInstallerBat', () => {
     expect(bat).not.toContain('Expand-NativeHelperBundle -ZipPath $ZipPath -Destination $InstallDir');
   });
 
+  it('auto-resets a stale install dir so reruns need no manual cleanup', () => {
+    const bat = build();
+    expect(bat).toContain('function Reset-InstallDir');
+    expect(bat).toContain('Reset-InstallDir -Target $InstallDir');
+    expect(bat).toContain('Stop-Process');
+    expect(bat).toContain('Remove-Item -LiteralPath $Target -Recurse -Force');
+  });
+
   it('is robust on Windows PowerShell 5.1 (TLS 1.2 + basic parsing)', () => {
     const bat = build();
     expect(bat).toContain('Tls12');
