@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'vitest';
+import { describe, expect, test, vi } from 'vitest';
 import type {
   ActiveTabSnapshot,
   MediaCandidate,
@@ -63,6 +63,39 @@ describe('candidate registry', () => {
     expect(registry.get(8)).toEqual([tabEightCandidate]);
     expect(registry.get(99)).toEqual([]);
     expect(registry.tabIds()).toEqual([7, 8]);
+  });
+
+  test('setDuration patches a stored candidate and returns the updated record', () => {
+    const registry = createCandidateRegistry();
+    registry.set(7, [buildCandidate({ id: 'candidate-1' })]);
+
+    const updated = registry.setDuration('candidate-1', 42.5);
+
+    expect(updated?.durationSec).toBe(42.5);
+    expect(registry.findById('candidate-1')?.durationSec).toBe(42.5);
+  });
+
+  test('setDuration schedules a persistence write via onChange', () => {
+    const onChange = vi.fn();
+    const registry = createCandidateRegistry({ onChange });
+    registry.set(7, [buildCandidate({ id: 'candidate-1' })]);
+    onChange.mockClear();
+
+    registry.setDuration('candidate-1', 30);
+    expect(onChange).toHaveBeenCalledTimes(1);
+
+    // Unchanged value short-circuits before persisting.
+    registry.setDuration('candidate-1', 30);
+    expect(onChange).toHaveBeenCalledTimes(1);
+  });
+
+  test('setDuration ignores unknown candidates and non-positive values', () => {
+    const registry = createCandidateRegistry();
+    registry.set(7, [buildCandidate({ id: 'candidate-1', durationSec: 10 })]);
+
+    expect(registry.setDuration('missing', 30)).toBeUndefined();
+    expect(registry.setDuration('candidate-1', 0)).toBeUndefined();
+    expect(registry.findById('candidate-1')?.durationSec).toBe(10);
   });
 
   test('normalizes stored candidates to the tab bucket id', () => {

@@ -172,4 +172,53 @@ describe('QueueItem overflow menu', () => {
     expect(onAction).toHaveBeenCalledWith('retry-failed-segments', 'job-1');
     expect(onAction).toHaveBeenCalledWith('export-partial', 'job-1');
   });
+
+  test('renders live HLS telemetry when present', () => {
+    render(
+      <QueueItem
+        item={{
+          ...baseItem,
+          status: 'running',
+          progressPct: 40,
+          liveHlsTelemetry: {
+            state: 'idle',
+            lastSequence: 128,
+            totalRefreshes: 9,
+            noNewSegmentRetries: 4,
+          },
+        }}
+        onAction={() => {}}
+      />,
+    );
+
+    expect(screen.getByText(/live idle/i)).toBeInTheDocument();
+    expect(screen.getByText(/seq 128/i)).toBeInTheDocument();
+    expect(screen.getByText(/4 idle retries/i)).toBeInTheDocument();
+  });
+
+  test('offers skip-ads and repair actions for HLS jobs and emits them', async () => {
+    const user = userEvent.setup();
+    const onAction = vi.fn();
+    render(
+      <QueueItem
+        item={{
+          ...baseItem,
+          segments: [
+            { index: 0, status: 'done' },
+            { index: 1, status: 'done' },
+          ],
+          discontinuityPolicy: 'include-all',
+        }}
+        onAction={onAction}
+      />,
+    );
+
+    await user.click(screen.getByRole('button', { name: /more actions/i }));
+    await user.click(screen.getByRole('menuitem', { name: /skip ad discontinuities/i }));
+    expect(onAction).toHaveBeenCalledWith('skip-ads', 'job-1');
+
+    await user.click(screen.getByRole('button', { name: /more actions/i }));
+    await user.click(screen.getByRole('menuitem', { name: /repair segments by url pattern/i }));
+    expect(onAction).toHaveBeenCalledWith('repair-regex', 'job-1');
+  });
 });

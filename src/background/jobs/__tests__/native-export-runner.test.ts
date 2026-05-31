@@ -457,6 +457,7 @@ describe('runNativeExportJob', () => {
   test('stores selected subtitle text before native export so sidecars survive mux failure', async () => {
     const store = createInMemorySubtitleStore();
     const client = nativeClient();
+    const deliverOutput = vi.fn().mockResolvedValue(1);
     vi.mocked(client.exportMedia).mockRejectedValueOnce(new Error('mux failed'));
 
     await expect(
@@ -482,9 +483,12 @@ describe('runNativeExportJob', () => {
         nativeClient: client,
         subtitleStore: store,
         fetchText: vi.fn().mockResolvedValue('WEBVTT\n\n00:00.000 --> 00:01.000\nhello'),
+        readFullOutput: stubReadFullOutput(new Uint8Array([1])),
+        deliverOutput,
       }),
     ).rejects.toThrow('mux failed');
 
+    expect(deliverOutput).not.toHaveBeenCalled();
     await expect(store.listByJob('job-subtitle-store')).resolves.toEqual([
       expect.objectContaining({
         jobId: 'job-subtitle-store',
@@ -544,6 +548,171 @@ describe('runNativeExportJob', () => {
       {
         fileName: 'Clear video.en.vtt',
         mimeType: 'text/vtt',
+        sizeBytes: 37,
+      },
+    ]);
+  });
+
+  test('delivers fetched subtitle sidecars on the ffmpeg path when sidecar output is selected', async () => {
+    const store = createInMemorySubtitleStore();
+    const client = nativeClient();
+    const deliverOutput = vi.fn().mockResolvedValue(11);
+    const subtitleContent = 'WEBVTT\n\n00:00.000 --> 00:01.000\nhello';
+
+    const output = await runNativeExportJob({
+      candidate: candidate({
+        protocol: 'hls',
+        displayName: 'Clear video.mp4',
+        sourceUrl: undefined,
+        manifestUrl: 'https://cdn.example.com/master.m3u8',
+        subtitleTracks: [
+          {
+            id: 'sub-en',
+            kind: 'subtitle',
+            language: 'en',
+            label: 'English',
+            format: 'vtt',
+            url: 'https://cdn.example.com/subs/en.vtt',
+          },
+        ],
+      }),
+      job: job({
+        id: 'job-sidecar-deliver',
+        selection: {
+          mode: 'best',
+          subtitleTrackIds: ['sub-en'],
+          subtitleOutput: 'sidecar',
+        },
+      }),
+      nativeClient: client,
+      subtitleStore: store,
+      fetchText: vi.fn().mockResolvedValue(subtitleContent),
+      readFullOutput: stubReadFullOutput(new Uint8Array([1])),
+      deliverOutput,
+    });
+
+    expect(deliverOutput).toHaveBeenCalledWith(
+      expect.objectContaining({
+        fileName: 'Clear video.en.vtt',
+        mimeType: 'text/vtt',
+      }),
+    );
+    const subtitleCall = deliverOutput.mock.calls.find(
+      (call) => call[0].fileName === 'Clear video.en.vtt',
+    );
+    expect(subtitleCall).toBeDefined();
+    const deliveredBlob: Blob = subtitleCall![0].blob;
+    expect(Array.from(await blobBytes(deliveredBlob))).toEqual(
+      Array.from(new TextEncoder().encode(subtitleContent)),
+    );
+    expect(output.sidecarOutputs).toEqual([
+      {
+        fileName: 'Clear video.en.vtt',
+        mimeType: 'text/vtt',
+        sizeBytes: 37,
+      },
+    ]);
+  });
+
+  test('delivers both the video output and subtitle sidecar when subtitleOutput is both', async () => {
+    const store = createInMemorySubtitleStore();
+    const client = nativeClient();
+    const deliverOutput = vi.fn().mockResolvedValue(5);
+
+    const output = await runNativeExportJob({
+      candidate: candidate({
+        protocol: 'hls',
+        displayName: 'Clear video.mp4',
+        sourceUrl: undefined,
+        manifestUrl: 'https://cdn.example.com/master.m3u8',
+        subtitleTracks: [
+          {
+            id: 'sub-en',
+            kind: 'subtitle',
+            language: 'en',
+            label: 'English',
+            format: 'vtt',
+            url: 'https://cdn.example.com/subs/en.vtt',
+          },
+        ],
+      }),
+      job: job({
+        id: 'job-both-subtitles',
+        selection: {
+          mode: 'best',
+          subtitleTrackIds: ['sub-en'],
+          subtitleOutput: 'both',
+        },
+      }),
+      nativeClient: client,
+      subtitleStore: store,
+      fetchText: vi.fn().mockResolvedValue('WEBVTT\n\n00:00.000 --> 00:01.000\nhello'),
+      readFullOutput: stubReadFullOutput(new Uint8Array([1])),
+      deliverOutput,
+    });
+
+    expect(deliverOutput).toHaveBeenCalledWith(
+      expect.objectContaining({ fileName: 'clip.mp4' }),
+    );
+    expect(deliverOutput).toHaveBeenCalledWith(
+      expect.objectContaining({ fileName: 'Clear video.en.vtt', mimeType: 'text/vtt' }),
+    );
+    expect(output.sidecarOutputs).toEqual([
+      {
+        fileName: 'Clear video.en.vtt',
+        mimeType: 'text/vtt',
+        sizeBytes: 37,
+      },
+    ]);
+  });
+
+  test('falls back to delivering subtitles as sidecars on the ffmpeg embed path', async () => {
+    const store = createInMemorySubtitleStore();
+    const client = nativeClient();
+    const deliverOutput = vi.fn().mockResolvedValue(9);
+
+    const output = await runNativeExportJob({
+      candidate: candidate({
+        protocol: 'hls',
+        displayName: 'Clear video.mp4',
+        sourceUrl: undefined,
+        manifestUrl: 'https://cdn.example.com/master.m3u8',
+        subtitleTracks: [
+          {
+            id: 'sub-en',
+            kind: 'subtitle',
+            language: 'en',
+            label: 'English',
+            format: 'srt',
+            url: 'https://cdn.example.com/subs/en.srt',
+          },
+        ],
+      }),
+      job: job({
+        id: 'job-embed-fallback',
+        selection: {
+          mode: 'best',
+          subtitleTrackIds: ['sub-en'],
+          subtitleOutput: 'embed',
+        },
+      }),
+      nativeClient: client,
+      subtitleStore: store,
+      fetchText: vi.fn().mockResolvedValue('1\n00:00:00,000 --> 00:00:01,000\nhello'),
+      readFullOutput: stubReadFullOutput(new Uint8Array([1])),
+      deliverOutput,
+    });
+
+    expect(deliverOutput).toHaveBeenCalledWith(
+      expect.objectContaining({
+        fileName: 'Clear video.en.srt',
+        mimeType: 'application/x-subrip',
+      }),
+    );
+    expect(output.sidecarOutputs).toEqual([
+      {
+        fileName: 'Clear video.en.srt',
+        mimeType: 'application/x-subrip',
         sizeBytes: 37,
       },
     ]);

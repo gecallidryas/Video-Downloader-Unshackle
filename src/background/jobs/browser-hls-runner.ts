@@ -76,6 +76,8 @@ export interface RunBrowserHlsExportJobInput {
   onExportRoute?: (decision: BrowserHlsExportRouteDecision) => void;
   onOutputProgress?: (bytesWritten: number) => void;
   onExportPhase?: (phase: Extract<DownloadPhase, 'transmuxing' | 'exporting'>) => void;
+  fragmentStore?: Parameters<typeof runHlsJob>[0]['fragmentStore'];
+  onFragmentStored?: Parameters<typeof runHlsJob>[0]['onFragmentStored'];
   signal?: AbortSignal;
 }
 
@@ -373,6 +375,8 @@ export async function runBrowserHlsExportJob(
       bandwidthBytesPerSecond: input.bandwidthBytesPerSecond,
       segmentTimeoutMs: input.segmentTimeoutMs,
       qualityPolicy: input.qualityPolicy,
+      ...(input.fragmentStore ? { fragmentStore: input.fragmentStore } : {}),
+      ...(input.onFragmentStored ? { onFragmentStored: input.onFragmentStored } : {}),
       onPlan: async (plan) => {
         await input.onPlan?.(plan);
 

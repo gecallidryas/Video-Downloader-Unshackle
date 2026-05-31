@@ -134,6 +134,38 @@ test('renders downloaded-region progress bar when ranges provided', () => {
   expect(screen.getByRole('progressbar', { name: /downloaded preview region/i })).toBeInTheDocument();
 });
 
+test('surfaces the active HLS playback strategy', () => {
+  render(
+    <PreviewModal
+      open
+      title="HLS"
+      sourceUrl="https://cdn.example.com/master.m3u8"
+      protocol="hls"
+      onClose={() => {}}
+      onDownload={() => {}}
+    />,
+  );
+
+  const strategy = screen.getByTestId('preview-playback-strategy');
+  expect(strategy).toBeInTheDocument();
+  expect(strategy).toHaveAttribute('data-strategy', 'native');
+});
+
+test('does not surface playback strategy for direct sources', () => {
+  render(
+    <PreviewModal
+      open
+      title="Direct file"
+      sourceUrl="https://cdn.example.com/video.mp4"
+      protocol="direct"
+      onClose={() => {}}
+      onDownload={() => {}}
+    />,
+  );
+
+  expect(screen.queryByTestId('preview-playback-strategy')).not.toBeInTheDocument();
+});
+
 test('renders custom video player controls', () => {
   render(
     <PreviewModal

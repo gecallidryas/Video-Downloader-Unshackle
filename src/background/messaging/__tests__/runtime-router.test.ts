@@ -3,6 +3,7 @@ import { createHistoryStore } from '@/src/background/jobs/history-store';
 import { createJobStore } from '@/src/background/jobs/job-store';
 import { createRequestJournal } from '@/src/background/network/request-journal';
 import { createTabSnapshotStore } from '@/src/background/state/tab-snapshots';
+import { createIndexedDbFragmentStore } from '@/src/core/storage/indexeddb-fragment-store';
 import { createRuntimeRequest } from '@/src/shared/contracts/messages';
 import type { MediaCandidate } from '@/video_downloader_types_skeleton';
 import { createRuntimeRouter, registerRuntimeRouter } from '../runtime-router';
@@ -266,6 +267,51 @@ test('GET_ALL_CANDIDATES hydrates passive request evidence across journal tabs',
       expect.objectContaining({ tabId: 8, sourceUrl: 'http://127.0.0.1:4173/media/other.mp4' }),
     ]),
   );
+});
+
+test('GET_STORAGE_DIAGNOSTICS returns the background storage summary', async () => {
+  const summary = {
+    usageBytes: 100,
+    quotaBytes: 1_000,
+    freeBytes: 900,
+    level: 'ok' as const,
+    subtitleBytes: 12,
+    bucketBytes: 64,
+  };
+  const getStorageDiagnostics = vi.fn(async () => summary);
+  const router = createRuntimeRouter({
+    candidateRegistry: createCandidateRegistry(),
+    tabSnapshots: createTabSnapshotStore(),
+    getStorageDiagnostics,
+  });
+
+  const response = await router.handleMessage(
+    createRuntimeRequest('GET_STORAGE_DIAGNOSTICS', {}, 'req-storage-diag'),
+  );
+
+  expect(getStorageDiagnostics).toHaveBeenCalledTimes(1);
+  expect(response).toEqual({
+    type: 'GET_STORAGE_DIAGNOSTICS_RESULT',
+    requestId: 'req-storage-diag',
+    payload: summary,
+  });
+});
+
+test('GET_STORAGE_DIAGNOSTICS returns a safe default when no provider is wired', async () => {
+  const router = createRuntimeRouter({
+    candidateRegistry: createCandidateRegistry(),
+    tabSnapshots: createTabSnapshotStore(),
+  });
+
+  const response = await router.handleMessage(
+    createRuntimeRequest('GET_STORAGE_DIAGNOSTICS', {}, 'req-storage-default'),
+  );
+
+  expect(response).toEqual({
+    type: 'GET_STORAGE_DIAGNOSTICS_RESULT',
+    requestId: 'req-storage-default',
+    payload: { usageBytes: 0, quotaBytes: 0, freeBytes: 0, level: 'ok' },
+  });
 });
 
 test('CLEAN_EXTENSION_STORAGE delegates to background storage cleanup', async () => {
@@ -1286,4 +1332,262 @@ test('registerRuntimeRouter returns an error response when an async handler thro
       }),
     }),
   );
+});
+
+test('SET_HLS_DISCONTINUITY_POLICY updates selection and requeues the job', async () => {
+  const candidateRegistry = createCandidateRegistry();
+  const jobStore = createJobStore(() => 1);
+  const candidate = makeDirectCandidate();
+  candidateRegistry.set(7, [candidate]);
+  const job = jobStore.create(candidate, { mode: 'best' });
+  jobStore.update(job.id, {
+    phase: 'failed',
+    segmentStatuses: [{ index: 1, status: 'done', url: 'a.ts' }],
+  });
+  const downloadQueue = buildQueueMock(jobStore, candidate);
+  const router = createRuntimeRouter({
+    candidateRegistry,
+    tabSnapshots: createTabSnapshotStore(),
+    jobStore,
+    downloadQueue,
+  });
+
+  const response = await router.handleMessage(
+    createRuntimeRequest(
+      'SET_HLS_DISCONTINUITY_POLICY',
+      { jobId: job.id, policy: 'skip-ads' },
+      'req-disco',
+    ),
+  );
+
+  expect(response.type).toBe('SET_HLS_DISCONTINUITY_POLICY_RESULT');
+  if (response.type !== 'SET_HLS_DISCONTINUITY_POLICY_RESULT') return;
+  expect(response.payload.job?.selection.discontinuityPolicy).toBe('skip-ads');
+  expect(response.payload.job?.phase).toBe('queued');
+  expect(response.payload.job?.segmentStatuses).toBeUndefined();
+  expect(downloadQueue.retry).toHaveBeenCalledWith(job.id);
+});
+
+test('REPAIR_HLS_SEGMENTS marks regex-matched segments pending and reports the count', async () => {
+  const candidateRegistry = createCandidateRegistry();
+  const jobStore = createJobStore(() => 1);
+  const candidate = makeDirectCandidate();
+  candidateRegistry.set(7, [candidate]);
+  const job = jobStore.create(candidate, { mode: 'best' });
+  jobStore.update(job.id, {
+    phase: 'completed',
+    segmentStatuses: [
+      { index: 0, status: 'done', url: 'https://cdn/seg-0.ts', durationSec: 6 },
+      { index: 1, status: 'done', url: 'https://cdn/ad-1.ts', durationSec: 6 },
+      { index: 2, status: 'done', url: 'https://cdn/seg-2.ts', durationSec: 6 },
+    ],
+  });
+  const downloadQueue = buildQueueMock(jobStore, candidate);
+  const router = createRuntimeRouter({
+    candidateRegistry,
+    tabSnapshots: createTabSnapshotStore(),
+    jobStore,
+    downloadQueue,
+  });
+
+  const response = await router.handleMessage(
+    createRuntimeRequest(
+      'REPAIR_HLS_SEGMENTS',
+      { jobId: job.id, selectors: { regexFilter: 'ad-' } },
+      'req-repair',
+    ),
+  );
+
+  expect(response.type).toBe('REPAIR_HLS_SEGMENTS_RESULT');
+  if (response.type !== 'REPAIR_HLS_SEGMENTS_RESULT') return;
+  expect(response.payload.repairedCount).toBe(1);
+  const statuses = response.payload.job?.segmentStatuses ?? [];
+  expect(statuses.find((segment) => segment.index === 1)?.status).toBe('pending');
+  expect(statuses.find((segment) => segment.index === 0)?.status).toBe('done');
+  expect(downloadQueue.retry).toHaveBeenCalledWith(job.id);
+});
+
+test('REPAIR_HLS_SEGMENTS returns repairedCount 0 and does not requeue when nothing matches', async () => {
+  const candidateRegistry = createCandidateRegistry();
+  const jobStore = createJobStore(() => 1);
+  const candidate = makeDirectCandidate();
+  candidateRegistry.set(7, [candidate]);
+  const job = jobStore.create(candidate, { mode: 'best' });
+  jobStore.update(job.id, {
+    phase: 'completed',
+    segmentStatuses: [{ index: 0, status: 'done', url: 'https://cdn/seg-0.ts', durationSec: 6 }],
+  });
+  const downloadQueue = buildQueueMock(jobStore, candidate);
+  const router = createRuntimeRouter({
+    candidateRegistry,
+    tabSnapshots: createTabSnapshotStore(),
+    jobStore,
+    downloadQueue,
+  });
+
+  const response = await router.handleMessage(
+    createRuntimeRequest(
+      'REPAIR_HLS_SEGMENTS',
+      { jobId: job.id, selectors: { regexFilter: 'no-match' } },
+      'req-repair-empty',
+    ),
+  );
+
+  expect(response.type).toBe('REPAIR_HLS_SEGMENTS_RESULT');
+  if (response.type !== 'REPAIR_HLS_SEGMENTS_RESULT') return;
+  expect(response.payload.repairedCount).toBe(0);
+  expect(downloadQueue.retry).not.toHaveBeenCalled();
+});
+
+function asciiBytes(text: string): number[] {
+  return Array.from(text, (char) => char.charCodeAt(0));
+}
+
+function fakeMp4Fragment(): Uint8Array {
+  return new Uint8Array([
+    0,
+    0,
+    0,
+    0x18,
+    ...asciiBytes('ftypisom'),
+    0,
+    0,
+    0,
+    0,
+    ...asciiBytes('avc1................mp4a................'),
+  ]);
+}
+
+test('GET_CODEC_INFO sniffs codecs from the first downloaded fragment', async () => {
+  const candidateRegistry = createCandidateRegistry();
+  const jobStore = createJobStore(() => 1);
+  const fragmentStore = createIndexedDbFragmentStore({ mode: 'memory' });
+  const candidate = makeDirectCandidate();
+  candidateRegistry.set(7, [candidate]);
+  const job = jobStore.create(candidate, { mode: 'best' });
+  jobStore.update(job.id, {
+    segmentStatuses: [{ index: 0, status: 'done', durationSec: 4 }],
+  });
+  await fragmentStore.createBucket(job.id);
+  await fragmentStore.writeFragment(job.id, 0, fakeMp4Fragment());
+
+  const router = createRuntimeRouter({
+    candidateRegistry,
+    tabSnapshots: createTabSnapshotStore(),
+    jobStore,
+    fragmentStore,
+  });
+
+  const response = await router.handleMessage(
+    createRuntimeRequest(
+      'GET_CODEC_INFO',
+      { candidateId: candidate.id, jobId: job.id },
+      'req-codec-1',
+    ),
+  );
+
+  expect(response.type).toBe('GET_CODEC_INFO_RESULT');
+  if (response.type !== 'GET_CODEC_INFO_RESULT') return;
+  expect(response.payload.codecInfo).toEqual({
+    container: 'mp4',
+    video: 'H.264',
+    audio: 'AAC',
+  });
+});
+
+test('GET_CODEC_INFO resolves the job by candidate when no jobId is given', async () => {
+  const candidateRegistry = createCandidateRegistry();
+  const jobStore = createJobStore(() => 1);
+  const fragmentStore = createIndexedDbFragmentStore({ mode: 'memory' });
+  const candidate = makeDirectCandidate();
+  candidateRegistry.set(7, [candidate]);
+  const job = jobStore.create(candidate, { mode: 'best' });
+  jobStore.update(job.id, {
+    segmentStatuses: [{ index: 0, status: 'done', durationSec: 4 }],
+  });
+  await fragmentStore.createBucket(job.id);
+  await fragmentStore.writeFragment(job.id, 0, fakeMp4Fragment());
+
+  const router = createRuntimeRouter({
+    candidateRegistry,
+    tabSnapshots: createTabSnapshotStore(),
+    jobStore,
+    fragmentStore,
+  });
+
+  const response = await router.handleMessage(
+    createRuntimeRequest('GET_CODEC_INFO', { candidateId: candidate.id }, 'req-codec-2'),
+  );
+
+  expect(response.type).toBe('GET_CODEC_INFO_RESULT');
+  if (response.type !== 'GET_CODEC_INFO_RESULT') return;
+  expect(response.payload.codecInfo?.video).toBe('H.264');
+});
+
+test('GET_CODEC_INFO returns null when nothing is downloaded yet', async () => {
+  const candidateRegistry = createCandidateRegistry();
+  const candidate = makeDirectCandidate();
+  candidateRegistry.set(7, [candidate]);
+
+  const router = createRuntimeRouter({
+    candidateRegistry,
+    tabSnapshots: createTabSnapshotStore(),
+    jobStore: createJobStore(() => 1),
+    fragmentStore: createIndexedDbFragmentStore({ mode: 'memory' }),
+  });
+
+  const response = await router.handleMessage(
+    createRuntimeRequest(
+      'GET_CODEC_INFO',
+      { candidateId: candidate.id, jobId: 'missing-job' },
+      'req-codec-3',
+    ),
+  );
+
+  expect(response.type).toBe('GET_CODEC_INFO_RESULT');
+  if (response.type !== 'GET_CODEC_INFO_RESULT') return;
+  expect(response.payload.codecInfo).toBeNull();
+});
+
+test('SET_CANDIDATE_DURATION persists the resolved duration to the registry', async () => {
+  const candidateRegistry = createCandidateRegistry();
+  const candidate = makeDirectCandidate();
+  candidateRegistry.set(7, [candidate]);
+
+  const router = createRuntimeRouter({
+    candidateRegistry,
+    tabSnapshots: createTabSnapshotStore(),
+  });
+
+  const response = await router.handleMessage(
+    createRuntimeRequest(
+      'SET_CANDIDATE_DURATION',
+      { candidateId: candidate.id, durationSec: 123.5 },
+      'req-duration-1',
+    ),
+  );
+
+  expect(response.type).toBe('SET_CANDIDATE_DURATION_RESULT');
+  if (response.type !== 'SET_CANDIDATE_DURATION_RESULT') return;
+  expect(response.payload).toEqual({ ok: true, durationSec: 123.5 });
+  expect(candidateRegistry.findById(candidate.id)?.durationSec).toBe(123.5);
+});
+
+test('SET_CANDIDATE_DURATION reports failure for an unknown candidate', async () => {
+  const router = createRuntimeRouter({
+    candidateRegistry: createCandidateRegistry(),
+    tabSnapshots: createTabSnapshotStore(),
+  });
+
+  const response = await router.handleMessage(
+    createRuntimeRequest(
+      'SET_CANDIDATE_DURATION',
+      { candidateId: 'nope', durationSec: 30 },
+      'req-duration-2',
+    ),
+  );
+
+  expect(response.type).toBe('SET_CANDIDATE_DURATION_RESULT');
+  if (response.type !== 'SET_CANDIDATE_DURATION_RESULT') return;
+  expect(response.payload.ok).toBe(false);
 });

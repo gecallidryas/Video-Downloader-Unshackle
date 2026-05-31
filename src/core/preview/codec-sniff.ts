@@ -1,10 +1,6 @@
-export type CodecContainer = 'mp4' | 'webm' | 'ts' | 'unknown';
+import type { CodecContainer, CodecInfo } from '@/video_downloader_types_skeleton';
 
-export interface CodecInfo {
-  video?: string;
-  audio?: string;
-  container: CodecContainer;
-}
+export type { CodecContainer, CodecInfo };
 
 const VIDEO_TOKENS: Array<{ token: string; label: string }> = [
   { token: 'avc1', label: 'H.264' },

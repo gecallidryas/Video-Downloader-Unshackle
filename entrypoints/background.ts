@@ -11,6 +11,7 @@ import { cleanupJobStorage } from '@/src/background/jobs/cleanup-job-storage';
 import { createDownloadQueue } from '@/src/background/jobs/download-queue';
 import { createHistoryStore } from '@/src/background/jobs/history-store';
 import { createJobStore } from '@/src/background/jobs/job-store';
+import { createDirectDownloadTracker } from '@/src/background/jobs/direct-download-tracker';
 import { createOffscreenManager } from '@/src/background/offscreen/offscreen-manager';
 import { createNotificationManager } from '@/src/background/notifications/notification-manager';
 import { createDetectionNotifier } from '@/src/background/notifications/detection-notifier';
@@ -69,13 +70,18 @@ import { resolveEffectiveNativeFeatures } from '@/src/native/native-feature-gate
 import { ensurePreviewClip } from '@/src/core/preview/native-preview-service';
 import { ensureNativeThumbnail } from '@/src/core/thumbs/native-thumbnail-service';
 import { createBucketMetadataStore } from '@/src/core/storage/bucket-metadata-store';
+import { createChromeBucketMetadataPersistence } from '@/src/core/storage/bucket-metadata-persistence';
+import {
+  estimateBucketUsage,
+  getStorageDiagnostics,
+} from '@/src/core/storage/storage-diagnostics';
 import {
   createFileSystemAccessStore,
   loadPersistedOutputDirectoryHandle,
   type FileSystemAccessStore,
 } from '@/src/core/storage/file-system-access-store';
 import { createIndexedDbFragmentStore } from '@/src/core/storage/indexeddb-fragment-store';
-import { createInMemorySubtitleStore } from '@/src/core/storage/subtitle-store';
+import { createIndexedDbSubtitleStore } from '@/src/core/storage/subtitle-store';
 import { detectStreamingWriteCapabilities } from '@/src/core/capabilities/streaming-write-capabilities';
 import type { SegmentProgressEvent } from '@/src/core/download/progress-events';
 
@@ -108,8 +114,10 @@ export function initializeBackgroundShell() {
   });
   const historyStore = createHistoryStore();
   const fragmentStore = createIndexedDbFragmentStore();
-  const bucketMetadataStore = createBucketMetadataStore();
-  const subtitleStore = createInMemorySubtitleStore();
+  const bucketMetadataStore = createBucketMetadataStore({
+    persistence: createChromeBucketMetadataPersistence(),
+  });
+  const subtitleStore = createIndexedDbSubtitleStore();
   const tabSnapshots = createTabSnapshotStore();
   const tabVideoStatus = createTabVideoStatusStore();
   let nativeClient: NativeFfmpegClient | undefined;
@@ -200,10 +208,17 @@ export function initializeBackgroundShell() {
   // once the browser download reaches a terminal state.
   const replayRuleByDownloadId = new Map<number, number>();
 
+  // Surface interrupted direct (fire-and-forget) chrome.downloads as job
+  // failures: chrome.downloads.download resolves before bytes transfer, so the
+  // controller marks the job 'completed' optimistically and a later transfer
+  // error would otherwise go unreported.
+  const directDownloadTracker = createDirectDownloadTracker({ jobStore });
+
   if (globalThis.chrome?.downloads?.onChanged) {
     chrome.downloads.onChanged.addListener((delta) => {
       const state = delta.state?.current;
       if (state !== 'complete' && state !== 'interrupted') return;
+      directDownloadTracker.handleChange(delta);
       const ruleId = replayRuleByDownloadId.get(delta.id);
       if (ruleId === undefined) return;
       replayRuleByDownloadId.delete(delta.id);
@@ -225,6 +240,9 @@ export function initializeBackgroundShell() {
         index: segment.index,
         url: segment.url,
         status: 'pending',
+        ...(typeof segment.durationSec === 'number'
+          ? { durationSec: segment.durationSec }
+          : {}),
       })),
     });
   }
@@ -267,6 +285,7 @@ export function initializeBackgroundShell() {
       totalSegments: event.total,
       bytesDownloaded: job.bytesDownloaded + segmentBytes,
       segmentStatuses: nextStatuses,
+      ...(event.liveHlsTelemetry ? { liveHlsTelemetry: event.liveHlsTelemetry } : {}),
     });
   }
 
@@ -388,6 +407,44 @@ export function initializeBackgroundShell() {
       }
     });
 
+  // Aggregate per-bucket fragment usage from recorded metadata, falling back to
+  // measuring stored fragment bytes when a bucket has no metadata yet (e.g. a job
+  // persisted before recordChunk wiring, or after a partial wakeup).
+  const collectBucketBytes = async (): Promise<number> => {
+    let total = 0;
+
+    for (const job of jobStore.list()) {
+      for (const bucketId of [job.id, `${job.id}_audio`]) {
+        const metadata = await bucketMetadataStore.get(bucketId);
+        const usage = await estimateBucketUsage(
+          metadata
+            ? { bucketId, metadata }
+            : {
+                bucketId,
+                fragments: await fragmentStore
+                  .readAllFragments(bucketId)
+                  .catch(() => [] as Uint8Array[]),
+              },
+        );
+        total += usage.bytesWritten;
+      }
+    }
+
+    return total;
+  };
+
+  const collectStorageDiagnostics = async () => {
+    const provider =
+      (globalThis as { navigator?: { storage?: { estimate?: () => Promise<StorageEstimate> } } })
+        .navigator?.storage ?? { estimate: async () => ({}) as StorageEstimate };
+    const [subtitleBytes, bucketBytes] = await Promise.all([
+      subtitleStore.estimateBytes().catch(() => 0),
+      collectBucketBytes().catch(() => 0),
+    ]);
+
+    return getStorageDiagnostics(provider, { subtitleBytes, bucketBytes });
+  };
+
   const cleanupExtensionStorage = async () => {
     const activeBucketIds = new Set<string>();
 
@@ -431,6 +488,8 @@ export function initializeBackgroundShell() {
         replayRuleByDownloadId.set(downloadId, ruleId);
       }
 
+      directDownloadTracker.track(downloadId, job.id);
+
       return {
         fileName: probe.fileName,
         mimeType: probe.mimeType,
@@ -440,11 +499,14 @@ export function initializeBackgroundShell() {
     },
     ...(typeof URL.createObjectURL === 'function'
       ? {
-          downloadDirectWithRanges: async ({ candidate, job, signal }) => {
+          downloadDirectWithRanges: async ({ candidate, job, signal, bandwidthBytesPerSecond }) => {
             const probe = probeDirectMedia(candidate);
             const bytes = await downloadDirectWithRanges({
               url: probe.url,
               signal,
+              ...(bandwidthBytesPerSecond !== undefined && bandwidthBytesPerSecond > 0
+                ? { bandwidthBytesPerSecond }
+                : {}),
             });
             const buffer = new ArrayBuffer(bytes.byteLength);
             new Uint8Array(buffer).set(bytes);
@@ -489,6 +551,10 @@ export function initializeBackgroundShell() {
         ...input,
         candidate,
         ...(writeFile ? { writeFile } : {}),
+        fragmentStore,
+        onFragmentStored: async ({ jobId, index, bytes }) => {
+          await bucketMetadataStore.recordChunk(jobId, index, bytes);
+        },
         download: chrome.downloads.download,
         offscreenExport: (command) => offscreenManager.sendMessage(command),
         streamingCapabilities,
@@ -623,6 +689,7 @@ export function initializeBackgroundShell() {
     requestJournal,
     drmDetections,
     restrictionConsent,
+    fragmentStore,
     fetchManifest: async (url) => {
       const allowCredentials = credentialReplayEnabled(settingsStore.getAll());
       const response = await fetch(url, {
@@ -693,6 +760,7 @@ export function initializeBackgroundShell() {
     cancelDownload: (jobId) => downloadController.abort(jobId, { jobStore }),
     cleanupJobStorage: cleanupStoredJobData,
     cleanupExtensionStorage,
+    getStorageDiagnostics: collectStorageDiagnostics,
     recordDetection: (hostname, count) => detectionNotifier.recordDetection(hostname, count),
   });
   const autoScan = createAutoScanController({
@@ -750,6 +818,7 @@ export function initializeBackgroundShell() {
     await candidateRegistry.rehydrate();
     await requestJournal.rehydrate();
     await downloadQueue.rehydrate();
+    await bucketMetadataStore.rehydrate();
 
     if (downloadQueue.stats().queued > 0) {
       void downloadQueue.drain();

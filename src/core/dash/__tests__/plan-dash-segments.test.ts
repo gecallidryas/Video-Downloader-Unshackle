@@ -150,6 +150,152 @@ describe('planDashSegments', () => {
     ]);
   });
 
+  test('substitutes $Number$ for SegmentTimeline media templates', () => {
+    const manifest = parseMpd({
+      manifestUrl: 'https://cdn.example.com/dash/timeline-number/manifest.mpd',
+      content: `
+        <MPD type="static" mediaPresentationDuration="PT12S">
+          <Period>
+            <AdaptationSet contentType="video" mimeType="video/mp4">
+              <SegmentTemplate timescale="1" startNumber="5" initialization="init-$RepresentationID$.mp4" media="$RepresentationID$/seg-$Number$.m4s">
+                <SegmentTimeline>
+                  <S t="0" d="4" r="2" />
+                </SegmentTimeline>
+              </SegmentTemplate>
+              <Representation id="v1" bandwidth="1000" width="640" height="360" />
+            </AdaptationSet>
+          </Period>
+        </MPD>
+      `,
+    });
+
+    const plan = planDashSegments(manifest, {
+      jobId: 'job-dash-timeline-number',
+      selection: { mode: 'custom', variantId: 'v1' },
+    });
+
+    expect(plan.segments.map((segment) => segment.url)).toEqual([
+      'https://cdn.example.com/dash/timeline-number/init-v1.mp4',
+      'https://cdn.example.com/dash/timeline-number/v1/seg-5.m4s',
+      'https://cdn.example.com/dash/timeline-number/v1/seg-6.m4s',
+      'https://cdn.example.com/dash/timeline-number/v1/seg-7.m4s',
+    ]);
+  });
+
+  test('substitutes both $Number$ and $Time$ in a SegmentTimeline media template', () => {
+    const manifest = parseMpd({
+      manifestUrl: 'https://cdn.example.com/dash/timeline-combo/manifest.mpd',
+      content: `
+        <MPD type="static" mediaPresentationDuration="PT8S">
+          <Period>
+            <AdaptationSet contentType="video" mimeType="video/mp4">
+              <SegmentTemplate timescale="1" startNumber="1" initialization="init.mp4" media="seg-$Number$-$Time$.m4s">
+                <SegmentTimeline>
+                  <S t="0" d="4" r="1" />
+                </SegmentTimeline>
+              </SegmentTemplate>
+              <Representation id="v1" bandwidth="1000" width="640" height="360" />
+            </AdaptationSet>
+          </Period>
+        </MPD>
+      `,
+    });
+
+    const plan = planDashSegments(manifest, {
+      jobId: 'job-dash-timeline-combo',
+      selection: { mode: 'custom', variantId: 'v1' },
+    });
+
+    expect(plan.segments.filter((s) => !s.initSegment).map((s) => s.url)).toEqual([
+      'https://cdn.example.com/dash/timeline-combo/seg-1-0.m4s',
+      'https://cdn.example.com/dash/timeline-combo/seg-2-4.m4s',
+    ]);
+  });
+
+  test('substitutes $Bandwidth$ in init and media templates', () => {
+    const manifest = parseMpd({
+      manifestUrl: 'https://cdn.example.com/dash/bandwidth/manifest.mpd',
+      content: `
+        <MPD type="static" mediaPresentationDuration="PT8S">
+          <Period>
+            <AdaptationSet contentType="video" mimeType="video/mp4">
+              <SegmentTemplate timescale="1" startNumber="1" duration="4" initialization="init-$Bandwidth$.mp4" media="$Bandwidth$/seg-$Number$.m4s" />
+              <Representation id="v1" bandwidth="2500000" width="1280" height="720" />
+            </AdaptationSet>
+          </Period>
+        </MPD>
+      `,
+    });
+
+    const plan = planDashSegments(manifest, {
+      jobId: 'job-dash-bandwidth',
+      selection: { mode: 'custom', variantId: 'v1' },
+    });
+
+    expect(plan.segments.map((segment) => segment.url)).toEqual([
+      'https://cdn.example.com/dash/bandwidth/init-2500000.mp4',
+      'https://cdn.example.com/dash/bandwidth/2500000/seg-1.m4s',
+      'https://cdn.example.com/dash/bandwidth/2500000/seg-2.m4s',
+    ]);
+  });
+
+  test('resolves the $$ escape to a literal dollar sign', () => {
+    const manifest = parseMpd({
+      manifestUrl: 'https://cdn.example.com/dash/escape/manifest.mpd',
+      content: `
+        <MPD type="static" mediaPresentationDuration="PT4S">
+          <Period>
+            <AdaptationSet contentType="video" mimeType="video/mp4">
+              <SegmentTemplate timescale="1" startNumber="1" duration="4" initialization="init$$x.mp4" media="seg-$Number$-$$.m4s" />
+              <Representation id="v1" bandwidth="1000" width="640" height="360" />
+            </AdaptationSet>
+          </Period>
+        </MPD>
+      `,
+    });
+
+    const plan = planDashSegments(manifest, {
+      jobId: 'job-dash-escape',
+      selection: { mode: 'custom', variantId: 'v1' },
+    });
+
+    expect(plan.segments.map((segment) => segment.url)).toEqual([
+      'https://cdn.example.com/dash/escape/init$x.mp4',
+      'https://cdn.example.com/dash/escape/seg-1-$.m4s',
+    ]);
+  });
+
+  test('applies zero-pad width to $Number$, $Time$, and $Bandwidth$', () => {
+    const manifest = parseMpd({
+      manifestUrl: 'https://cdn.example.com/dash/pad/manifest.mpd',
+      content: `
+        <MPD type="static" mediaPresentationDuration="PT8S">
+          <Period>
+            <AdaptationSet contentType="video" mimeType="video/mp4">
+              <SegmentTemplate timescale="1" startNumber="1" initialization="init-$Bandwidth%08d$.mp4" media="seg-$Number%05d$-$Time%04d$.m4s">
+                <SegmentTimeline>
+                  <S t="0" d="4" r="1" />
+                </SegmentTimeline>
+              </SegmentTemplate>
+              <Representation id="v1" bandwidth="1234" width="640" height="360" />
+            </AdaptationSet>
+          </Period>
+        </MPD>
+      `,
+    });
+
+    const plan = planDashSegments(manifest, {
+      jobId: 'job-dash-pad',
+      selection: { mode: 'custom', variantId: 'v1' },
+    });
+
+    expect(plan.segments.map((segment) => segment.url)).toEqual([
+      'https://cdn.example.com/dash/pad/init-00001234.mp4',
+      'https://cdn.example.com/dash/pad/seg-00001-0000.m4s',
+      'https://cdn.example.com/dash/pad/seg-00002-0004.m4s',
+    ]);
+  });
+
   test('uses SegmentList URLs and byte ranges', () => {
     const manifest = parseMpd({
       manifestUrl: 'https://cdn.example.com/dash/list/manifest.mpd',

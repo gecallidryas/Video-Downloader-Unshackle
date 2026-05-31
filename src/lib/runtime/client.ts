@@ -1,4 +1,5 @@
 import type {
+  CodecInfo,
   DetectionEvidence,
   DownloadJob,
   DownloadSelection,
@@ -12,6 +13,8 @@ import type {
   QueueStats,
   RuntimeRequest,
   RuntimeResponse,
+  StorageDiagnosticsSummary,
+  HlsRepairSelectors,
 } from '@/video_downloader_types_skeleton';
 import { createRuntimeRequest } from '@/src/shared/contracts/messages';
 import { isRuntimeErrorResponse } from '@/src/shared/contracts/runtime';
@@ -69,6 +72,7 @@ export interface RuntimeClient {
   getAllCandidates(): Promise<MediaCandidate[]>;
   getJobs(): Promise<DownloadJob[]>;
   clearExtensionStorage?: () => Promise<ExtensionStorageCleanupResult>;
+  getStorageDiagnostics?: () => Promise<StorageDiagnosticsSummary>;
   ingestManualHls(input: {
     tabId: number;
     pageUrl: string;
@@ -82,6 +86,11 @@ export interface RuntimeClient {
   getPreviewAsset(candidateId: string, options?: { format?: PreviewAssetFormat }): Promise<GeneratedAssetResult>;
   getThumbnailAsset(candidateId: string): Promise<GeneratedAssetResult>;
   getMediaAssetState(candidateId: string): Promise<MediaAssetState[]>;
+  getCodecInfo(
+    candidateId: string,
+    options?: { jobId?: string },
+  ): Promise<CodecInfo | null>;
+  setCandidateDuration(candidateId: string, durationSec: number): Promise<boolean>;
   queueMediaAsset(
     candidateId: string,
     kind: MediaAssetKind,
@@ -102,6 +111,14 @@ export interface RuntimeClient {
     action: 'save_raw_ts' | 'retry_mp4_conversion',
   ): Promise<DownloadJob | undefined>;
   replaceHlsManifestUrl(jobId: string, manifestUrl: string): Promise<DownloadJob | undefined>;
+  setHlsDiscontinuityPolicy(
+    jobId: string,
+    policy: 'include-all' | 'skip-ads',
+  ): Promise<DownloadJob | undefined>;
+  repairHlsSegments(
+    jobId: string,
+    selectors: HlsRepairSelectors,
+  ): Promise<{ job?: DownloadJob; repairedCount: number }>;
   retryDownload(jobId: string): Promise<DownloadJob | undefined>;
   resaveDownload(jobId: string): Promise<DownloadJob | undefined>;
   removeDownload(jobId: string): Promise<boolean>;
@@ -281,6 +298,20 @@ export function createRuntimeClient(
       return response.payload;
     },
 
+    async getStorageDiagnostics() {
+      const response = await transport(createRuntimeRequest('GET_STORAGE_DIAGNOSTICS', {}));
+
+      if (isRuntimeErrorResponse(response)) {
+        throw new RuntimeClientError(response.payload.message, response.payload.code, response.payload.detail);
+      }
+
+      if (response.type !== 'GET_STORAGE_DIAGNOSTICS_RESULT') {
+        throw new RuntimeClientError(`Unexpected runtime response: ${response.type}`, 'UNEXPECTED_RESPONSE');
+      }
+
+      return response.payload;
+    },
+
     async getQueueStats() {
       const response = await transport(createRuntimeRequest('GET_QUEUE_STATS', {}));
 
@@ -418,6 +449,55 @@ export function createRuntimeClient(
       }
 
       return response.payload.states;
+    },
+
+    async getCodecInfo(candidateId, options = {}) {
+      const response = await transport(
+        createRuntimeRequest('GET_CODEC_INFO', {
+          candidateId,
+          ...(options.jobId ? { jobId: options.jobId } : {}),
+        }),
+      );
+
+      if (isRuntimeErrorResponse(response)) {
+        throw new RuntimeClientError(
+          response.payload.message,
+          response.payload.code,
+          response.payload.detail,
+        );
+      }
+
+      if (response.type !== 'GET_CODEC_INFO_RESULT') {
+        throw new RuntimeClientError(
+          `Unexpected runtime response: ${response.type}`,
+          'UNEXPECTED_RESPONSE',
+        );
+      }
+
+      return response.payload.codecInfo;
+    },
+
+    async setCandidateDuration(candidateId, durationSec) {
+      const response = await transport(
+        createRuntimeRequest('SET_CANDIDATE_DURATION', { candidateId, durationSec }),
+      );
+
+      if (isRuntimeErrorResponse(response)) {
+        throw new RuntimeClientError(
+          response.payload.message,
+          response.payload.code,
+          response.payload.detail,
+        );
+      }
+
+      if (response.type !== 'SET_CANDIDATE_DURATION_RESULT') {
+        throw new RuntimeClientError(
+          `Unexpected runtime response: ${response.type}`,
+          'UNEXPECTED_RESPONSE',
+        );
+      }
+
+      return response.payload.ok;
     },
 
     async queueMediaAsset(candidateId, kind, options = {}) {
@@ -610,6 +690,38 @@ export function createRuntimeClient(
       }
 
       return response.payload.job;
+    },
+
+    async setHlsDiscontinuityPolicy(jobId, policy) {
+      const response = await transport(
+        createRuntimeRequest('SET_HLS_DISCONTINUITY_POLICY', { jobId, policy }),
+      );
+
+      if (isRuntimeErrorResponse(response)) {
+        throw new RuntimeClientError(response.payload.message, response.payload.code, response.payload.detail);
+      }
+
+      if (response.type !== 'SET_HLS_DISCONTINUITY_POLICY_RESULT') {
+        throw new RuntimeClientError(`Unexpected runtime response: ${response.type}`, 'UNEXPECTED_RESPONSE');
+      }
+
+      return response.payload.job;
+    },
+
+    async repairHlsSegments(jobId, selectors) {
+      const response = await transport(
+        createRuntimeRequest('REPAIR_HLS_SEGMENTS', { jobId, selectors }),
+      );
+
+      if (isRuntimeErrorResponse(response)) {
+        throw new RuntimeClientError(response.payload.message, response.payload.code, response.payload.detail);
+      }
+
+      if (response.type !== 'REPAIR_HLS_SEGMENTS_RESULT') {
+        throw new RuntimeClientError(`Unexpected runtime response: ${response.type}`, 'UNEXPECTED_RESPONSE');
+      }
+
+      return { job: response.payload.job, repairedCount: response.payload.repairedCount };
     },
 
     async retryDownload(jobId) {

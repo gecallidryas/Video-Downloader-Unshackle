@@ -128,6 +128,72 @@ describe('RuntimeClient', () => {
     );
   });
 
+  test('requests storage diagnostics summary', async () => {
+    const summary = {
+      usageBytes: 256,
+      quotaBytes: 4_096,
+      freeBytes: 3_840,
+      level: 'ok' as const,
+      subtitleBytes: 10,
+      bucketBytes: 128,
+    };
+    const transport = vi.fn().mockResolvedValue({
+      type: 'GET_STORAGE_DIAGNOSTICS_RESULT',
+      requestId: 'response-storage-diag',
+      payload: summary,
+    });
+    const client = createRuntimeClient(transport);
+
+    if (!client.getStorageDiagnostics) {
+      throw new Error('Expected runtime client storage diagnostics method');
+    }
+
+    await expect(client.getStorageDiagnostics()).resolves.toEqual(summary);
+    expect(transport).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'GET_STORAGE_DIAGNOSTICS',
+        payload: {},
+      }),
+    );
+  });
+
+  test('sets the HLS discontinuity policy', async () => {
+    const job = { id: 'job-1' } as unknown;
+    const transport = vi.fn().mockResolvedValue({
+      type: 'SET_HLS_DISCONTINUITY_POLICY_RESULT',
+      requestId: 'response-disco',
+      payload: { job, queued: true },
+    });
+    const client = createRuntimeClient(transport);
+
+    await expect(client.setHlsDiscontinuityPolicy('job-1', 'skip-ads')).resolves.toBe(job);
+    expect(transport).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'SET_HLS_DISCONTINUITY_POLICY',
+        payload: { jobId: 'job-1', policy: 'skip-ads' },
+      }),
+    );
+  });
+
+  test('repairs HLS segments and returns the repaired count', async () => {
+    const transport = vi.fn().mockResolvedValue({
+      type: 'REPAIR_HLS_SEGMENTS_RESULT',
+      requestId: 'response-repair',
+      payload: { job: undefined, queued: true, repairedCount: 3 },
+    });
+    const client = createRuntimeClient(transport);
+
+    await expect(
+      client.repairHlsSegments('job-1', { regexFilter: 'ad-' }),
+    ).resolves.toEqual({ job: undefined, repairedCount: 3 });
+    expect(transport).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'REPAIR_HLS_SEGMENTS',
+        payload: { jobId: 'job-1', selectors: { regexFilter: 'ad-' } },
+      }),
+    );
+  });
+
   test('fetches debug evidence for a candidate', async () => {
     const evidence = [
       {
@@ -223,6 +289,60 @@ describe('RuntimeClient', () => {
       type: 'QUEUE_MEDIA_ASSET',
       payload: { candidateId: 'candidate-1', kind: 'poster', priority: 'visible' },
     }));
+  });
+
+  test('fetches sniffed codec info for a previewed candidate', async () => {
+    const codecInfo = { video: 'H.264', audio: 'AAC', container: 'mp4' as const };
+    const transport = vi.fn().mockResolvedValue({
+      type: 'GET_CODEC_INFO_RESULT',
+      requestId: 'response-codec',
+      payload: { codecInfo },
+    });
+    const client = createRuntimeClient(transport);
+
+    await expect(
+      client.getCodecInfo('candidate-1', { jobId: 'job-1' }),
+    ).resolves.toEqual(codecInfo);
+    expect(transport).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'GET_CODEC_INFO',
+        payload: { candidateId: 'candidate-1', jobId: 'job-1' },
+      }),
+    );
+  });
+
+  test('returns null codec info without a job id in the payload', async () => {
+    const transport = vi.fn().mockResolvedValue({
+      type: 'GET_CODEC_INFO_RESULT',
+      requestId: 'response-codec-null',
+      payload: { codecInfo: null },
+    });
+    const client = createRuntimeClient(transport);
+
+    await expect(client.getCodecInfo('candidate-1')).resolves.toBeNull();
+    expect(transport).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'GET_CODEC_INFO',
+        payload: { candidateId: 'candidate-1' },
+      }),
+    );
+  });
+
+  test('persists a resolved preview duration to candidate metadata', async () => {
+    const transport = vi.fn().mockResolvedValue({
+      type: 'SET_CANDIDATE_DURATION_RESULT',
+      requestId: 'response-duration',
+      payload: { ok: true, durationSec: 123.5 },
+    });
+    const client = createRuntimeClient(transport);
+
+    await expect(client.setCandidateDuration('candidate-1', 123.5)).resolves.toBe(true);
+    expect(transport).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'SET_CANDIDATE_DURATION',
+        payload: { candidateId: 'candidate-1', durationSec: 123.5 },
+      }),
+    );
   });
 
   test('subscribeToUpdates receives pushed job updates over the port', () => {

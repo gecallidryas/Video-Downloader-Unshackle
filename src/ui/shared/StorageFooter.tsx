@@ -6,6 +6,9 @@ export interface StorageFooterProps {
   usageBytes: number;
   quotaBytes: number;
   level: StorageLevel;
+  warning?: string;
+  subtitleBytes?: number;
+  bucketBytes?: number;
 }
 
 const UNITS = ['B', 'KB', 'MB', 'GB', 'TB'] as const;
@@ -36,12 +39,32 @@ function computePercent(usage: number, quota: number): number {
   return Math.min(100, Math.max(0, (usage / quota) * 100));
 }
 
+function buildBreakdown(
+  subtitleBytes: number | undefined,
+  bucketBytes: number | undefined,
+): string | undefined {
+  const parts: string[] = [];
+
+  if (typeof bucketBytes === 'number' && bucketBytes > 0) {
+    parts.push(`Fragments ${formatBytes(bucketBytes)}`);
+  }
+  if (typeof subtitleBytes === 'number' && subtitleBytes > 0) {
+    parts.push(`Subtitles ${formatBytes(subtitleBytes)}`);
+  }
+
+  return parts.length > 0 ? parts.join(' · ') : undefined;
+}
+
 export function StorageFooter({
   usageBytes,
   quotaBytes,
   level,
+  warning,
+  subtitleBytes,
+  bucketBytes,
 }: StorageFooterProps) {
   const pct = computePercent(usageBytes, quotaBytes);
+  const breakdown = buildBreakdown(subtitleBytes, bucketBytes);
 
   return (
     <div
@@ -61,6 +84,14 @@ export function StorageFooter({
       <div className="storage-footer__text">
         {formatBytes(usageBytes)} / {formatBytes(quotaBytes)} ({Math.round(pct)}%)
       </div>
+      {breakdown ? (
+        <div className="storage-footer__breakdown">{breakdown}</div>
+      ) : null}
+      {warning ? (
+        <div className="storage-footer__warning" role="alert">
+          {warning}
+        </div>
+      ) : null}
     </div>
   );
 }

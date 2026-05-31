@@ -79,6 +79,65 @@ describe('download controller decision flow', () => {
     expect(output.notes).toContain('Browser assembled direct download from HTTP byte ranges.');
   });
 
+  test('threads the configured bandwidth limit into the direct range downloader', async () => {
+    const downloadDirectWithRanges = vi.fn().mockResolvedValue({
+      fileName: 'direct-video.mp4',
+      mimeType: 'video/mp4',
+      sizeBytes: 6_000_000,
+    } satisfies JobOutput);
+    const controller = createDownloadController({
+      downloadFile: vi.fn(),
+      downloadDirectWithRanges,
+      runHls: vi.fn(),
+      runDash: vi.fn(),
+      probeDirectRange: vi.fn().mockResolvedValue({
+        acceptsRanges: true,
+        contentLength: 6_000_000,
+      }),
+    });
+
+    await controller.start(candidate(), job(), {
+      settings: {
+        enableBrowserFallbacks: true,
+        directRangeMinBytes: 5_000_000,
+        maxBandwidthPerHostKBps: 750,
+      },
+    });
+
+    expect(downloadDirectWithRanges).toHaveBeenCalledWith(
+      expect.objectContaining({ bandwidthBytesPerSecond: 750 * 1024 }),
+    );
+  });
+
+  test('omits the bandwidth limit for direct range downloads when unset', async () => {
+    const downloadDirectWithRanges = vi.fn().mockResolvedValue({
+      fileName: 'direct-video.mp4',
+      mimeType: 'video/mp4',
+      sizeBytes: 6_000_000,
+    } satisfies JobOutput);
+    const controller = createDownloadController({
+      downloadFile: vi.fn(),
+      downloadDirectWithRanges,
+      runHls: vi.fn(),
+      runDash: vi.fn(),
+      probeDirectRange: vi.fn().mockResolvedValue({
+        acceptsRanges: true,
+        contentLength: 6_000_000,
+      }),
+    });
+
+    await controller.start(candidate(), job(), {
+      settings: {
+        enableBrowserFallbacks: true,
+        directRangeMinBytes: 5_000_000,
+      },
+    });
+
+    expect(downloadDirectWithRanges).toHaveBeenCalledWith(
+      expect.not.objectContaining({ bandwidthBytesPerSecond: expect.anything() }),
+    );
+  });
+
   test('falls back to chrome downloads when direct media does not support ranges', async () => {
     const downloadFile = vi.fn().mockResolvedValue({
       fileName: 'direct-video.mp4',

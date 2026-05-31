@@ -116,6 +116,46 @@ describe('HLS planning and execution', () => {
     });
   });
 
+  test('honors selection.discontinuityPolicy by skipping ad segments end to end', async () => {
+    const manifest = parseHlsManifest({
+      manifestUrl: 'https://cdn.example.com/hls/vod/disco.m3u8',
+      content: [
+        '#EXTM3U',
+        '#EXT-X-TARGETDURATION:6',
+        '#EXTINF:6,',
+        'content-1.ts',
+        '#EXTINF:6,',
+        'content-2.ts',
+        '#EXT-X-DISCONTINUITY',
+        '#EXTINF:6,',
+        'ad.ts',
+        '#EXT-X-DISCONTINUITY',
+        '#EXTINF:6,',
+        'content-3.ts',
+        '#EXTINF:6,',
+        'content-4.ts',
+        '#EXTINF:6,',
+        'content-5.ts',
+        '#EXT-X-ENDLIST',
+      ].join('\n'),
+    });
+    const fetchSegment = vi.fn().mockResolvedValue(new Uint8Array([0]));
+    const writeOutput = vi.fn().mockResolvedValue({ fileName: 'x.mp4', mimeType: 'video/mp4' });
+
+    await runHlsJob({
+      job: buildJob({ selection: { mode: 'best', discontinuityPolicy: 'skip-ads' } }),
+      manifest,
+      fetchSegment,
+      writeOutput,
+    });
+
+    expect(fetchSegment.mock.calls.map(([segment]) => segment.url)).toEqual([
+      'https://cdn.example.com/hls/vod/content-3.ts',
+      'https://cdn.example.com/hls/vod/content-4.ts',
+      'https://cdn.example.com/hls/vod/content-5.ts',
+    ]);
+  });
+
   test('passes concurrency and maxConcurrentPerHost through to scheduleSegments', async () => {
     const manifest = parseHlsManifest({
       manifestUrl: 'https://cdn.example.com/hls/video/720p/prog.m3u8',

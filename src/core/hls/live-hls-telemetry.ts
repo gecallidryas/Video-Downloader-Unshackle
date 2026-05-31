@@ -1,15 +1,13 @@
-export type LiveHlsTelemetryState = 'live' | 'idle';
+import type {
+  LiveHlsTelemetrySnapshot,
+  LiveHlsTelemetryState,
+} from '@/video_downloader_types_skeleton';
+
+export type { LiveHlsTelemetrySnapshot, LiveHlsTelemetryState };
 
 export interface LiveHlsTelemetryRefresh {
   newSegments: number;
   lastSequence: number;
-}
-
-export interface LiveHlsTelemetrySnapshot {
-  noNewSegmentRetries: number;
-  lastSequence: number;
-  state: LiveHlsTelemetryState;
-  totalRefreshes: number;
 }
 
 export interface LiveHlsTelemetry {

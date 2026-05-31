@@ -28,6 +28,23 @@ import type {
   YtDlpQualityPreference,
   YtDlpSubtitlePreference,
 } from '@/src/background/settings/settings-store';
+import type { StorageDiagnosticsSummary } from '@/video_downloader_types_skeleton';
+
+const STORAGE_UNITS = ['B', 'KB', 'MB', 'GB', 'TB'] as const;
+
+function formatStorageBytes(value: number): string {
+  if (!Number.isFinite(value) || value <= 0) {
+    return '0 B';
+  }
+  let scaled = value;
+  let unitIndex = 0;
+  while (scaled >= 1024 && unitIndex < STORAGE_UNITS.length - 1) {
+    scaled /= 1024;
+    unitIndex += 1;
+  }
+  const formatted = scaled >= 10 ? scaled.toFixed(0) : scaled.toFixed(1);
+  return `${formatted} ${STORAGE_UNITS[unitIndex]}`;
+}
 import type { DownloadJob } from '@/video_downloader_types_skeleton';
 import './PopupApp.css';
 
@@ -231,6 +248,7 @@ function SettingsContent({ runtimeClient, onReplayOnboarding }: SettingsContentP
   );
   const [storageCleanupBusy, setStorageCleanupBusy] = useState(false);
   const [storageCleanupMessage, setStorageCleanupMessage] = useState<string | null>(null);
+  const [storageSummary, setStorageSummary] = useState<StorageDiagnosticsSummary | null>(null);
 
   async function refreshNativeHelperDiagnostic() {
     setNativeHelperBusy(true);
@@ -317,6 +335,7 @@ function SettingsContent({ runtimeClient, onReplayOnboarding }: SettingsContentP
       setStorageCleanupMessage(
         `Cleaned ${result.orphanedFragmentBuckets} orphaned fragment ${bucketLabel} and ${result.removedStorageKeys.length} cached detection ${cacheLabel}.`,
       );
+      void refreshStorageSummary();
     } catch (error) {
       if (!mountedRef.current) {
         return;
@@ -340,6 +359,26 @@ function SettingsContent({ runtimeClient, onReplayOnboarding }: SettingsContentP
     return () => {
       mountedRef.current = false;
     };
+  }, []);
+
+  async function refreshStorageSummary() {
+    const client = runtimeClient ?? createRuntimeClient();
+    if (!client.getStorageDiagnostics) {
+      return;
+    }
+    try {
+      const summary = await client.getStorageDiagnostics();
+      if (mountedRef.current) {
+        setStorageSummary(summary);
+      }
+    } catch {
+      // Storage summary is best-effort; leave prior value on failure.
+    }
+  }
+
+  useEffect(() => {
+    void refreshStorageSummary();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   function updateCaptureRules(next: {
@@ -682,6 +721,33 @@ function SettingsContent({ runtimeClient, onReplayOnboarding }: SettingsContentP
 
       {/* â”€â”€ Storage & Output â”€â”€ */}
       <SettingsSection title="Storage & Output">
+        {storageSummary ? (
+          <div
+            className={`popup__storage-summary popup__storage-summary--${storageSummary.level}`}
+            role="status"
+          >
+            <div className="popup__storage-summary-row">
+              <span className="popup__label">Browser storage used</span>
+              <span className="popup__storage-summary-value">
+                {formatStorageBytes(storageSummary.usageBytes)}
+                {storageSummary.quotaBytes > 0
+                  ? ` / ${formatStorageBytes(storageSummary.quotaBytes)}`
+                  : ''}
+              </span>
+            </div>
+            {typeof storageSummary.bucketBytes === 'number' ||
+            typeof storageSummary.subtitleBytes === 'number' ? (
+              <span className="popup__help">
+                {`Fragments ${formatStorageBytes(storageSummary.bucketBytes ?? 0)} · Subtitles ${formatStorageBytes(storageSummary.subtitleBytes ?? 0)}`}
+              </span>
+            ) : null}
+            {storageSummary.warning ? (
+              <p className="popup__storage-summary-warning" role="alert">
+                {storageSummary.warning}
+              </p>
+            ) : null}
+          </div>
+        ) : null}
         <label className="popup__row popup__row--with-help">
           <span>
             <span className="popup__label">Use direct-to-disk when available</span>

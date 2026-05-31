@@ -121,6 +121,77 @@ describe('downloadDirectWithRanges', () => {
     ).resolves.toEqual(new Uint8Array([1, 2, 3, 4, 5]));
   });
 
+  test('forwards bandwidthBytesPerSecond into the segment scheduler', async () => {
+    const scheduler = await import('../segment-scheduler');
+    const spy = vi
+      .spyOn(scheduler, 'scheduleSegments')
+      .mockResolvedValue([new Uint8Array([1, 2, 3, 4, 5])]);
+
+    const fetcher = vi.fn(async (_url: string, init?: RequestInit) => {
+      if (init?.method === 'HEAD') {
+        return new Response(null, {
+          status: 200,
+          headers: {
+            'Accept-Ranges': 'bytes',
+            'Content-Length': '5',
+          },
+        });
+      }
+
+      return new Response(new Uint8Array([1, 2]), { status: 206 });
+    });
+
+    try {
+      await downloadDirectWithRanges({
+        url: 'https://cdn.example.com/video.mp4',
+        chunkSizeBytes: 2,
+        bandwidthBytesPerSecond: 1024,
+        fetch: fetcher,
+      });
+
+      expect(spy).toHaveBeenCalledWith(
+        expect.objectContaining({ bandwidthBytesPerSecond: 1024 }),
+      );
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  test('omits bandwidthBytesPerSecond when not provided', async () => {
+    const scheduler = await import('../segment-scheduler');
+    const spy = vi
+      .spyOn(scheduler, 'scheduleSegments')
+      .mockResolvedValue([new Uint8Array([1, 2, 3, 4, 5])]);
+
+    const fetcher = vi.fn(async (_url: string, init?: RequestInit) => {
+      if (init?.method === 'HEAD') {
+        return new Response(null, {
+          status: 200,
+          headers: {
+            'Accept-Ranges': 'bytes',
+            'Content-Length': '5',
+          },
+        });
+      }
+
+      return new Response(new Uint8Array([1, 2]), { status: 206 });
+    });
+
+    try {
+      await downloadDirectWithRanges({
+        url: 'https://cdn.example.com/video.mp4',
+        chunkSizeBytes: 2,
+        fetch: fetcher,
+      });
+
+      expect(spy).toHaveBeenCalledWith(
+        expect.not.objectContaining({ bandwidthBytesPerSecond: expect.anything() }),
+      );
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
   test('rejects range responses that ignore the Range request', async () => {
     const fetcher = vi.fn(async (_url: string, init?: RequestInit) => {
       if (init?.method === 'HEAD') {

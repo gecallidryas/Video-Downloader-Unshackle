@@ -48,6 +48,7 @@ export interface RunDashJobInput {
   fragmentStore?: SegmentSchedulerStorage;
   onProgress?: SegmentProgressCallback;
   onSegmentExport?: DashSegmentExportCallback;
+  onFragmentStored?: (event: { jobId: string; index: number; bytes: number }) => Promise<void> | void;
 }
 
 export async function runDashJob(input: RunDashJobInput): Promise<JobOutput> {
@@ -93,6 +94,7 @@ export async function runDashJob(input: RunDashJobInput): Promise<JobOutput> {
     bandwidthBytesPerSecond: input.bandwidthBytesPerSecond,
     segmentTimeoutMs: input.segmentTimeoutMs,
     signal: input.signal,
+    ...(input.onFragmentStored ? { onFragmentStored: input.onFragmentStored } : {}),
     onProgress: input.onProgress,
     onSegmentComplete: input.onSegmentExport
       ? async (event) => {

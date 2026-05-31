@@ -6,16 +6,28 @@ export interface BucketMetadata {
   updatedAt: number;
 }
 
+// Durable backing store for serialized bucket metadata. Implementations persist
+// to chrome.storage.local (production) so segment/byte counts survive a service
+// worker restart and can be rehydrated on wakeup.
+export interface BucketMetadataPersistence {
+  loadAll(): Promise<Record<string, string>>;
+  save(bucketId: string, serialized: string): Promise<void>;
+  remove(bucketId: string): Promise<void>;
+}
+
 export interface BucketMetadataStoreOptions {
   persisted?: Map<string, string>;
+  persistence?: BucketMetadataPersistence;
   now?: () => number;
 }
 
 export interface BucketMetadataStore {
   get(bucketId: string): Promise<BucketMetadata | undefined>;
+  list(): Promise<BucketMetadata[]>;
   recordChunk(bucketId: string, chunkIndex: number, bytesWritten: number): Promise<BucketMetadata>;
   recordSubtitleBytes(bucketId: string, subtitleBytes: number): Promise<BucketMetadata>;
   delete(bucketId: string): Promise<void>;
+  rehydrate(): Promise<void>;
 }
 
 interface BucketState {
@@ -41,6 +53,7 @@ export function createBucketMetadataStore(
   options: BucketMetadataStoreOptions = {},
 ): BucketMetadataStore {
   const persisted = options.persisted ?? new Map<string, string>();
+  const persistence = options.persistence;
   const now = options.now ?? Date.now;
   const buckets = new Map<string, BucketState>();
   const queues = new Map<string, Promise<unknown>>();
@@ -70,8 +83,10 @@ export function createBucketMetadataStore(
     return next;
   }
 
-  function persist(state: BucketState): void {
-    persisted.set(state.metadata.bucketId, JSON.stringify(state.metadata));
+  async function persist(state: BucketState): Promise<void> {
+    const serialized = JSON.stringify(state.metadata);
+    persisted.set(state.metadata.bucketId, serialized);
+    await persistence?.save(state.metadata.bucketId, serialized);
   }
 
   return {
@@ -82,6 +97,11 @@ export function createBucketMetadataStore(
       }
 
       return cloneMetadata(load(bucketId).metadata);
+    },
+
+    async list() {
+      const ids = new Set<string>([...persisted.keys(), ...buckets.keys()]);
+      return Array.from(ids, (bucketId) => cloneMetadata(load(bucketId).metadata));
     },
 
     recordChunk(bucketId, chunkIndex, bytesWritten) {
@@ -95,7 +115,7 @@ export function createBucketMetadataStore(
           chunkCount: isNewChunk ? state.metadata.chunkCount + 1 : state.metadata.chunkCount,
           updatedAt: now(),
         };
-        persist(state);
+        await persist(state);
         return cloneMetadata(state.metadata);
       });
     },
@@ -108,7 +128,7 @@ export function createBucketMetadataStore(
           subtitleBytes: Math.max(0, subtitleBytes),
           updatedAt: now(),
         };
-        persist(state);
+        await persist(state);
         return cloneMetadata(state.metadata);
       });
     },
@@ -116,6 +136,20 @@ export function createBucketMetadataStore(
     async delete(bucketId) {
       buckets.delete(bucketId);
       persisted.delete(bucketId);
+      await persistence?.remove(bucketId);
+    },
+
+    async rehydrate() {
+      if (!persistence) {
+        return;
+      }
+
+      const all = await persistence.loadAll();
+      for (const [bucketId, serialized] of Object.entries(all)) {
+        persisted.set(bucketId, serialized);
+        // Drop any stale in-memory state so the next load() reads fresh bytes.
+        buckets.delete(bucketId);
+      }
     },
   };
 }

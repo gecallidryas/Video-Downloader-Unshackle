@@ -85,6 +85,8 @@ function buildRuntimeClient(candidates: MediaCandidate[]): RuntimeClient {
       generated: true,
     }),
     getMediaAssetState: vi.fn().mockResolvedValue([]),
+    getCodecInfo: vi.fn().mockResolvedValue(null),
+    setCandidateDuration: vi.fn().mockResolvedValue(true),
     queueMediaAsset: vi.fn().mockImplementation((candidateId: string, kind: 'poster' | 'hoverClip') =>
       Promise.resolve({
         candidateId,
@@ -102,6 +104,8 @@ function buildRuntimeClient(candidates: MediaCandidate[]): RuntimeClient {
     updateHlsSegmentRange: vi.fn().mockResolvedValue(undefined),
     recoverHlsExport: vi.fn().mockResolvedValue(undefined),
     replaceHlsManifestUrl: vi.fn().mockResolvedValue(undefined),
+    setHlsDiscontinuityPolicy: vi.fn().mockResolvedValue(undefined),
+    repairHlsSegments: vi.fn().mockResolvedValue({ job: undefined, repairedCount: 0 }),
     getAllCandidates: vi.fn().mockResolvedValue(candidates),
     getJobs: vi.fn().mockResolvedValue([]),
     subscribeToUpdates: vi.fn(() => ({ close: vi.fn() })),

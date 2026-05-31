@@ -35,6 +35,8 @@ export interface RunBrowserDashExportJobInput {
   bandwidthBytesPerSecond?: number;
   segmentTimeoutMs?: number;
   memoryCeilingBytes?: number;
+  fragmentStore?: Parameters<typeof runDashJob>[0]['fragmentStore'];
+  onFragmentStored?: Parameters<typeof runDashJob>[0]['onFragmentStored'];
   signal?: AbortSignal;
 }
 
@@ -160,6 +162,8 @@ export async function runBrowserDashExportJob(
     bandwidthBytesPerSecond: input.bandwidthBytesPerSecond,
     segmentTimeoutMs: input.segmentTimeoutMs,
     signal: input.signal,
+    ...(input.fragmentStore ? { fragmentStore: input.fragmentStore } : {}),
+    ...(input.onFragmentStored ? { onFragmentStored: input.onFragmentStored } : {}),
     fetchSegment: (segment, _plan, request) =>
       fetchBytes(segment.url, requestInitFromScheduler(request)),
     writeOutput: async (plan, parts) => {

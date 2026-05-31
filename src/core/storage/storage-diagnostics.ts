@@ -18,6 +18,13 @@ export interface StorageDiagnostics {
   freeBytes: number;
   level: StorageLevel;
   warning?: string;
+  subtitleBytes?: number;
+  bucketBytes?: number;
+}
+
+export interface StorageDiagnosticsExtras {
+  subtitleBytes?: number;
+  bucketBytes?: number;
 }
 
 export interface BucketUsageInput {
@@ -64,6 +71,7 @@ function warningForLevel(level: StorageLevel): string | undefined {
 
 export async function getStorageDiagnostics(
   provider: StorageDiagnosticsProvider = navigator.storage,
+  extras: StorageDiagnosticsExtras = {},
 ): Promise<StorageDiagnostics> {
   const estimate = await provider.estimate?.();
   const usageBytes = Math.max(0, estimate?.usage ?? 0);
@@ -77,6 +85,8 @@ export async function getStorageDiagnostics(
     freeBytes,
     level,
     ...(warningForLevel(level) ? { warning: warningForLevel(level) } : {}),
+    ...(typeof extras.subtitleBytes === 'number' ? { subtitleBytes: Math.max(0, extras.subtitleBytes) } : {}),
+    ...(typeof extras.bucketBytes === 'number' ? { bucketBytes: Math.max(0, extras.bucketBytes) } : {}),
   };
 }
 

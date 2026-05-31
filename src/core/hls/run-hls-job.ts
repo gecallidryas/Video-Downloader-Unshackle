@@ -57,6 +57,7 @@ export interface RunHlsJobInput {
   onPlan?: (plan: SegmentPlan) => void | Promise<void>;
   onProgress?: SegmentProgressCallback;
   onSegmentExport?: HlsSegmentExportCallback;
+  onFragmentStored?: (event: { jobId: string; index: number; bytes: number }) => Promise<void> | void;
 }
 
 function filterSegmentsForSelection(plan: SegmentPlan, job: DownloadJob): SegmentPlan {
@@ -93,6 +94,9 @@ export async function runHlsJob(input: RunHlsJobInput): Promise<JobOutput> {
     jobId: input.job.id,
     selection: input.job.selection,
     qualityPolicy: input.qualityPolicy,
+    ...(input.job.selection.discontinuityPolicy
+      ? { discontinuityPolicy: input.job.selection.discontinuityPolicy }
+      : {}),
   });
   const plan = filterSegmentsForSelection(fullPlan, input.job);
   const liveTelemetry = input.manifest.isLive ? createLiveHlsTelemetry() : undefined;
@@ -144,6 +148,7 @@ export async function runHlsJob(input: RunHlsJobInput): Promise<JobOutput> {
     segmentTimeoutMs: input.segmentTimeoutMs,
     signal: input.signal,
     fetchKey: input.fetchKey,
+    ...(input.onFragmentStored ? { onFragmentStored: input.onFragmentStored } : {}),
     onSegmentComplete: input.onSegmentExport
       ? async (event) => {
           const order = segmentOrder.get(event.segment.id);

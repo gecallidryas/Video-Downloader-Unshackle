@@ -2,6 +2,7 @@
   position: sticky;
   bottom: 0;
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 8px;
   padding: 6px var(--panel-padding, 12px);
@@ -41,4 +42,16 @@
 .storage-footer__text {
   flex-shrink: 0;
   font-variant-numeric: tabular-nums;
+}
+
+.storage-footer__breakdown {
+  flex-basis: 100%;
+  font-variant-numeric: tabular-nums;
+  opacity: 0.85;
+}
+
+.storage-footer__warning {
+  flex-basis: 100%;
+  color: var(--error);
+  line-height: 1.3;
 }

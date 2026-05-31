@@ -6,6 +6,7 @@ import type {
   SubtitleTrack,
 } from '@/video_downloader_types_skeleton';
 import { classifyDashProtection } from './classify-dash-protection';
+import { substituteDashTokens } from './dash-template';
 
 export interface ParseMpdInput {
   manifestUrl: string;
@@ -18,6 +19,7 @@ export interface ParsedDashRepresentation {
   initializationUrl?: string;
   mediaUrlTemplate?: string;
   startNumber: number;
+  bandwidth?: number;
   segmentDurationSec?: number;
   segmentCount: number;
   timeline?: DashTimelineSegment[];
@@ -260,8 +262,15 @@ function getContentType(adaptationSet: Element): 'video' | 'audio' | 'text' {
   return 'video';
 }
 
-function replaceTemplateTokens(template: string, representationId: string): string {
-  return template.replace(/\$RepresentationID\$/g, representationId);
+function replaceTemplateTokens(
+  template: string,
+  representationId: string,
+  bandwidth: number | undefined,
+): string {
+  return substituteDashTokens(template, {
+    RepresentationID: representationId,
+    Bandwidth: bandwidth,
+  });
 }
 
 function getSegmentTemplate(
@@ -299,6 +308,7 @@ function buildRepresentationMeta(
   representation: Element,
   baseUrl: string,
   durationSec: number | undefined,
+  bandwidth: number | undefined,
 ): ParsedDashRepresentation {
   const id = attr(representation, 'id') ?? `representation-${Date.now()}`;
   const trackType = getContentType(adaptationSet);
@@ -345,16 +355,20 @@ function buildRepresentationMeta(
         ? firstChildByTag(segmentList, 'Initialization')?.getAttribute('sourceURL') ??
             undefined
         : initializationTemplate
-        ? replaceTemplateTokens(initializationTemplate, id)
+        ? replaceTemplateTokens(initializationTemplate, id, bandwidth)
         : undefined,
       representationBaseUrl ?? baseUrl,
     ),
     mediaUrlTemplate: mediaTemplate
-      ? resolveUrl(replaceTemplateTokens(mediaTemplate, id), representationBaseUrl ?? baseUrl)
+      ? resolveUrl(
+          replaceTemplateTokens(mediaTemplate, id, bandwidth),
+          representationBaseUrl ?? baseUrl,
+        )
       : hasSegmentBaseUrl
         ? (representationBaseUrl ?? baseUrl)
         : undefined,
     startNumber: numberAttr(template ?? adaptationSet, 'startNumber') ?? 1,
+    bandwidth,
     segmentDurationSec,
     segmentCount: timeline?.length ?? explicitSegments?.length ?? segmentCount,
     timeline,
@@ -486,6 +500,7 @@ export function parseMpd(input: ParseMpdInput): ParsedDashManifest {
         representation,
         adaptationBaseUrl,
         durationSec,
+        bandwidth,
       );
 
       representations.push(representationMeta);

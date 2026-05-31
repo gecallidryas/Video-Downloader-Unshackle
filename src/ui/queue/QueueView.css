@@ -114,3 +114,32 @@
   padding: 1px 4px;
   border-radius: 2px;
 }
+
+.queue-item__live-telemetry {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+  font-size: var(--text-label-size);
+  color: var(--on-surface-variant);
+  font-variant-numeric: tabular-nums;
+}
+
+.queue-item__live-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--secondary);
+}
+
+.queue-item__live-telemetry--live .queue-item__live-dot {
+  background: var(--primary);
+}
+
+.queue-item__live-telemetry--idle {
+  color: var(--error);
+}
+
+.queue-item__live-telemetry--idle .queue-item__live-dot {
+  background: var(--error);
+}

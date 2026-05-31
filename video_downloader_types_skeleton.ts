@@ -232,9 +232,25 @@ export interface JobSegmentStatus {
   status: JobSegmentState;
   url?: string;
   bytes?: number;
+  durationSec?: number;
   attempts?: number;
   error?: string;
   updatedAt?: number;
+}
+
+export interface HlsRepairSelectors {
+  indexRange?: { start: number; end: number };
+  timeRange?: { startSec?: number; endSec?: number };
+  regexFilter?: string;
+}
+
+export type LiveHlsTelemetryState = 'live' | 'idle';
+
+export interface LiveHlsTelemetrySnapshot {
+  noNewSegmentRetries: number;
+  lastSequence: number;
+  state: LiveHlsTelemetryState;
+  totalRefreshes: number;
 }
 
 export interface JobFailure {
@@ -261,6 +277,7 @@ export interface DownloadSelection {
   subtitleOutput?: 'embed' | 'sidecar' | 'both';
   segmentRange?: { start: number; end: number };
   hlsTimelinePolicy?: 'full' | 'selected-range' | 'live-refresh';
+  discontinuityPolicy?: 'include-all' | 'skip-ads';
   outputKind?: 'auto' | 'original' | 'audio-only' | 'mp4' | 'mkv' | 'webm' | 'subtitle-only';
   action?: 'download' | 'download_as' | 'download_audio' | 'copy' | 'record_live';
   saveAs?: boolean;
@@ -276,6 +293,14 @@ export type HlsRecoveryAction =
   | 'retry_mp4_conversion'
   | 'retry_failed_segments'
   | 'replace_manifest_url';
+
+export type CodecContainer = 'mp4' | 'webm' | 'ts' | 'unknown';
+
+export interface CodecInfo {
+  video?: string;
+  audio?: string;
+  container: CodecContainer;
+}
 
 export type PreviewAssetFormat = 'webm' | 'mp4' | 'gif';
 export type GeneratedAssetMimeType =
@@ -345,6 +370,7 @@ export interface DownloadJob {
   segmentStatuses?: JobSegmentStatus[];
   selectedSegmentRange?: { start: number; end: number };
   hlsTimelinePolicy?: DownloadSelection['hlsTimelinePolicy'];
+  liveHlsTelemetry?: LiveHlsTelemetrySnapshot;
   browserExportRoute?: string;
   browserExportSink?: string;
   browserExportReason?: string;
@@ -384,6 +410,18 @@ export interface ExtensionStorageCleanupResult {
   orphanedFragmentBuckets: number;
   activeJobBuckets: number;
   removedStorageKeys: string[];
+}
+
+export type StorageDiagnosticsLevel = 'ok' | 'moderate' | 'high' | 'critical';
+
+export interface StorageDiagnosticsSummary {
+  usageBytes: number;
+  quotaBytes: number;
+  freeBytes: number;
+  level: StorageDiagnosticsLevel;
+  warning?: string;
+  subtitleBytes?: number;
+  bucketBytes?: number;
 }
 
 export type PanelSurfaceState =
@@ -481,6 +519,7 @@ export type RuntimeRequest =
   | MessageEnvelope<'GET_CANDIDATES', { tabId: number }>
   | MessageEnvelope<'GET_ALL_CANDIDATES', Record<string, never>>
   | MessageEnvelope<'CLEAN_EXTENSION_STORAGE', Record<string, never>>
+  | MessageEnvelope<'GET_STORAGE_DIAGNOSTICS', Record<string, never>>
   | MessageEnvelope<'REQUEST_HOST_ACCESS', { origin: string }>
   | MessageEnvelope<'START_PREVIEW', { candidateId: string }>
   | MessageEnvelope<'STOP_PREVIEW', { candidateId: string }>
@@ -508,7 +547,11 @@ export type RuntimeRequest =
   | MessageEnvelope<'UPDATE_HLS_SEGMENT_RANGE', { jobId: string; range: { start: number; end: number } }>
   | MessageEnvelope<'RECOVER_HLS_EXPORT', { jobId: string; action: Extract<HlsRecoveryAction, 'save_raw_ts' | 'retry_mp4_conversion'> }>
   | MessageEnvelope<'REPLACE_HLS_MANIFEST_URL', { jobId: string; manifestUrl: string }>
+  | MessageEnvelope<'SET_HLS_DISCONTINUITY_POLICY', { jobId: string; policy: 'include-all' | 'skip-ads' }>
+  | MessageEnvelope<'REPAIR_HLS_SEGMENTS', { jobId: string; selectors: HlsRepairSelectors }>
   | MessageEnvelope<'GET_QUEUE_STATS', Record<string, never>>
+  | MessageEnvelope<'GET_CODEC_INFO', { candidateId: string; jobId?: string }>
+  | MessageEnvelope<'SET_CANDIDATE_DURATION', { candidateId: string; durationSec: number }>
   | MessageEnvelope<'DEBUG_GET_EVIDENCE', { candidateId: string }>;
 
 export type RuntimeResponse =
@@ -520,6 +563,7 @@ export type RuntimeResponse =
   | MessageEnvelope<'GET_CANDIDATES_RESULT', { candidates: MediaCandidate[] }>
   | MessageEnvelope<'GET_ALL_CANDIDATES_RESULT', { candidates: MediaCandidate[] }>
   | MessageEnvelope<'CLEAN_EXTENSION_STORAGE_RESULT', ExtensionStorageCleanupResult>
+  | MessageEnvelope<'GET_STORAGE_DIAGNOSTICS_RESULT', StorageDiagnosticsSummary>
   | MessageEnvelope<'REQUEST_HOST_ACCESS_RESULT', { granted: boolean; origin: string }>
   | MessageEnvelope<'START_PREVIEW_RESULT', { ok: boolean }>
   | MessageEnvelope<'STOP_PREVIEW_RESULT', { ok: boolean }>
@@ -545,7 +589,11 @@ export type RuntimeResponse =
   | MessageEnvelope<'UPDATE_HLS_SEGMENT_RANGE_RESULT', { job?: DownloadJob }>
   | MessageEnvelope<'RECOVER_HLS_EXPORT_RESULT', { job?: DownloadJob; queued: boolean }>
   | MessageEnvelope<'REPLACE_HLS_MANIFEST_URL_RESULT', { job?: DownloadJob; queued: boolean }>
+  | MessageEnvelope<'SET_HLS_DISCONTINUITY_POLICY_RESULT', { job?: DownloadJob; queued: boolean }>
+  | MessageEnvelope<'REPAIR_HLS_SEGMENTS_RESULT', { job?: DownloadJob; queued: boolean; repairedCount: number }>
   | MessageEnvelope<'GET_QUEUE_STATS_RESULT', { stats: QueueStats }>
+  | MessageEnvelope<'GET_CODEC_INFO_RESULT', { codecInfo: CodecInfo | null }>
+  | MessageEnvelope<'SET_CANDIDATE_DURATION_RESULT', { ok: boolean; durationSec?: number }>
   | MessageEnvelope<'DEBUG_GET_EVIDENCE_RESULT', { evidence: DetectionEvidence[] }>
   | MessageEnvelope<'ERROR', { code: string; message: string; detail?: unknown }>;
 

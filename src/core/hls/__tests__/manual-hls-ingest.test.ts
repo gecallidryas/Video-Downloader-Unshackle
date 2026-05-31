@@ -20,6 +20,23 @@ describe('createManualHlsIngestEvidence', () => {
     ]);
   });
 
+  test('expands a ${range:..} template into a synthetic segment manifest', () => {
+    const evidence = createManualHlsIngestEvidence({
+      input: 'https://cdn.example.com/seg-${range:1-3,3}.ts',
+      pageUrl: 'https://example.com/watch',
+      now: () => 7,
+    });
+
+    expect(evidence).toHaveLength(1);
+    expect(evidence[0]?.notes).toEqual(
+      expect.arrayContaining(['protocol:hls', 'manual-ingest:range-template']),
+    );
+    const manifest = decodeURIComponent(evidence[0]?.url?.split(',', 2)[1] ?? '');
+    expect(manifest).toContain('https://cdn.example.com/seg-001.ts');
+    expect(manifest).toContain('https://cdn.example.com/seg-002.ts');
+    expect(manifest).toContain('https://cdn.example.com/seg-003.ts');
+  });
+
   test('normalizes raw HLS manifest text into a data URL using a base URL', () => {
     const evidence = createManualHlsIngestEvidence({
       input: '#EXTM3U\n#EXTINF:4,\nseg-1.ts\n#EXTINF:4,\nseg-2.ts',

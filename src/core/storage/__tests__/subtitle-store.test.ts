@@ -1,5 +1,8 @@
 import { describe, expect, test } from 'vitest';
-import { createInMemorySubtitleStore } from '../subtitle-store';
+import {
+  createInMemorySubtitleStore,
+  createIndexedDbSubtitleStore,
+} from '../subtitle-store';
 
 describe('subtitle store (in-memory adapter)', () => {
   test('stores and retrieves subtitle entries by job id', async () => {
@@ -98,5 +101,22 @@ describe('subtitle store (in-memory adapter)', () => {
     await store.deleteJob('job-1');
 
     await expect(store.listByJob('job-1')).resolves.toEqual([]);
+  });
+});
+
+describe('subtitle store (IndexedDB factory)', () => {
+  test('falls back to the in-memory adapter when IndexedDB is unavailable', async () => {
+    const store = createIndexedDbSubtitleStore({ mode: 'memory' });
+
+    await store.put({
+      jobId: 'job-1',
+      trackId: 'en',
+      language: 'en',
+      format: 'vtt',
+      content: 'hello',
+    });
+
+    await expect(store.listByJob('job-1')).resolves.toHaveLength(1);
+    await expect(store.estimateBytes()).resolves.toBe(5);
   });
 });

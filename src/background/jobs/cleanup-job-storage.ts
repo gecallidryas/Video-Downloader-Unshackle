@@ -43,10 +43,12 @@ export async function cleanupJobStorage(
     }
   }
 
-  try {
-    await options.metadata?.delete(jobId);
-  } catch (error) {
-    errors.push(error instanceof Error ? error.message : String(error));
+  for (const bucketId of bucketIds) {
+    try {
+      await options.metadata?.delete(bucketId);
+    } catch (error) {
+      errors.push(error instanceof Error ? error.message : String(error));
+    }
   }
 
   try {

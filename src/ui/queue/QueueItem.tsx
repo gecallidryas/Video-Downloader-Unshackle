@@ -1,5 +1,8 @@
 import { useMemo } from 'react';
-import type { HlsRecoveryAction } from '@/video_downloader_types_skeleton';
+import type {
+  HlsRecoveryAction,
+  LiveHlsTelemetrySnapshot,
+} from '@/video_downloader_types_skeleton';
 import { OverflowMenu, type MenuAction } from '@/src/ui/shared/OverflowMenu';
 import { SegmentGrid, type SegmentCell, type SegmentRange } from '@/src/ui/shared/SegmentGrid';
 
@@ -19,6 +22,8 @@ export interface QueueViewItem {
   recoveryActions?: HlsRecoveryAction[];
   segments?: SegmentCell[];
   selectedSegmentRange?: SegmentRange;
+  liveHlsTelemetry?: LiveHlsTelemetrySnapshot;
+  discontinuityPolicy?: 'include-all' | 'skip-ads';
 }
 
 export type QueueAction =
@@ -35,7 +40,11 @@ export type QueueAction =
   | 'retry-failed-segments'
   | 'export-partial'
   | 'retry-mp4-conversion'
-  | 'replace-manifest-url';
+  | 'replace-manifest-url'
+  | 'skip-ads'
+  | 'include-all-segments'
+  | 'repair-regex'
+  | 'repair-time-range';
 
 interface QueueItemProps {
   item: QueueViewItem;
@@ -85,6 +94,15 @@ export function QueueItem({
     } else {
       items.push({ id: 'copy-command', label: 'Copy command' });
     }
+    if (item.segments?.length) {
+      items.push(
+        item.discontinuityPolicy === 'skip-ads'
+          ? { id: 'include-all-segments', label: 'Include all segments', divider: true }
+          : { id: 'skip-ads', label: 'Skip ad discontinuities', divider: true },
+      );
+      items.push({ id: 'repair-regex', label: 'Repair segments by URL pattern…' });
+      items.push({ id: 'repair-time-range', label: 'Repair segments by time range…' });
+    }
     items.push({
       id: 'remove',
       label: 'Remove from queue',
@@ -92,7 +110,7 @@ export function QueueItem({
       divider: true,
     });
     return items;
-  }, [item.status, onCopyCommand, commandProfileIds]);
+  }, [item.status, item.segments?.length, item.discontinuityPolicy, onCopyCommand, commandProfileIds]);
 
   function handleMenu(actionId: string) {
     if (actionId.startsWith('copy-command:') && onCopyCommand) {
@@ -142,6 +160,17 @@ export function QueueItem({
               className="queue-item__progress-fill"
               style={{ width: `${progress}%` }}
             />
+          </div>
+        ) : null}
+        {item.liveHlsTelemetry ? (
+          <div
+            className={`queue-item__live-telemetry queue-item__live-telemetry--${item.liveHlsTelemetry.state}`}
+            role="status"
+          >
+            <span className="queue-item__live-dot" aria-hidden="true" />
+            Live {item.liveHlsTelemetry.state} · seq {item.liveHlsTelemetry.lastSequence} ·{' '}
+            {item.liveHlsTelemetry.totalRefreshes} refreshes ·{' '}
+            {item.liveHlsTelemetry.noNewSegmentRetries} idle retries
           </div>
         ) : null}
         {item.segments?.length ? (

@@ -82,6 +82,8 @@ function buildRuntimeClient(candidates: MediaCandidate[]): RuntimeClient {
       generated: true,
     }),
     getMediaAssetState: vi.fn().mockResolvedValue([]),
+    getCodecInfo: vi.fn().mockResolvedValue(null),
+    setCandidateDuration: vi.fn().mockResolvedValue(true),
     queueMediaAsset: vi.fn().mockImplementation((candidateId: string, kind: MediaAssetState['kind']) =>
       Promise.resolve({
         candidateId,
@@ -99,6 +101,8 @@ function buildRuntimeClient(candidates: MediaCandidate[]): RuntimeClient {
     updateHlsSegmentRange: vi.fn().mockResolvedValue(undefined),
     recoverHlsExport: vi.fn().mockResolvedValue(undefined),
     replaceHlsManifestUrl: vi.fn().mockResolvedValue(undefined),
+    setHlsDiscontinuityPolicy: vi.fn().mockResolvedValue(undefined),
+    repairHlsSegments: vi.fn().mockResolvedValue({ job: undefined, repairedCount: 0 }),
     getAllCandidates: vi.fn().mockResolvedValue(candidates),
     getJobs,
     subscribeToUpdates: vi.fn((handlers) => {
@@ -690,6 +694,74 @@ test('opens HLS eye preview with the original manifest instead of a generated cl
     'src',
     'https://cdn.example.com/master.m3u8',
   );
+});
+
+test('progressive preview wires downloaded ranges, codec sniff, and duration callback', async () => {
+  const user = userEvent.setup();
+  useSettingsStore.setState({ enableNativeFeatures: true, enableBrowserFallbacks: true });
+  const runtimeClient = buildRuntimeClient([
+    buildCandidate({
+      id: 'hls-prog',
+      protocol: 'hls',
+      displayName: 'Progressive HLS stream',
+      sourceUrl: undefined,
+      manifestUrl: 'https://cdn.example.com/master.m3u8',
+      durationSec: undefined,
+      posterUrl: undefined,
+      thumbnails: undefined,
+    }),
+  ]);
+  const job: DownloadJob = {
+    id: 'job-prog',
+    candidateId: 'hls-prog',
+    tabId: 7,
+    phase: 'fetching',
+    createdAt: 1,
+    updatedAt: 1,
+    selection: { mode: 'best' },
+    progressPct: 40,
+    bytesDownloaded: 100,
+    segmentStatuses: [
+      { index: 0, status: 'done', durationSec: 5 },
+      { index: 1, status: 'done', durationSec: 5 },
+      { index: 2, status: 'pending', durationSec: 5 },
+    ],
+  };
+  vi.mocked(runtimeClient.getJobs).mockResolvedValue([job]);
+  vi.mocked(runtimeClient.getCodecInfo).mockResolvedValue({
+    container: 'mp4',
+    video: 'H.264',
+    audio: 'AAC',
+  });
+
+  render(<SidePanelApp activeTabId={7} runtimeClient={runtimeClient} />);
+
+  expect(await screen.findByText('Progressive HLS stream')).toBeInTheDocument();
+  await user.click(screen.getByRole('button', { name: /preview/i }));
+
+  expect(await screen.findByRole('dialog', { name: /preview progressive hls stream/i }))
+    .toBeInTheDocument();
+
+  // #85: contiguous done segments become a downloaded-region progress bar.
+  expect(
+    screen.getByRole('progressbar', { name: /downloaded preview region/i }),
+  ).toBeInTheDocument();
+
+  // #86: codec is sniffed from the first downloaded fragment via the round-trip.
+  await waitFor(() => {
+    expect(runtimeClient.getCodecInfo).toHaveBeenCalledWith('hls-prog', { jobId: 'job-prog' });
+  });
+  expect(await screen.findByText('H.264 / AAC')).toBeInTheDocument();
+
+  // #89: resolved metadata duration is persisted back to candidate metadata.
+  const video = screen.getByLabelText(/preview video/i) as HTMLVideoElement;
+  Object.defineProperty(video, 'duration', { value: 88.5, configurable: true });
+  act(() => {
+    video.dispatchEvent(new Event('loadedmetadata'));
+  });
+  await waitFor(() => {
+    expect(runtimeClient.setCandidateDuration).toHaveBeenCalledWith('hls-prog', 88.5);
+  });
 });
 
 test('loads direct thumbnails through browser fallback when native features are disabled', async () => {

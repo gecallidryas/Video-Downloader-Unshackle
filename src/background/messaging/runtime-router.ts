@@ -9,9 +9,14 @@ import type {
   RuntimeResponse,
   GeneratedAssetResult,
   ExtensionStorageCleanupResult,
+  StorageDiagnosticsSummary,
   MediaAssetKind,
   MediaAssetState,
+  SegmentDescriptor,
+  CodecInfo,
 } from '@/video_downloader_types_skeleton';
+import { sniffCodecs } from '@/src/core/preview/codec-sniff';
+import type { FragmentStore } from '@/src/core/storage/indexeddb-fragment-store';
 import {
   createMessageEnvelope,
   createRuntimeErrorResponse,
@@ -36,6 +41,7 @@ import {
 } from '@/src/core/direct/start-direct-download';
 import { parseHlsManifest } from '@/src/core/hls/parse-hls-manifest';
 import { createManualHlsIngestEvidence } from '@/src/core/hls/manual-hls-ingest';
+import { selectSegmentsForRepair } from '@/src/core/hls/segment-repair';
 import { fetchDurationsWithLimit } from '@/src/core/probe/duration-fetcher';
 import type { CandidateEvidence } from '@/src/core/candidates/classify-candidate';
 
@@ -81,6 +87,7 @@ export interface RuntimeRouterDependencies {
   cancelDownload?: (jobId: string) => Promise<{ cancelled: boolean; downloadId?: number }>;
   cleanupJobStorage?: (jobId: string) => Promise<void>;
   cleanupExtensionStorage?: () => Promise<ExtensionStorageCleanupResult>;
+  getStorageDiagnostics?: () => Promise<StorageDiagnosticsSummary>;
   downloadFile?: DirectDownloadFile;
   requestJournal?: RequestJournal;
   fetchManifest?: (url: string) => Promise<string>;
@@ -98,6 +105,7 @@ export interface RuntimeRouterDependencies {
     ): Promise<MediaAssetState>;
   };
   getQueueStats?: () => QueueStats | Promise<QueueStats>;
+  fragmentStore?: FragmentStore;
   requestHostAccess?: (originPattern: string) => Promise<boolean>;
   drmDetections?: Map<string, DrmDetectionRecord[]>;
   recordDetection?: (hostname: string, count: number) => void;
@@ -136,6 +144,8 @@ type RoutedRuntimeRequest = Extract<
       | 'GET_ALL_CANDIDATES'
       | 'CLEAN_EXTENSION_STORAGE'
       | 'GET_QUEUE_STATS'
+      | 'GET_CODEC_INFO'
+      | 'SET_CANDIDATE_DURATION'
       | 'REQUEST_HOST_ACCESS'
       | 'GET_PREVIEW_ASSET'
       | 'GET_THUMBNAIL_ASSET'
@@ -175,6 +185,8 @@ const handledRequestTypes = new Set<
   'GET_ALL_CANDIDATES',
   'CLEAN_EXTENSION_STORAGE',
   'GET_QUEUE_STATS',
+  'GET_CODEC_INFO',
+  'SET_CANDIDATE_DURATION',
   'REQUEST_HOST_ACCESS',
   'GET_PREVIEW_ASSET',
   'GET_THUMBNAIL_ASSET',
@@ -201,6 +213,59 @@ const handledRequestTypes = new Set<
   'RECOVER_HLS_EXPORT',
   'REPLACE_HLS_MANIFEST_URL',
 ]);
+
+const CODEC_SNIFF_MAX_FRAGMENTS = 4;
+
+// Sniff codecs from the cheapest real bytes available: the lowest-indexed
+// downloaded fragment(s) of an in-flight/completed job. Returns null when no
+// fragment store is wired, no job is known, or nothing has been written yet —
+// the panel renders no badge rather than guessing.
+async function resolveCodecInfo(
+  dependencies: RuntimeRouterDependencies,
+  candidateId: string,
+  jobId?: string,
+): Promise<CodecInfo | null> {
+  const fragmentStore = dependencies.fragmentStore;
+  if (!fragmentStore || !fragmentStore.isAvailable()) {
+    return null;
+  }
+
+  const resolvedJobId =
+    jobId ??
+    dependencies.jobStore?.list().find((job) => job.candidateId === candidateId)?.id;
+  if (!resolvedJobId) {
+    return null;
+  }
+
+  const job = dependencies.jobStore?.get(resolvedJobId);
+  const doneIndices = (job?.segmentStatuses ?? [])
+    .filter((segment) => segment.status === 'done')
+    .map((segment) => segment.index)
+    .sort((a, b) => a - b);
+
+  // A bucket that was never created (nothing downloaded yet) throws on read in
+  // the memory store, so treat any access failure as "no bytes available".
+  try {
+    const indices =
+      doneIndices.length > 0
+        ? doneIndices
+        : (await fragmentStore.listFragmentIndices(resolvedJobId)).sort((a, b) => a - b);
+
+    for (const index of indices.slice(0, CODEC_SNIFF_MAX_FRAGMENTS)) {
+      const bytes = await fragmentStore.readFragment(resolvedJobId, index);
+      if (bytes && bytes.length >= 16) {
+        const info = sniffCodecs(bytes);
+        if (info) {
+          return info;
+        }
+      }
+    }
+  } catch {
+    return null;
+  }
+
+  return null;
+}
 
 function buildDefaultQueueStats(): QueueStats {
   return {
@@ -957,6 +1022,18 @@ export function createRuntimeRouter(
           );
         }
 
+        case 'GET_STORAGE_DIAGNOSTICS': {
+          const summary: StorageDiagnosticsSummary = dependencies.getStorageDiagnostics
+            ? await dependencies.getStorageDiagnostics()
+            : { usageBytes: 0, quotaBytes: 0, freeBytes: 0, level: 'ok' };
+
+          return createRuntimeResponse(
+            'GET_STORAGE_DIAGNOSTICS_RESULT',
+            summary,
+            request.requestId,
+          );
+        }
+
         case 'GET_QUEUE_STATS': {
           const stats = dependencies.getQueueStats
             ? await dependencies.getQueueStats()
@@ -1284,6 +1361,38 @@ export function createRuntimeRouter(
           );
         }
 
+        case 'GET_CODEC_INFO': {
+          const codecInfo = await resolveCodecInfo(
+            dependencies,
+            request.payload.candidateId,
+            request.payload.jobId,
+          );
+
+          return createRuntimeResponse(
+            'GET_CODEC_INFO_RESULT',
+            { codecInfo },
+            request.requestId,
+          );
+        }
+
+        case 'SET_CANDIDATE_DURATION': {
+          const updated = dependencies.candidateRegistry.setDuration(
+            request.payload.candidateId,
+            request.payload.durationSec,
+          );
+
+          return createRuntimeResponse(
+            'SET_CANDIDATE_DURATION_RESULT',
+            {
+              ok: Boolean(updated),
+              ...(updated?.durationSec !== undefined
+                ? { durationSec: updated.durationSec }
+                : {}),
+            },
+            request.requestId,
+          );
+        }
+
         case 'RETRY_DOWNLOAD': {
           const queued = dependencies.downloadQueue?.retry(request.payload.jobId) ?? false;
           void dependencies.downloadQueue?.drain();
@@ -1497,6 +1606,98 @@ export function createRuntimeRouter(
           return createRuntimeResponse(
             'RETRY_FAILED_HLS_SEGMENTS_RESULT',
             { job: updated, queued },
+            request.requestId,
+          );
+        }
+
+        case 'SET_HLS_DISCONTINUITY_POLICY': {
+          const job = dependencies.jobStore?.get(request.payload.jobId);
+
+          if (!job || !dependencies.jobStore) {
+            return createRuntimeErrorResponse(
+              'NOT_FOUND',
+              `Job not found: ${request.payload.jobId}`,
+              request.requestId,
+            );
+          }
+
+          // Changing the discontinuity policy reshapes the segment set, so the
+          // job is re-planned from scratch: clear prior segment statuses (the
+          // runner's onPlan hook rebuilds them) and requeue.
+          const updated = dependencies.jobStore.update(job.id, {
+            phase: 'queued',
+            failure: undefined,
+            progressPct: 0,
+            output: undefined,
+            segmentStatuses: undefined,
+            selectedSegmentRange: undefined,
+            selection: {
+              ...job.selection,
+              discontinuityPolicy: request.payload.policy,
+            },
+          });
+          const queued = dependencies.downloadQueue?.retry(job.id) ?? true;
+          void dependencies.downloadQueue?.drain();
+
+          return createRuntimeResponse(
+            'SET_HLS_DISCONTINUITY_POLICY_RESULT',
+            { job: updated, queued },
+            request.requestId,
+          );
+        }
+
+        case 'REPAIR_HLS_SEGMENTS': {
+          const job = dependencies.jobStore?.get(request.payload.jobId);
+
+          if (!job || !dependencies.jobStore) {
+            return createRuntimeErrorResponse(
+              'NOT_FOUND',
+              `Job not found: ${request.payload.jobId}`,
+              request.requestId,
+            );
+          }
+
+          const statuses = job.segmentStatuses ?? [];
+          const descriptors: SegmentDescriptor[] = statuses.map((segment) => ({
+            id: String(segment.index),
+            index: segment.index,
+            url: segment.url ?? '',
+            ...(typeof segment.durationSec === 'number'
+              ? { durationSec: segment.durationSec }
+              : {}),
+          }));
+          const selectors = request.payload.selectors;
+          const selected = selectSegmentsForRepair(descriptors, {
+            ...(selectors.indexRange ? { indexRange: selectors.indexRange } : {}),
+            ...(selectors.timeRange ? { timeRange: selectors.timeRange } : {}),
+            ...(selectors.regexFilter ? { regexFilter: selectors.regexFilter } : {}),
+          });
+          const selectedIndices = new Set(selected.map((segment) => segment.index));
+
+          if (selectedIndices.size === 0) {
+            return createRuntimeResponse(
+              'REPAIR_HLS_SEGMENTS_RESULT',
+              { job, queued: false, repairedCount: 0 },
+              request.requestId,
+            );
+          }
+
+          const updated = dependencies.jobStore.update(job.id, {
+            phase: 'queued',
+            failure: undefined,
+            progressPct: 0,
+            segmentStatuses: statuses.map((segment) =>
+              selectedIndices.has(segment.index)
+                ? { ...segment, status: 'pending' as const, error: undefined }
+                : segment,
+            ),
+          });
+          const queued = dependencies.downloadQueue?.retry(job.id) ?? true;
+          void dependencies.downloadQueue?.drain();
+
+          return createRuntimeResponse(
+            'REPAIR_HLS_SEGMENTS_RESULT',
+            { job: updated, queued, repairedCount: selectedIndices.size },
             request.requestId,
           );
         }

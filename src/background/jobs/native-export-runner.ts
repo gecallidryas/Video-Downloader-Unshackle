@@ -218,13 +218,34 @@ async function defaultFetchText(url: string, init?: RequestInit): Promise<string
   return response.text();
 }
 
+interface PreStoredSubtitle {
+  fileName: string;
+  mimeType: string;
+  sizeBytes: number;
+  content: string;
+}
+
+function subtitleMimeType(format: SubtitleFormat): string {
+  return format === 'srt' ? 'application/x-subrip' : 'text/vtt';
+}
+
+function subtitleByteLength(content: string): number {
+  return typeof TextEncoder !== 'undefined'
+    ? new TextEncoder().encode(content).byteLength
+    : content.length;
+}
+
+// Fetches and persists selected subtitle tracks before native export so the
+// content survives a service-worker restart or a mux failure. Returns the
+// fetched entries (content included) so the caller can deliver them as sidecar
+// downloads on the success path without re-fetching.
 async function preStoreSubtitles(input: {
   candidate: MediaCandidate;
   job: DownloadJob;
   outputName: string;
   subtitleStore?: SubtitleStore;
   fetchText?: (url: string, init?: RequestInit) => Promise<string>;
-}): Promise<NonNullable<JobOutput['sidecarOutputs']>> {
+}): Promise<PreStoredSubtitle[]> {
   if (!input.subtitleStore) {
     return [];
   }
@@ -233,14 +254,13 @@ async function preStoreSubtitles(input: {
   const tracks = selectedSubtitleTracks(input.candidate, input.job).filter(
     (track) => Boolean(track.url),
   );
-  const sidecarOutputs: NonNullable<JobOutput['sidecarOutputs']> = [];
 
-  await Promise.all(
-    tracks.map(async (track) => {
+  const entries = await Promise.all(
+    tracks.map(async (track): Promise<PreStoredSubtitle | undefined> => {
       const url = track.url;
 
       if (!url) {
-        return;
+        return undefined;
       }
 
       const format = subtitleFormatFor(track);
@@ -259,23 +279,47 @@ async function preStoreSubtitles(input: {
         fileName,
         content,
       });
-      if (
-        input.job.selection.subtitleOutput === 'sidecar' ||
-        input.job.selection.subtitleOutput === 'both'
-      ) {
-        sidecarOutputs.push({
-          fileName,
-          mimeType: format === 'srt' ? 'application/x-subrip' : 'text/vtt',
-          sizeBytes:
-            typeof TextEncoder !== 'undefined'
-              ? new TextEncoder().encode(content).byteLength
-              : content.length,
-        });
-      }
+
+      return {
+        fileName,
+        mimeType: subtitleMimeType(format),
+        sizeBytes: subtitleByteLength(content),
+        content,
+      };
     }),
   );
 
-  return sidecarOutputs;
+  return entries.filter((entry): entry is PreStoredSubtitle => entry !== undefined);
+}
+
+// Delivers pre-stored subtitle content as sidecar downloads on the ffmpeg
+// success path. The content is a plain fetched string (not a host-owned output
+// file), so the Blob is built directly and handed to deliverOutput rather than
+// routed through readFullOutput/deliverNativeOutput. The ffmpeg exportMedia
+// contract carries no subtitle URLs, so even 'embed' selections fall back to
+// sidecar delivery here so the fetched data is never silently lost.
+async function deliverPreStoredSubtitles(input: {
+  subtitles: PreStoredSubtitle[];
+  deliverOutput: DeliverNativeOutput;
+}): Promise<NonNullable<JobOutput['sidecarOutputs']>> {
+  const delivered: NonNullable<JobOutput['sidecarOutputs']> = [];
+
+  for (const subtitle of input.subtitles) {
+    const blob = new Blob([subtitle.content], { type: subtitle.mimeType });
+    await input.deliverOutput({
+      blob,
+      fileName: subtitle.fileName,
+      mimeType: subtitle.mimeType,
+    });
+
+    delivered.push({
+      fileName: subtitle.fileName,
+      mimeType: subtitle.mimeType,
+      sizeBytes: subtitle.sizeBytes,
+    });
+  }
+
+  return delivered;
 }
 
 async function defaultDeliverOutput(input: {
@@ -345,7 +389,10 @@ export async function runNativeExportJob({
 
   const outputKind = outputKindFor(candidate, job);
   const outputName = outputNameFor(candidate, outputKind);
-  const sidecarOutputs = await preStoreSubtitles({
+  const resolvedDeliver = deliverOutput ?? defaultDeliverOutput;
+  // Persist BEFORE export so a thrown export leaves the store as the survival
+  // path. Delivery happens only after a successful export (below).
+  const preStoredSubtitles = await preStoreSubtitles({
     candidate,
     job,
     outputName,
@@ -383,7 +430,16 @@ export async function runNativeExportJob({
     mimeType,
     ...(result.sizeBytes !== undefined ? { totalBytes: result.sizeBytes } : {}),
     readFullOutput,
-    deliverOutput: deliverOutput ?? defaultDeliverOutput,
+    deliverOutput: resolvedDeliver,
+  });
+
+  // The ffmpeg exportMedia contract carries no subtitle URLs, so the helper
+  // cannot embed subtitles. Deliver every pre-stored subtitle (sidecar/both,
+  // and embed as a fallback) as a sidecar download so the fetched data reaches
+  // the user instead of being silently dropped.
+  const sidecarOutputs = await deliverPreStoredSubtitles({
+    subtitles: preStoredSubtitles,
+    deliverOutput: resolvedDeliver,
   });
 
   return {

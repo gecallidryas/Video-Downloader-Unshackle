@@ -127,7 +127,7 @@ export function PreviewModal({
     onDurationResolved?.(sec);
   }
 
-  const { videoRef, reload, key } = usePreviewPlayer({
+  const { videoRef, reload, key, playbackStrategy } = usePreviewPlayer({
     sourceUrl,
     protocol: playerProtocol,
     onDurationResolved: handleDuration,
@@ -204,6 +204,18 @@ export function PreviewModal({
             aria-valuemax={100}
             style={{ background: rangeGradient }}
           />
+        ) : null}
+
+        {protocol === 'hls' ? (
+          <p
+            className="preview-modal__playback-strategy"
+            data-testid="preview-playback-strategy"
+            data-strategy={playbackStrategy}
+          >
+            {playbackStrategy === 'hls-js'
+              ? 'Playing via hls.js (native HLS unsupported)'
+              : 'Native HLS playback'}
+          </p>
         ) : null}
 
         {note ? <p className="preview-modal__note">{note}</p> : null}

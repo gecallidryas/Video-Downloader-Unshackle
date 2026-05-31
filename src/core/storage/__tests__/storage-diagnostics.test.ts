@@ -30,6 +30,21 @@ describe('storage diagnostics', () => {
     });
   });
 
+  test('includes subtitle and fragment byte breakdown when provided as extras', async () => {
+    await expect(
+      getStorageDiagnostics(
+        { estimate: vi.fn(async () => ({ usage: 100_000_000, quota: 1_000_000_000 })) },
+        { subtitleBytes: 42, bucketBytes: 256 },
+      ),
+    ).resolves.toMatchObject({
+      usageBytes: 100_000_000,
+      quotaBytes: 1_000_000_000,
+      level: 'ok',
+      subtitleBytes: 42,
+      bucketBytes: 256,
+    });
+  });
+
   test('measures bucket usage from metadata or stored fragments when metadata is missing', async () => {
     await expect(
       estimateBucketUsage({

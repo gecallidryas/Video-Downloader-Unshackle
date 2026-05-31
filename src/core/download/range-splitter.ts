@@ -14,6 +14,7 @@ export interface DownloadDirectWithRangesOptions {
   chunkSizeBytes?: number;
   concurrency?: number;
   maxInMemoryBytes?: number;
+  bandwidthBytesPerSecond?: number;
   fetch?: DirectRangeFetch;
   signal?: AbortSignal;
 }
@@ -103,6 +104,10 @@ export async function downloadDirectWithRanges(
     segments,
     concurrency: options.concurrency ?? 3,
     signal: options.signal,
+    ...(options.bandwidthBytesPerSecond !== undefined &&
+    options.bandwidthBytesPerSecond > 0
+      ? { bandwidthBytesPerSecond: options.bandwidthBytesPerSecond }
+      : {}),
     fetchSegment: async (segment, request) => {
       const response = await fetcher(segment.url, {
         headers: request.headers,

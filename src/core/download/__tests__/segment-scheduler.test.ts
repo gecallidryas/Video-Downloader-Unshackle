@@ -243,6 +243,31 @@ describe('scheduleSegments', () => {
     expect(storage.readFragment).toHaveBeenCalledWith('job-resume', 2);
   });
 
+  test('fires onFragmentStored for freshly stored fragments but not resumed ones', async () => {
+    const storage = {
+      createBucket: vi.fn(),
+      listFragmentIndices: vi.fn().mockResolvedValue([0]),
+      writeFragment: vi.fn(),
+      readFragment: vi.fn(async (_jobId: string, index: number) => new Uint8Array([index])),
+    };
+    const stored: Array<{ jobId: string; index: number; bytes: number }> = [];
+    const fetchSegment = vi.fn(async (item: SegmentDescriptor) => new Uint8Array([item.index, item.index]));
+
+    await scheduleSegments({
+      jobId: 'job-meta',
+      segments: [segment(0), segment(1)],
+      storage,
+      fetchSegment,
+      onFragmentStored: (event) => {
+        stored.push(event);
+      },
+    });
+
+    // Index 0 was already in storage (resumed) -> no metadata write.
+    // Index 1 was freshly fetched (2 bytes) -> exactly one metadata write.
+    expect(stored).toEqual([{ jobId: 'job-meta', index: 1, bytes: 2 }]);
+  });
+
   test('re-fetches a stored index whose bytes are missing on resume', async () => {
     const storage = {
       createBucket: vi.fn(),

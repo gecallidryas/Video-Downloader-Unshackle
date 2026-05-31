@@ -1,5 +1,6 @@
 import type { DownloadSelection, SegmentDescriptor, SegmentPlan } from '@/video_downloader_types_skeleton';
 import { filterSegmentsByTrim } from '../download/filter-segments-by-trim';
+import { collapseDollarEscape, substituteDashTokens } from './dash-template';
 import type { ParsedDashManifest } from './parse-mpd';
 import { selectDashRepresentation } from './select-representation';
 
@@ -23,17 +24,17 @@ export function dashRequiresSeparateAudioVideo(
 }
 
 function replaceNumberToken(template: string, number: number): string {
-  return template.replace(/\$Number(?:%0(\d+)d)?\$/g, (_match, width: string) => {
-    if (!width) {
-      return String(number);
-    }
-
-    return String(number).padStart(Number(width), '0');
-  });
+  return collapseDollarEscape(substituteDashTokens(template, { Number: number }));
 }
 
-function replaceTimeToken(template: string, time: number): string {
-  return template.replace(/\$Time\$/g, String(time));
+function replaceTimelineTokens(
+  template: string,
+  number: number,
+  time: number,
+): string {
+  return collapseDollarEscape(
+    substituteDashTokens(template, { Number: number, Time: time }),
+  );
 }
 
 export function planDashSegments(
@@ -52,7 +53,7 @@ export function planDashSegments(
     segments.push({
       id: `dash-init-${representation.id}`,
       index: 0,
-      url: representation.initializationUrl,
+      url: collapseDollarEscape(representation.initializationUrl),
       initSegment: true,
       trackType,
     });
@@ -78,17 +79,18 @@ export function planDashSegments(
       });
     }
   } else if (representation.timeline && mediaUrlTemplate) {
-    for (const timelineSegment of representation.timeline) {
+    representation.timeline.forEach((timelineSegment, timelineIndex) => {
       const index = segments.length;
+      const number = representation.startNumber + timelineIndex;
 
       segments.push({
         id: `dash-segment-${representation.id}-${timelineSegment.time}`,
         index,
-        url: replaceTimeToken(mediaUrlTemplate, timelineSegment.time),
+        url: replaceTimelineTokens(mediaUrlTemplate, number, timelineSegment.time),
         trackType,
         durationSec: timelineSegment.durationSec,
       });
-    }
+    });
   } else {
   if (!mediaUrlTemplate) {
     throw new Error(`DASH representation has no media URL template: ${representation.id}`);

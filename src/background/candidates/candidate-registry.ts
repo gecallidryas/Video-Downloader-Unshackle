@@ -15,6 +15,7 @@ export interface CandidateRegistry {
   tabIds(): number[];
   all(): MediaCandidate[];
   findById(candidateId: string): MediaCandidate | undefined;
+  setDuration(candidateId: string, durationSec: number): MediaCandidate | undefined;
   clear(tabId: number): void;
   rehydrate(): Promise<void>;
   flush(): Promise<void>;
@@ -91,6 +92,37 @@ export function createCandidateRegistry(
         if (candidate) {
           return candidate;
         }
+      }
+
+      return undefined;
+    },
+
+    setDuration(candidateId, durationSec) {
+      if (!Number.isFinite(durationSec) || durationSec <= 0) {
+        return undefined;
+      }
+
+      for (const [tabId, candidates] of candidatesByTabId.entries()) {
+        const index = candidates.findIndex((item) => item.id === candidateId);
+        if (index === -1) {
+          continue;
+        }
+
+        const existing = candidates[index];
+        if (existing.durationSec === durationSec) {
+          return existing;
+        }
+
+        const updated: MediaCandidate = {
+          ...existing,
+          durationSec,
+          updatedAt: Date.now(),
+        };
+        const next = [...candidates];
+        next[index] = updated;
+        candidatesByTabId.set(tabId, next);
+        persist();
+        return updated;
       }
 
       return undefined;

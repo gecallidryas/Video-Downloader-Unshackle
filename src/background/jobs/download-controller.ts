@@ -100,6 +100,7 @@ export type ProbeDirectRangeSupport = (
 export type RunDirectRangeControllerJob = (input: {
   candidate: MediaCandidate;
   job: DownloadJob;
+  bandwidthBytesPerSecond?: number;
   signal?: AbortSignal;
 }) => Promise<JobOutput>;
 
@@ -389,6 +390,10 @@ export function createDownloadController(options: DownloadControllerOptions) {
             candidate,
             job: controllerJob,
             signal: jobSignal,
+            ...(settings.maxBandwidthPerHostKBps !== undefined &&
+            settings.maxBandwidthPerHostKBps > 0
+              ? { bandwidthBytesPerSecond: settings.maxBandwidthPerHostKBps * 1024 }
+              : {}),
           });
         }
 

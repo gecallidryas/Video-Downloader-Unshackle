@@ -63,6 +63,14 @@
   line-height: var(--text-label-lh);
 }
 
+.preview-modal__playback-strategy {
+  margin: 0 0 8px;
+  color: var(--on-surface-variant);
+  font-size: var(--text-label-size);
+  line-height: var(--text-label-lh);
+  opacity: 0.85;
+}
+
 .preview-modal__header-actions {
   display: inline-flex;
   align-items: center;

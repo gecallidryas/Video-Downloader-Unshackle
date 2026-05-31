@@ -18,6 +18,8 @@ import { PreviewModal } from '@/src/ui/preview/PreviewModal';
 import { QueueView, type QueueAction, type QueueViewItem } from '@/src/ui/queue/QueueView';
 import type { HistoryRow } from '@/src/ui/queue/QueueView';
 import { StorageFooter, type StorageLevel } from '@/src/ui/shared/StorageFooter';
+import { storageQuotaLevel } from '@/src/core/storage/storage-diagnostics';
+import type { StorageDiagnosticsSummary } from '@/video_downloader_types_skeleton';
 import { QRModal } from '@/src/ui/shared/QRModal';
 import { copyText } from '@/src/ui/shared/copy-text';
 import {
@@ -58,6 +60,8 @@ import {
   loadPreviousDetections,
 } from '@/src/background/state/previous-detections';
 import { toDetectedMedia } from '@/src/shared/adapters/media-card';
+import { deriveDownloadedRanges } from '@/src/core/preview/derive-downloaded-ranges';
+import type { CodecInfo } from '@/src/core/preview/codec-sniff';
 import type { DetectedMedia } from '@/src/types/media';
 import type {
   DownloadJob,
@@ -187,14 +191,9 @@ function persistTab(tab: PanelTab) {
 }
 
 function computeStorageLevel(usage: number, quota: number): StorageLevel {
-  if (quota <= 0) {
-    return 'ok';
-  }
-  const pct = (usage / quota) * 100;
-  if (pct >= 95) return 'critical';
-  if (pct >= 80) return 'high';
-  if (pct >= 60) return 'moderate';
-  return 'ok';
+  // Delegate to the canonical policy (90% or <=200MB free => critical) so the
+  // local fallback matches background diagnostics instead of drifting.
+  return storageQuotaLevel({ usageBytes: usage, quotaBytes: quota });
 }
 
 function startNativeHelperInstall() {
@@ -331,6 +330,9 @@ function DetectionView({ activeTabId, runtimeClient }: DetectionViewProps) {
   const fileLabel = `${fileCount} ${fileCount === 1 ? 'File' : 'Files'}`;
   const showResults = surfaceState === 'results';
   const [previewCandidateId, setPreviewCandidateId] = useState<string | null>(null);
+  const [codecInfoByCandidate, setCodecInfoByCandidate] = useState<
+    Record<string, CodecInfo | null>
+  >({});
   const [mediaAssetStates, setMediaAssetStates] = useState<Record<string, MediaAssetState>>({});
   const [manualHlsInput, setManualHlsInput] = useState('');
   const [manualHlsBaseUrl, setManualHlsBaseUrl] = useState('');
@@ -993,6 +995,46 @@ function DetectionView({ activeTabId, runtimeClient }: DetectionViewProps) {
   const previewMedia = previewCandidateId ? mediaItems.find((item) => item.id === previewCandidateId) : undefined;
   const previewSourceUrl = previewCandidate?.sourceUrl ?? previewCandidate?.manifestUrl ?? '';
   const previewProtocol = previewCandidate?.protocol;
+  const previewJob = previewCandidateId
+    ? queueJobs.find((job) => job.candidateId === previewCandidateId)
+    : undefined;
+  const previewRegions = useMemo(
+    () => deriveDownloadedRanges(previewJob?.segmentStatuses, previewCandidate?.durationSec),
+    [previewJob?.segmentStatuses, previewCandidate?.durationSec],
+  );
+  const previewCodecInfo =
+    previewCandidateId !== null ? codecInfoByCandidate[previewCandidateId] ?? null : null;
+
+  // Sniff codecs from real downloaded bytes once the previewed candidate has at
+  // least one completed segment. The background reads the first fragment and
+  // runs sniffCodecs; we cache per candidate so the round-trip happens once.
+  useEffect(() => {
+    if (!runtimeClient || !previewCandidateId) {
+      return;
+    }
+    if (previewCandidateId in codecInfoByCandidate) {
+      return;
+    }
+    const job = queueJobs.find((candidateJob) => candidateJob.candidateId === previewCandidateId);
+    const hasDoneSegment = job?.segmentStatuses?.some((segment) => segment.status === 'done');
+    if (!job || !hasDoneSegment) {
+      return;
+    }
+
+    let cancelled = false;
+    void runtimeClient
+      .getCodecInfo(previewCandidateId, { jobId: job.id })
+      .then((info) => {
+        if (!cancelled) {
+          setCodecInfoByCandidate((current) => ({ ...current, [previewCandidateId]: info }));
+        }
+      })
+      .catch(() => undefined);
+
+    return () => {
+      cancelled = true;
+    };
+  }, [runtimeClient, previewCandidateId, queueJobs, codecInfoByCandidate]);
   const previewBrowserRecordingAvailable = previewCandidate
     ? resolveBrowserDownloadCapability({
         candidate: previewCandidate,
@@ -1311,8 +1353,23 @@ function DetectionView({ activeTabId, runtimeClient }: DetectionViewProps) {
               sourceUrl={previewSourceUrl}
               protocol={previewProtocol ?? previewCandidate.protocol}
               browserRecordingAvailable={previewBrowserRecordingAvailable}
+              codecInfo={previewCodecInfo}
+              {...(previewRegions.ranges.length > 0
+                ? {
+                    downloadedRanges: previewRegions.ranges,
+                    totalDurationSec: previewRegions.totalDurationSec,
+                  }
+                : {})}
               onClose={() => setPreviewCandidateId(null)}
               onDownload={(trim, options) => void downloadPreviewSelection(trim, options)}
+              onDurationResolved={(durationSec) => {
+                if (!previewCandidateId) {
+                  return;
+                }
+                void runtimeClient
+                  ?.setCandidateDuration(previewCandidateId, durationSec)
+                  .catch(() => undefined);
+              }}
             />
           ) : null}
           <QRModal
@@ -1396,28 +1453,54 @@ function DownloadsPanel({ runtimeClient }: DownloadsPanelProps) {
   const customCommandTemplate = useSettingsStore((s) => s.customCommandTemplate);
   const advancedMode = useSettingsStore((s) => s.advancedMode);
   const historyRecords = useHistoryStore((s) => s.records);
-  const [storage, setStorage] = useState<{ usage: number; quota: number }>({
-    usage: 0,
-    quota: 0,
+  const [storage, setStorage] = useState<StorageDiagnosticsSummary>({
+    usageBytes: 0,
+    quotaBytes: 0,
+    freeBytes: 0,
+    level: 'ok',
   });
 
   useEffect(() => {
     let cancelled = false;
-    const estimate = globalThis.navigator?.storage?.estimate;
-    if (typeof estimate !== 'function') {
-      return;
-    }
-    void estimate.call(globalThis.navigator.storage).then((result) => {
-      if (cancelled) return;
+
+    async function loadDiagnostics(): Promise<void> {
+      // Prefer the background's canonical diagnostics (includes subtitle/fragment
+      // breakdown and warning copy). Fall back to a local navigator estimate.
+      if (runtimeClient.getStorageDiagnostics) {
+        try {
+          const summary = await runtimeClient.getStorageDiagnostics();
+          if (!cancelled) {
+            setStorage(summary);
+          }
+          return;
+        } catch {
+          // fall through to local estimate
+        }
+      }
+
+      const estimate = globalThis.navigator?.storage?.estimate;
+      if (typeof estimate !== 'function') {
+        return;
+      }
+      const result = await estimate.call(globalThis.navigator.storage);
+      if (cancelled) {
+        return;
+      }
+      const usageBytes = typeof result.usage === 'number' ? result.usage : 0;
+      const quotaBytes = typeof result.quota === 'number' ? result.quota : 0;
       setStorage({
-        usage: typeof result.usage === 'number' ? result.usage : 0,
-        quota: typeof result.quota === 'number' ? result.quota : 0,
+        usageBytes,
+        quotaBytes,
+        freeBytes: Math.max(0, quotaBytes - usageBytes),
+        level: computeStorageLevel(usageBytes, quotaBytes),
       });
-    });
+    }
+
+    void loadDiagnostics();
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [runtimeClient]);
 
 
   const queueItems = useMemo<QueueViewItem[]>(
@@ -1451,6 +1534,8 @@ function DownloadsPanel({ runtimeClient }: DownloadsPanelProps) {
             status: segment.status,
           })),
           selectedSegmentRange: job.selectedSegmentRange,
+          liveHlsTelemetry: job.liveHlsTelemetry,
+          discontinuityPolicy: job.selection.discontinuityPolicy,
         };
       });
       const localQueueItems: QueueViewItem[] = mediaItems
@@ -1590,6 +1675,58 @@ function DownloadsPanel({ runtimeClient }: DownloadsPanelProps) {
         if (updated) {
           upsertQueueJob(updated);
         }
+        return;
+      }
+
+      if ((action === 'skip-ads' || action === 'include-all-segments') && job) {
+        const updated = await runtimeClient.setHlsDiscontinuityPolicy(
+          job.id,
+          action === 'skip-ads' ? 'skip-ads' : 'include-all',
+        );
+        if (updated) {
+          upsertQueueJob(updated);
+        }
+        return;
+      }
+
+      if (action === 'repair-regex' && job) {
+        const pattern = window.prompt('Repair segments whose URL matches this regular expression:');
+        if (!pattern?.trim()) {
+          return;
+        }
+        const { job: updated, repairedCount } = await runtimeClient.repairHlsSegments(job.id, {
+          regexFilter: pattern.trim(),
+        });
+        if (updated) {
+          upsertQueueJob(updated);
+        }
+        if (repairedCount === 0) {
+          setErrorMessage('No segments matched that pattern.');
+        }
+        return;
+      }
+
+      if (action === 'repair-time-range' && job) {
+        const raw = window.prompt('Repair segments in time range (seconds), e.g. "30,90":');
+        if (!raw?.trim()) {
+          return;
+        }
+        const [startText, endText] = raw.split(',').map((part) => part.trim());
+        const startSec = Number(startText);
+        const endSec = Number(endText);
+        if (!Number.isFinite(startSec) || !Number.isFinite(endSec) || endSec <= startSec) {
+          setErrorMessage('Enter a valid "start,end" range in seconds.');
+          return;
+        }
+        const { job: updated, repairedCount } = await runtimeClient.repairHlsSegments(job.id, {
+          timeRange: { startSec, endSec },
+        });
+        if (updated) {
+          upsertQueueJob(updated);
+        }
+        if (repairedCount === 0) {
+          setErrorMessage('No segments fall in that time range.');
+        }
       }
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : 'Queue action failed');
@@ -1664,9 +1801,16 @@ function DownloadsPanel({ runtimeClient }: DownloadsPanelProps) {
         onCopyCommand={(profileId, id) => void handleCopyCommand(profileId, id)}
       />
       <StorageFooter
-        usageBytes={storage.usage}
-        quotaBytes={storage.quota}
-        level={computeStorageLevel(storage.usage, storage.quota)}
+        usageBytes={storage.usageBytes}
+        quotaBytes={storage.quotaBytes}
+        level={storage.level}
+        {...(storage.warning ? { warning: storage.warning } : {})}
+        {...(typeof storage.subtitleBytes === 'number'
+          ? { subtitleBytes: storage.subtitleBytes }
+          : {})}
+        {...(typeof storage.bucketBytes === 'number'
+          ? { bucketBytes: storage.bucketBytes }
+          : {})}
       />
     </>
   );

@@ -6,11 +6,14 @@ export interface UsePreviewPlayerOptions {
   onDurationResolved?: (durationSec: number) => void;
 }
 
+export type PlaybackStrategy = 'native' | 'hls-js';
+
 export interface UsePreviewPlayerResult {
   videoRef: (element: HTMLVideoElement | null) => void;
   reload: () => void;
   key: number;
   hlsFallbackAttempted: boolean;
+  playbackStrategy: PlaybackStrategy;
 }
 
 type HlsModuleLike = {
@@ -53,6 +56,7 @@ export function usePreviewPlayer({
 }: UsePreviewPlayerOptions): UsePreviewPlayerResult {
   const [key, setKey] = useState(0);
   const [hlsFallbackAttempted, setHlsFallbackAttempted] = useState(false);
+  const [playbackStrategy, setPlaybackStrategy] = useState<PlaybackStrategy>('native');
   const elementRef = useRef<HTMLVideoElement | null>(null);
   const hlsInstanceRef = useRef<{ destroy: () => void } | null>(null);
   const lastSeenKeyRef = useRef(-1);
@@ -60,6 +64,7 @@ export function usePreviewPlayer({
   const reload = useCallback(() => {
     setKey((value) => value + 1);
     setHlsFallbackAttempted(false);
+    setPlaybackStrategy('native');
   }, []);
 
   const destroyHls = useCallback(() => {
@@ -76,6 +81,7 @@ export function usePreviewPlayer({
       }
       lastSeenKeyRef.current = key;
       destroyHls();
+      setPlaybackStrategy('native');
       elementRef.current = element;
 
       if (!element) {
@@ -103,6 +109,7 @@ export function usePreviewPlayer({
           instance.loadSource(sourceUrl);
           instance.attachMedia(element);
           hlsInstanceRef.current = instance;
+          setPlaybackStrategy('hls-js');
         });
       }
     },
@@ -120,5 +127,6 @@ export function usePreviewPlayer({
     reload,
     key,
     hlsFallbackAttempted,
+    playbackStrategy,
   };
 }

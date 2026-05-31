@@ -55,6 +55,14 @@ export interface ScheduleSegmentsOptions {
     bytes: Uint8Array;
     isInitSegment: boolean;
   }) => Promise<void>;
+  // Fired after a freshly fetched fragment is persisted to storage (not on
+  // resume replay of already-stored fragments). Used to track byte/chunk
+  // metadata per bucket.
+  onFragmentStored?: (event: {
+    jobId: string;
+    index: number;
+    bytes: number;
+  }) => Promise<void> | void;
 }
 
 const DEFAULT_SEGMENT_TIMEOUT_MS = 30_000;
@@ -449,6 +457,11 @@ export async function scheduleSegments(
 
         if (options.storage && options.jobId) {
           await options.storage.writeFragment(options.jobId, segment.index, finalData);
+          await options.onFragmentStored?.({
+            jobId: options.jobId,
+            index: segment.index,
+            bytes: finalData.byteLength,
+          });
         }
 
         await options.onSegmentComplete?.({
