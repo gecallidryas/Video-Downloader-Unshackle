@@ -9,6 +9,11 @@ playwright-report/
 test-results/
 .playwright-mcp/
 
+# Build/release staging artifacts
+native-helper-stage/
+release-assets/
+*.zip
+
 # Extension signing private key (do not commit)
 extension-signing-key.pem
 extension-key.txt

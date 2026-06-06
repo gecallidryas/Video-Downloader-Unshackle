@@ -1,1 +1,0 @@
-{"version":3,"file":"write-native-message.js","sourceRoot":"","sources":["../src/write-native-message.ts"],"names":[],"mappings":"AACA,OAAO,EAAE,mBAAmB,EAAmB,MAAM,sBAAsB,CAAC;AAE5E,MAAM,CAAC,MAAM,kBAAkB,GAAG,CAAC,MAAgB,EAAE,OAAmB,EAAQ,EAAE;IAChF,MAAM,CAAC,KAAK,CAAC,mBAAmB,CAAC,OAAO,CAAC,CAAC,CAAC;AAC7C,CAAC,CAAC"}
