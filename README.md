@@ -1,8 +1,14 @@
-# Video Downloader — Unshackle
+<p align="center">
+  <img src="assets/banner.png" alt="Video Downloader — Unshackle" width="100%">
+</p>
 
-A Chrome/Firefox (Manifest V3) extension that detects and downloads **HLS**, **DASH**, and **direct** video/audio streams from any page — with a side-panel queue, an in-browser download path that needs no external tools, and an optional native helper for muxing and page extraction.
+<p align="center">
+  A Chrome/Firefox (Manifest V3) extension that detects and downloads <b>HLS</b>, <b>DASH</b>, and <b>direct</b> video/audio streams from any page — with a side-panel queue, an in-browser download path that needs no external tools, and an optional native helper for muxing and page extraction.
+</p>
 
-Built with [WXT](https://wxt.dev), React 19, TypeScript, and Zustand.
+<p align="center">
+  Built with <a href="https://wxt.dev">WXT</a>, React 19, TypeScript, and Zustand.
+</p>
 
 ## Features
 
@@ -51,4 +57,8 @@ WXT · React · TypeScript · Zustand · hls.js · mux.js · Vitest · Playwrigh
 
 ## Notes
 
-This tool is for downloading content you own or are authorized to access. DRM-protected streams are intentionally not downloadable. No license file is currently included — all rights reserved by default until one is added.
+This tool is for downloading content you own or are authorized to access. DRM-protected streams are intentionally not downloadable.
+
+## License
+
+Licensed under the [GNU General Public License v3.0](LICENSE).
